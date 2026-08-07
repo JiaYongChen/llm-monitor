@@ -1,0 +1,9 @@
+[
+  {"provider": "Anthropic", "model": "claude-fable-5", "input_price": 10, "cache_input_price": 1, "output_price": 50, "currency": "USD"},
+  {"provider": "Anthropic", "model": "claude-opus-5", "input_price": 5, "cache_input_price": 0.50, "output_price": 25, "currency": "USD"},
+  {"provider": "Anthropic", "model": "claude-sonnet-5", "input_price": 2, "cache_input_price": 0.20, "output_price": 10, "currency": "USD"},
+  {"provider": "Anthropic", "model": "claude-haiku-4-5", "input_price": 1, "cache_input_price": 0.10, "output_price": 5, "currency": "USD"},
+  {"provider": "OpenAI", "model": "gpt-5.6-sol", "input_price": 5, "cache_input_price": 2.50, "output_price": 30, "currency": "USD"},
+  {"provider": "OpenAI", "model": "gpt-5.6-terra", "input_price": 2, "cache_input_price": 1, "output_price": 12, "currency": "USD"},
+  {"provider": "OpenAI", "model": "gpt-5.6-luna", "input_price": 0.20, "cache_input_price": 0.10, "output_price": 1.20, "currency": "USD"}
+]
