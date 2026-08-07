@@ -40,6 +40,8 @@ export default function Sidebar() {
           总览
         </Link>
 
+        <div className="mb-4 -mx-[5px]" style={{ borderTop: '1px solid #e5e5ea' }} />
+
         {/* 工具筛选 */}
         <div className="mb-4">
           <div className="flex items-center gap-2 px-3 mb-1.5">
