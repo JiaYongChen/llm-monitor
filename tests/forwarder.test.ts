@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { buildCleanResponseBody } from '../proxy/forwarder.js';
 
-/** 构造 Anthropic SSE 流 */
-function anthropicSSE(model: string, text: string, usage: object): string {
+/** 构造 Anthropic SSE 流。
+ *  真实格式：input/cache 在 message_start.message.usage，output 在 message_delta.usage */
+function anthropicSSE(model: string, text: string, inputUsage: object, outputUsage: object): string {
   const lines: string[] = [];
   lines.push(`event: message_start`);
-  lines.push(`data: ${JSON.stringify({ type: 'message_start', message: { model, id: 'msg_1', type: 'message', role: 'assistant', content: [] as any[], stop_reason: null, usage: null } })}`);
+  lines.push(`data: ${JSON.stringify({ type: 'message_start', message: { model, id: 'msg_1', type: 'message', role: 'assistant', content: [] as any[], stop_reason: null, usage: inputUsage } })}`);
   lines.push('');
   lines.push(`event: content_block_start`);
   lines.push(`data: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}`);
@@ -17,7 +18,7 @@ function anthropicSSE(model: string, text: string, usage: object): string {
   lines.push(`data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`);
   lines.push('');
   lines.push(`event: message_delta`);
-  lines.push(`data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage })}`);
+  lines.push(`data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: outputUsage })}`);
   lines.push('');
   lines.push(`event: message_stop`);
   lines.push(`data: ${JSON.stringify({ type: 'message_stop' })}`);
@@ -41,13 +42,16 @@ function openaiSSE(model: string, content: string, usage: object): string {
 
 describe('buildCleanResponseBody', () => {
   it('从 Anthropic SSE 中提取 content + usage', () => {
-    const raw = anthropicSSE('claude-sonnet-5', '你好，世界！', { input_tokens: 500, output_tokens: 300 });
+    const raw = anthropicSSE('claude-sonnet-5', '你好，世界！',
+      { input_tokens: 500, cache_read_input_tokens: 100 },
+      { output_tokens: 300 },
+    );
     const result = buildCleanResponseBody(raw);
     expect(result).not.toBeNull();
     const obj = JSON.parse(result!);
     expect(obj.model).toBe('claude-sonnet-5');
     expect(obj.content).toBe('你好，世界！');
-    expect(obj.usage).toEqual({ input_tokens: 500, output_tokens: 300 });
+    expect(obj.usage).toEqual({ input_tokens: 500, cache_read_input_tokens: 100, output_tokens: 300 });
   });
 
   it('从 OpenAI SSE 中提取 content + usage', () => {
@@ -61,13 +65,16 @@ describe('buildCleanResponseBody', () => {
   });
 
   it('处理 \\r\\n 换行符', () => {
-    const raw = anthropicSSE('claude-opus-5', 'test', { input_tokens: 10, output_tokens: 5 })
-      .replace(/\n/g, '\r\n');
+    const raw = anthropicSSE('claude-opus-5', 'test',
+      { input_tokens: 10 },
+      { output_tokens: 5 },
+    ).replace(/\n/g, '\r\n');
     const result = buildCleanResponseBody(raw);
     expect(result).not.toBeNull();
     const obj = JSON.parse(result!);
     expect(obj.model).toBe('claude-opus-5');
     expect(obj.content).toBe('test');
+    expect(obj.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
   });
 
   it('空 SSE 流返回 null', () => {
@@ -84,6 +91,19 @@ describe('buildCleanResponseBody', () => {
     const raw = openaiSSE('gpt-4o', 'Hello!', { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
     const obj = JSON.parse(buildCleanResponseBody(raw)!);
     expect(obj.role).toBe('assistant');
+  });
+
+  it('★ Anthropic usage 合并：message_start(input) + message_delta(output)', () => {
+    const raw = anthropicSSE('claude-sonnet-5', '你好',
+      { input_tokens: 500, cache_read_input_tokens: 200, cache_creation_input_tokens: 100 },
+      { output_tokens: 300 },
+    );
+    const obj = JSON.parse(buildCleanResponseBody(raw)!);
+    // 验证 input 侧 token（来自 message_start）和 output 侧 token（来自 message_delta）正确合并
+    expect(obj.usage).toEqual({
+      input_tokens: 500, cache_read_input_tokens: 200, cache_creation_input_tokens: 100,
+      output_tokens: 300,
+    });
   });
 
   it('从 Anthropic content_block_start 中提取初始文本（无 delta 的短响应）', () => {

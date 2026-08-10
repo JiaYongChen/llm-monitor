@@ -113,21 +113,26 @@ function extractUsageFromSSE(raw: string): any {
     }
   }
 
-  // Anthropic 格式：message_delta 事件中的 usage
+  // Anthropic 格式：usage 分散在 message_start（input）和 message_delta（output）中
   if (!usage) {
+    let inputUsage: any = null;
+    let outputUsage: any = null;
     const events = normalized.split(/\n\n/);
     for (const event of events) {
-      if (event.includes('message_delta')) {
-        for (const line of event.split('\n')) {
-          if (line.startsWith('data: ')) {
-            try {
-              const obj = JSON.parse(line.slice(6));
-              if (obj.usage) usage = obj.usage;
-            } catch {}
+      for (const line of event.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const obj = JSON.parse(line.slice(6));
+          if (obj.type === 'message_start' && obj.message?.usage) {
+            inputUsage = obj.message.usage;
+          } else if (obj.type === 'message_delta' && obj.usage) {
+            outputUsage = obj.usage;
           }
-        }
+        } catch {}
       }
     }
+    const merged = { ...(inputUsage || {}), ...(outputUsage || {}) };
+    if (Object.keys(merged).length > 0) usage = merged;
   }
 
   return usage;
@@ -145,7 +150,8 @@ export function buildCleanResponseBody(raw: string): string | null {
   // ── 尝试 Anthropic 格式 ──
   const anthropicText: string[] = [];
   let anthropicModel = '';
-  let anthropicUsage: any = null;
+  let anthropicInputUsage: any = null;   // message_start.message.usage（input_tokens、缓存）
+  let anthropicOutputUsage: any = null;  // message_delta.usage（output_tokens）
   for (const event of events) {
     for (const line of event.split('\n')) {
       if (!line.startsWith('data: ')) continue;
@@ -153,6 +159,10 @@ export function buildCleanResponseBody(raw: string): string | null {
         const obj = JSON.parse(line.slice(6));
         if (obj.type === 'message_start') {
           anthropicModel = obj.message?.model || '';
+          // message_start 包含 input_tokens 和缓存相关 token
+          if (obj.message?.usage) {
+            anthropicInputUsage = obj.message.usage;
+          }
         } else if (obj.type === 'content_block_start') {
           // content_block 初始文本：流式传输时为空，短响应时可能直接携带完整文本
           if (obj.content_block?.type === 'text' && obj.content_block.text) {
@@ -161,16 +171,19 @@ export function buildCleanResponseBody(raw: string): string | null {
         } else if (obj.type === 'content_block_delta' && obj.delta?.text) {
           anthropicText.push(obj.delta.text);
         } else if (obj.type === 'message_delta' && obj.usage) {
-          anthropicUsage = obj.usage;
+          // message_delta 包含 output_tokens
+          anthropicOutputUsage = obj.usage;
         }
       } catch {}
     }
   }
+  // 合并两个事件中的 usage：input 侧来自 message_start，output 侧来自 message_delta
+  const anthropicUsage = { ...(anthropicInputUsage || {}), ...(anthropicOutputUsage || {}) };
   if (anthropicText.length > 0) {
     return JSON.stringify({
       model: anthropicModel,
       content: anthropicText.join(''),
-      usage: anthropicUsage,
+      usage: Object.keys(anthropicUsage).length > 0 ? anthropicUsage : undefined,
     });
   }
 

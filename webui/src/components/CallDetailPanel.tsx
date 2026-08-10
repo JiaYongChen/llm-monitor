@@ -62,7 +62,7 @@ export default function CallDetailPanel({ call }: { call: any }) {
       {/* Token 与费用 */}
       <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm p-5">
         <h3 className="text-sm font-semibold text-[#1d1d1f] mb-4">Token 与费用</h3>
-        {call.prompt_tokens != null ? (
+        {call.prompt_tokens != null || call.output_tokens != null ? (
           <>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-lg bg-[#fafafc]">
