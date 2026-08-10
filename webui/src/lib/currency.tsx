@@ -14,6 +14,15 @@ export const PROVIDER_COLORS: Record<string, string> = {
   OpenAI: '#16a34a',
 };
 
+/** 为未知供应商生成确定性颜色（基于名称哈希） */
+export function providerColor(name: string): string {
+  if (PROVIDER_COLORS[name]) return PROVIDER_COLORS[name];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 50%, 45%)`;
+}
+
 export type CurrencyKey = keyof typeof CURRENCIES;
 
 export interface CurrencyContextValue {

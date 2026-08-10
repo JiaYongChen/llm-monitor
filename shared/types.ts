@@ -4,6 +4,9 @@ export interface CallRecord {
   model: string;
   endpoint: string;
   method: string;
+  target_url: string | null;
+  downstream_url: string | null;
+  source_ip: string | null;
   status_code: number | null;
   error_message: string | null;
   duration_ms: number;
@@ -26,7 +29,7 @@ export interface CallRecord {
 /** 数据库中完整的调用记录 */
 export interface Call extends CallRecord {
   id: number;
-  created_at: string;
+  created_at: number;
 }
 
 /** 会话 */
@@ -38,12 +41,13 @@ export interface Session {
   request_count: number;
   total_cost: number;
   total_tokens: number;
-  first_call_at: string | null;
-  last_call_at: string | null;
+  first_call_at: number | null;
+  last_call_at: number | null;
   first_endpoint: string | null;
   status: 'active' | 'ended';
-  created_at: string;
+  created_at: number;
   upstream_provider: string | null;
+  upstream_model?: string | null;
 }
 
 /** 模型定价 */

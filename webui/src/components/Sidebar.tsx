@@ -1,14 +1,36 @@
 import { Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import * as api from '../api/client';
 
-import { PROVIDER_COLORS } from '../lib/currency';
+import { providerColor } from '../lib/currency';
 
-type ToolKey = 'ClaudeCode' | 'codex';
-const META: Record<ToolKey, { l: string; c: string }> = {
-  'ClaudeCode': { l: 'C', c: '#d97706' }, 'codex': { l: 'X', c: '#16a34a' },
+/** 工具显示名称映射 */
+const TOOL_DISPLAY: Record<string, string> = {
+  ClaudeCode: 'ClaudeCode', codex: 'Codex',
+};
+
+/** 已知工具的元数据（图标、颜色） */
+const KNOWN_TOOLS: Record<string, { l: string; c: string }> = {
+  'ClaudeCode': { l: 'C', c: '#d97706' },
+  'codex': { l: 'X', c: '#16a34a' },
 };
 const DEFAULT_META = { l: '?', c: '#9ca3af' };
+
+/** 生成工具图标的 HSL 色值（用于未知工具的动态颜色） */
+function toolColor(tool: string): string {
+  if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool].c;
+  // 基于名称生成确定性颜色
+  let hash = 0;
+  for (let i = 0; i < tool.length; i++) hash = ((hash << 5) - hash) + tool.charCodeAt(i);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 55%, 48%)`;
+}
+
+function toolMeta(tool: string): { l: string; c: string } {
+  if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool];
+  return { l: tool.slice(0, 2).toUpperCase(), c: toolColor(tool) };
+}
 
 export default function Sidebar() {
   const loc = useLocation();
@@ -23,7 +45,21 @@ export default function Sidebar() {
   const groups = new Map<string, typeof sessions>();
   sessions?.forEach((s: any) => { const l = groups.get(s.tool) || []; l.push(s); groups.set(s.tool, l); });
 
-  const enabledProviders = (providers as any[])?.filter((p: any) => p.enabled === 1) || [];
+  const enabledProviders = (providers as any[])?.filter((p: any) => p.enabled === 1).sort((a: any, b: any) => {
+    const aBuiltin = a.provider === 'Anthropic' || a.provider === 'OpenAI' ? 0 : 1;
+    const bBuiltin = b.provider === 'Anthropic' || b.provider === 'OpenAI' ? 0 : 1;
+    return aBuiltin - bBuiltin || a.provider.localeCompare(b.provider);
+  }) || [];
+
+  /** 动态计算所有出现过的工具（含已知工具的预设顺序） */
+  const allTools = useMemo(() => {
+    const seen = new Set<string>();
+    // 先加入已知工具（保持固定顺序）
+    for (const t of Object.keys(KNOWN_TOOLS)) seen.add(t);
+    // 再加入数据库中实际存在的未知工具
+    sessions?.forEach((s: any) => seen.add(s.tool));
+    return [...seen];
+  }, [sessions]);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams();
@@ -42,21 +78,24 @@ export default function Sidebar() {
 
         <div className="mb-4 -mx-[5px]" style={{ borderTop: '1px solid #e5e5ea' }} />
 
-        {/* 工具筛选 */}
+        {/* 工具筛选 — 动态显示所有检测到的工具 */}
         <div className="mb-4">
           <div className="flex items-center gap-2 px-3 mb-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">工具</span>
           </div>
-          {Object.entries(META).map(([tool, m]) => (
-            <button
-              key={tool}
-              onClick={() => { if (selectedTool !== tool) setParam('tool', tool); }}
-              className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedTool === tool ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
-            >
-              <div className="w-4 h-4 rounded flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0" style={{ background: m.c }}>{m.l}</div>
-              <span className="capitalize truncate">{tool}</span>
-            </button>
-          ))}
+          {allTools.map(tool => {
+            const m = toolMeta(tool);
+            return (
+              <button
+                key={tool}
+                onClick={() => { if (selectedTool !== tool) setParam('tool', tool); }}
+                className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedTool === tool ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
+              >
+                <div className="w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0" style={{ background: m.c }}>{m.l}</div>
+                <span className="truncate">{TOOL_DISPLAY[tool] || tool}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* 供应商选择 */}
@@ -70,7 +109,7 @@ export default function Sidebar() {
               onClick={() => { if (selectedProvider !== p.provider) setParam('provider', p.provider); }}
               className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedProvider === p.provider ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
             >
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: PROVIDER_COLORS[p.provider] || '#9ca3af' }} />
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: providerColor(p.provider) }} />
               <span className="truncate">{p.provider}</span>
             </button>
           ))}
@@ -81,12 +120,12 @@ export default function Sidebar() {
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">会话</span>
         </div>
         {[...groups.entries()].map(([tool, ss]: any) => {
-          const m = META[tool as ToolKey] || DEFAULT_META;
+          const m = toolMeta(tool);
           return (
             <div key={tool} className="mb-3">
               <div className="flex items-center gap-2 pl-7 pr-3 mb-1">
                 <div className="w-4 h-4 rounded flex items-center justify-center text-[8px] font-bold text-white" style={{ background: m.c }}>{m.l}</div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">{tool}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">{TOOL_DISPLAY[tool] || tool}</span>
               </div>
               {ss?.slice(0, 20).map((s: any) => (
                 <Link key={s.id} to={loc.pathname === `/sessions/${s.id}` ? '#' : `/sessions/${s.id}`}

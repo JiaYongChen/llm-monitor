@@ -26,13 +26,27 @@ export function getRates(): Record<string, number> {
   return { ...FALLBACK_RATES };
 }
 
-/** 获取汇率更新时间（ISO 8601 字符串），尚未刷新时返回 null */
-export function getRatesUpdatedAt(): string | null {
-  return getSetting('rates_updated_at');
+/** 获取汇率更新时间（Unix 毫秒时间戳），尚未刷新时返回 null */
+export function getRatesUpdatedAt(): number | null {
+  const v = getSetting('rates_updated_at');
+  if (!v) return null;
+  // 兼容旧版 ISO 字符串格式
+  const parsed = parseInt(v);
+  if (!isNaN(parsed) && parsed > 1_000_000_000_000) {
+    // 毫秒时间戳（> 2001-09-09）：直接返回
+    return parsed;
+  }
+  if (!isNaN(parsed) && parsed > 1_000_000_000) {
+    // 秒级时间戳（> 2001-09-09）：转为毫秒
+    return parsed * 1000;
+  }
+  // 尝试解析 ISO 字符串
+  const fromISO = Date.parse(v);
+  return isNaN(fromISO) ? null : fromISO;
 }
 
 /** 手动拉取汇率并写入 metadata 缓存（exchange_rates + rates_updated_at） */
-export async function refreshRates(): Promise<{ rates: Record<string, number>; updatedAt: string }> {
+export async function refreshRates(): Promise<{ rates: Record<string, number>; updatedAt: number }> {
   let rates: Record<string, number> = { ...FALLBACK_RATES };
 
   try {
@@ -64,8 +78,8 @@ export async function refreshRates(): Promise<{ rates: Record<string, number>; u
   }
 
   setSetting('exchange_rates', JSON.stringify(rates));
-  const updatedAt = new Date().toISOString();
-  setSetting('rates_updated_at', updatedAt);
+  const updatedAt = Date.now();
+  setSetting('rates_updated_at', String(updatedAt));
 
   return { rates, updatedAt };
 }
@@ -92,8 +106,8 @@ function msUntilNext0930CST(): number {
 export function scheduleDailyRefresh(): void {
   // 启动时立即拉取一次
   refreshRates().then(({ rates, updatedAt }) => {
-    console.log(`汇率已初始化 (${updatedAt}):`, rates);
-  });
+    console.log(`汇率已初始化 (${new Date(updatedAt).toLocaleString('zh-CN', { hour12: false })}):`, rates);
+  }).catch(() => {});
 
   // 计算到下次 09:30 的间隔并设置定时器，触发后设置下一个 24h 的定时器（届时重新调度）
   const schedule = () => {
@@ -102,12 +116,20 @@ export function scheduleDailyRefresh(): void {
     console.log(`下次汇率刷新: ${Math.round(delay / 1000 / 60)} 分钟后`);
     refreshTimer = setTimeout(() => {
       refreshRates().then(({ rates, updatedAt }) => {
-        console.log(`汇率已刷新 (${updatedAt}):`, rates);
-      });
+        console.log(`汇率已刷新 (${new Date(updatedAt).toLocaleString('zh-CN', { hour12: false })}):`, rates);
+      }).catch(() => {}); // 关闭后 DB 不可用，静默忽略
       refreshTimer = setTimeout(schedule, 24 * 60 * 60 * 1000);
     }, delay);
   };
 
   // 延迟 2 秒安排首个定时器，避免与启动时的首次拉取冲突
-  setTimeout(schedule, 2000);
+  initTimer = setTimeout(schedule, 2000);
+}
+
+let initTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 停止每日定时刷新（关闭服务器时调用） */
+export function stopDailyRefresh(): void {
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+  if (initTimer) { clearTimeout(initTimer); initTimer = null; }
 }

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { formatTime } from '../lib/utils';
 
 export default function CallStream({ calls }: { calls: any[] }) {
   return (
@@ -8,7 +9,7 @@ export default function CallStream({ calls }: { calls: any[] }) {
         {calls.map((call) => (
           <Link key={call.id} to={`/calls/${call.id}`} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-800 text-sm">
             <div className="flex items-center gap-3">
-              <span className="text-gray-500 w-16 text-xs font-mono">{call.created_at?.slice(11, 19) || '--:--:--'}</span>
+              <span className="text-gray-500 w-16 text-xs font-mono">{formatTime(call.created_at, 'time')}</span>
               <span className="text-gray-300 w-20">{call.provider}</span>
               <span className="text-gray-500 truncate max-w-[200px]">{call.model}</span>
             </div>

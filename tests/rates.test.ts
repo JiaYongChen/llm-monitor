@@ -84,7 +84,7 @@ describe('rates', () => {
       // 写入 metadata 两次：exchange_rates + rates_updated_at
       expect(mockSetSetting).toHaveBeenCalledTimes(2);
       expect(mockSetSetting).toHaveBeenNthCalledWith(1, 'exchange_rates', expect.stringContaining('CNY→USD'));
-      expect(mockSetSetting).toHaveBeenNthCalledWith(2, 'rates_updated_at', expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/));
+      expect(mockSetSetting).toHaveBeenNthCalledWith(2, 'rates_updated_at', expect.stringMatching(/^\d{13}$/));
     } finally {
       globalThis.fetch = originalFetch;
     }

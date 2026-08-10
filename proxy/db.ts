@@ -6,7 +6,7 @@
  */
 
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { ensureDataDir, DB_PATH } from './config.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -14,6 +14,7 @@ import type { CallRecord } from '../shared/types.js';
 
 let SQL: SqlJsStatic | null = null;
 let db: Database | null = null;
+let currentDbPath: string = DB_PATH;
 
 // ── 初始化 ──
 
@@ -23,6 +24,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   ensureDataDir();
   const path = dbPath ?? DB_PATH;
+  currentDbPath = path; // 记录当前数据库路径，供后续 saveDb() 使用
 
   SQL = await initSqlJs();
 
@@ -35,6 +37,37 @@ export async function initDb(dbPath?: string): Promise<void> {
   }
 
   db.run('PRAGMA journal_mode = WAL;');
+
+  // 创建 metadata 表（最先，用于 schema 版本检查）
+  db.run(`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)`);
+
+  // 仅在 schema 版本变更时重建表
+  const currentVersion = 2;
+  const storedVersion = (() => {
+    try {
+      const r = db.exec("SELECT value FROM metadata WHERE key = 'schema_version'");
+      if (r.length > 0 && r[0].values.length > 0) return parseInt(r[0].values[0][0] as string);
+    } catch {}
+    return 1; // 无版本号视为 v1（旧 TEXT 时间格式）
+  })();
+
+  if (storedVersion < currentVersion) {
+    // 迁移前备份：复制数据库文件以防数据丢失
+    const backupPath = path.replace(/\.db$/, `.v${storedVersion}-backup.db`);
+    try {
+      if (existsSync(path)) {
+        saveDb();
+        copyFileSync(path, backupPath);
+        console.log(`数据库升级前已备份到: ${backupPath}`);
+      }
+    } catch (e) {
+      console.warn('数据库备份失败，仍将执行迁移:', e);
+    }
+    db.run('DROP TABLE IF EXISTS calls');
+    db.run('DROP TABLE IF EXISTS sessions');
+    db.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)", [String(currentVersion)]);
+    console.log(`数据库已升级到 schema v${currentVersion}（时间戳格式），旧数据已备份`);
+  }
 
   db.run(`
     CREATE TABLE IF NOT EXISTS calls (
@@ -60,7 +93,7 @@ export async function initDb(dbPath?: string): Promise<void> {
       response_body  TEXT,
       fingerprint  TEXT NOT NULL,
       source_port  INTEGER,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at INTEGER NOT NULL
     )
   `);
 
@@ -73,11 +106,11 @@ export async function initDb(dbPath?: string): Promise<void> {
       request_count INTEGER NOT NULL DEFAULT 0,
       total_cost    REAL    NOT NULL DEFAULT 0,
       total_tokens  INTEGER NOT NULL DEFAULT 0,
-      first_call_at TEXT,
-      last_call_at  TEXT,
+      first_call_at INTEGER,
+      last_call_at  INTEGER,
       first_endpoint TEXT,
       status        TEXT    NOT NULL DEFAULT 'active',
-      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      created_at    INTEGER NOT NULL,
       upstream_provider TEXT
     )
   `);
@@ -94,13 +127,6 @@ export async function initDb(dbPath?: string): Promise<void> {
       currency          TEXT    NOT NULL DEFAULT 'CNY',
       effective_from    TEXT,
       UNIQUE(provider, model, effective_from)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS metadata (
-      key   TEXT PRIMARY KEY,
-      value TEXT
     )
   `);
 
@@ -139,10 +165,15 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   // 兼容已有库：添加 upstream_provider 列（列已存在则忽略错误）
   try { db.run(`ALTER TABLE sessions ADD COLUMN upstream_provider TEXT`); } catch {}
+  try { db.run(`ALTER TABLE sessions ADD COLUMN upstream_model TEXT`); } catch {}
   // 兼容已有库：添加 base_url_anthropic 列
   try { db.run(`ALTER TABLE provider_config ADD COLUMN base_url_anthropic TEXT`); } catch {}
   // 兼容已有库：添加 is_default 列
   try { db.run(`ALTER TABLE pricing ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`); } catch {}
+  // 兼容已有库：添加 target_url、source_ip 列
+  try { db.run(`ALTER TABLE calls ADD COLUMN target_url TEXT`); } catch {}
+  try { db.run(`ALTER TABLE calls ADD COLUMN source_ip TEXT`); } catch {}
+  try { db.run(`ALTER TABLE calls ADD COLUMN downstream_url TEXT`); } catch {}
 
   saveDb();
 }
@@ -156,7 +187,7 @@ export function getDb(): Database {
 /** 将内存中的数据库持久化到磁盘 */
 export function saveDb(dbPath?: string): void {
   if (!db) return;
-  const path = dbPath ?? DB_PATH;
+  const path = dbPath ?? currentDbPath;
   const data = db.export();
   const buffer = Buffer.from(data);
   writeFileSync(path, buffer);
@@ -169,6 +200,8 @@ export function closeDb(): void {
     db.close();
     db = null;
   }
+  SQL = null;
+  currentDbPath = DB_PATH;
 }
 
 // ── 辅助 ──
@@ -239,17 +272,19 @@ function execute(sql: string, params?: any[]): number {
 export function insertCall(r: CallRecord): number {
   return executeInsert(
     `INSERT INTO calls (session_id, provider, model, endpoint, method,
+      target_url, downstream_url, source_ip,
       status_code, error_message, duration_ms, prompt_tokens, output_tokens,
       cache_read_tokens, cache_write_tokens, uncached_input, input_cost,
       output_cost, total_cost, cache_savings, request_body, response_body,
-      fingerprint, source_port)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      fingerprint, source_port, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     [
       r.session_id, r.provider, r.model, r.endpoint, r.method,
+      r.target_url, r.downstream_url, r.source_ip,
       r.status_code, r.error_message, r.duration_ms, r.prompt_tokens, r.output_tokens,
       r.cache_read_tokens, r.cache_write_tokens, r.uncached_input, r.input_cost,
       r.output_cost, r.total_cost, r.cache_savings, r.request_body, r.response_body,
-      r.fingerprint, r.source_port,
+      r.fingerprint, r.source_port, Date.now(),
     ],
   );
 }
@@ -282,21 +317,58 @@ export function getCall(callId: number): Record<string, any> | null {
 
 // ── Sessions CRUD ──
 
-/** 查找或创建会话，返回 session id */
-export function upsertSession(fingerprint: string, tool: string, endpoint: string): number {
-  const existing = queryOne('SELECT id FROM sessions WHERE fingerprint = ?', [fingerprint]);
-  if (existing) {
+/**
+ * 查找或创建会话，返回 session id。
+ * 支持 pending→active 自动升级：
+ * 1. 用 fullFp 精确匹配 → 命中则复用
+ * 2. 查找同 tool 的 pending 会话 → 命中则「升级」为完整指纹
+ * 3. 都不命中 → 新建会话
+ * 会话不会自动过期。 */
+export function upsertSession(fullFp: string, tool: string, endpoint: string): number {
+  const now = Date.now();
+
+  // 1. 完整指纹精确匹配
+  const fullMatch = queryOne(
+    'SELECT id FROM sessions WHERE fingerprint = ? ORDER BY last_call_at DESC LIMIT 1',
+    [fullFp],
+  );
+  if (fullMatch) {
     execute(
-      "UPDATE sessions SET status = 'active', last_call_at = datetime('now') WHERE id = ?",
-      [existing.id],
+      "UPDATE sessions SET status = 'active', last_call_at = ? WHERE id = ?",
+      [now, fullMatch.id],
     );
-    return Number(existing.id);
+    return Number(fullMatch.id);
   }
 
+  // 2. 查找同工具最近的 pending 会话 → 升级
+  const pending = queryOne(
+    "SELECT id FROM sessions WHERE tool = ? AND status = 'pending' ORDER BY last_call_at DESC LIMIT 1",
+    [tool],
+  );
+  if (pending) {
+    execute(
+      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ? WHERE id = ?",
+      [fullFp, now, endpoint, pending.id],
+    );
+    return Number(pending.id);
+  }
+
+  // 3. 新建会话
   return executeInsert(
-    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint)
-     VALUES (?, ?, 'active', datetime('now'), datetime('now'), ?) RETURNING id`,
-    [tool, fingerprint, endpoint],
+    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at)
+     VALUES (?, ?, 'active', ?, ?, ?, ?) RETURNING id`,
+    [tool, fullFp, now, now, endpoint, now],
+  );
+}
+
+/** 创建 pending 会话（由包装脚本在 CLI 启动时调用） */
+export function createPendingSession(tool: string): number {
+  const now = Date.now();
+  const fp = `pending:${tool}:${now}`;
+  return executeInsert(
+    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at)
+     VALUES (?, ?, 'pending', ?, ?, '/_startup_', ?) RETURNING id`,
+    [tool, fp, now, now, now],
   );
 }
 
@@ -305,8 +377,8 @@ export function updateSessionStats(sessionId: number, cost: number, tokens: numb
   execute(
     `UPDATE sessions SET request_count = request_count + 1,
      total_cost = total_cost + ?, total_tokens = total_tokens + ?,
-     last_call_at = datetime('now') WHERE id = ?`,
-    [cost, tokens, sessionId],
+     last_call_at = ? WHERE id = ?`,
+    [cost, tokens, Date.now(), sessionId],
   );
 }
 
@@ -350,6 +422,10 @@ export function mergeSessions(sourceId: number, targetId: number): void {
 /** 设置会话的上游覆盖 */
 export function updateSessionUpstream(sessionId: number, upstreamProvider: string | null): void {
   execute('UPDATE sessions SET upstream_provider = ? WHERE id = ?', [upstreamProvider, sessionId]);
+}
+
+export function updateSessionModel(sessionId: number, model: string | null): void {
+  execute('UPDATE sessions SET upstream_model = ? WHERE id = ?', [model, sessionId]);
 }
 
 // ── Stats ──
@@ -426,10 +502,11 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
 
 // ── Data Management ──
 
-/** 清理旧数据 */
+/** 清理旧数据（days 天前的调用记录） */
 export function cleanupOldCalls(days: number): number {
   const d = getDb();
-  d.run("DELETE FROM calls WHERE created_at < datetime('now', ?)", [`-${days} days`]);
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  d.run('DELETE FROM calls WHERE created_at < ?', [cutoff]);
   const modified = d.getRowsModified();
   saveDb();
   return modified;
@@ -442,6 +519,7 @@ export function clearAllData(): void {
   d.run('DELETE FROM sessions');
   d.run('DELETE FROM pricing');
   d.run('DELETE FROM provider_config');
+  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','pricing','provider_config')");
   saveDb();
 }
 
@@ -513,6 +591,9 @@ const OFFICIAL_ANTHROPIC_URLS: Record<string, string> = {
   anthropic: 'https://api.anthropic.com',
 };
 
+/** 内置供应商名称集合（不可删除、不可停用） */
+export const BUILTIN_PROVIDERS = new Set(['Anthropic', 'OpenAI']);
+
 /** 列出所有 provider 配置（内置供应商兜底官方 URL） */
 export function listProviderConfigs(): Record<string, any>[] {
   const rows = queryAll('SELECT * FROM provider_config ORDER BY provider');
@@ -524,7 +605,7 @@ export function listProviderConfigs(): Record<string, any>[] {
 }
 
 /** 获取单个 provider 的配置（大小写不敏感，base_url 为空时返回官方地址） */
-export function getProviderConfig(provider: string): { base_url: string; base_url_anthropic: string; api_key: string; api_format: string; enabled: boolean } | null {
+export function getProviderConfig(provider: string): { provider: string; base_url: string; base_url_anthropic: string; api_key: string; api_format: string; enabled: boolean } | null {
   // 先精确匹配，再大小写不敏感匹配
   let row = queryOne('SELECT * FROM provider_config WHERE provider = ?', [provider]);
   if (!row) {
@@ -532,8 +613,10 @@ export function getProviderConfig(provider: string): { base_url: string; base_ur
   }
   if (!row) return null;
   const resolved = row.provider || provider;
+  const defaultUrl = OFFICIAL_URLS[resolved] || OFFICIAL_URLS[resolved.toLowerCase()] || '';
   return {
-    base_url: row.base_url || OFFICIAL_URLS[resolved] || OFFICIAL_URLS[provider] || '',
+    provider: resolved,
+    base_url: row.base_url || defaultUrl,
     base_url_anthropic: row.base_url_anthropic || '',
     api_key: row.api_key || '',
     api_format: row.api_format || '',
@@ -541,8 +624,17 @@ export function getProviderConfig(provider: string): { base_url: string; base_ur
   };
 }
 
-/** 更新 provider 配置 */
-export function updateProviderConfig(provider: string, data: { enabled?: boolean; api_format?: string; api_key?: string; base_url?: string; base_url_anthropic?: string }): void {
+/** 内置供应商检查（大小写不敏感） */
+function isBuiltinProvider(provider: string): boolean {
+  return [...BUILTIN_PROVIDERS].some(b => b.toLowerCase() === provider.toLowerCase());
+}
+
+/** 更新 provider 配置（内置供应商不允许停用） */
+export function updateProviderConfig(provider: string, data: { enabled?: boolean; api_format?: string; api_key?: string; base_url?: string; base_url_anthropic?: string }): { ok: boolean; error?: string } {
+  // 内置供应商不允许停用（大小写不敏感）
+  if (data.enabled === false && isBuiltinProvider(provider)) {
+    return { ok: false, error: `内置供应商 "${provider}" 不可停用` };
+  }
   const sets: string[] = [];
   const vals: any[] = [];
   if (data.api_format !== undefined) { sets.push('api_format = ?'); vals.push(data.api_format); }
@@ -550,9 +642,17 @@ export function updateProviderConfig(provider: string, data: { enabled?: boolean
   if (data.api_key !== undefined) { sets.push('api_key = ?'); vals.push(data.api_key); }
   if (data.base_url !== undefined) { sets.push('base_url = ?'); vals.push(data.base_url); }
   if (data.base_url_anthropic !== undefined) { sets.push('base_url_anthropic = ?'); vals.push(data.base_url_anthropic); }
-  if (sets.length === 0) return;
+  if (sets.length === 0) return { ok: true };
   vals.push(provider);
   execute(`UPDATE provider_config SET ${sets.join(', ')} WHERE provider = ?`, vals);
+  // 停用时自动清除所有引用该供应商的会话上游覆写（provider + model）
+  if (data.enabled === false) {
+    const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [provider]);
+    if (cleared > 0) {
+      console.log(`已清除 ${cleared} 个会话的 "${provider}" 上游覆写`);
+    }
+  }
+  return { ok: true };
 }
 
 /** 新增自定义 provider */
@@ -563,9 +663,18 @@ export function addProviderConfig(provider: string, baseUrl: string, baseUrlAnth
   );
 }
 
-/** 删除 provider 配置 */
-export function deleteProviderConfig(provider: string): void {
+/** 删除 provider 配置（内置供应商不可删除） */
+export function deleteProviderConfig(provider: string): { ok: boolean; error?: string } {
+  if (isBuiltinProvider(provider)) {
+    return { ok: false, error: `内置供应商 "${provider}" 不可删除` };
+  }
   execute('DELETE FROM provider_config WHERE provider = ?', [provider]);
+  // 同时清除引用该供应商的会话上游覆写
+  const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [provider]);
+  if (cleared > 0) {
+    console.log(`已清除 ${cleared} 个会话的 "${provider}" 上游覆写`);
+  }
+  return { ok: true };
 }
 
 // ── Settings ──

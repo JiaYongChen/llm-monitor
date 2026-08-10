@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyMiddie from '@fastify/middie';
 import { initDb, closeDb, listPricing, upsertPricing } from './db.js';
-import { registerProxyRoutes, setEnqueueRef } from './router.js';
+import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.js';
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
-import { scheduleDailyRefresh } from './rates.js';
-import { PORT } from './config.js';
+import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
+import { PORT, WEBUI_PORT } from './config.js';
 import { readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,47 +28,61 @@ async function importDefaultPricing(): Promise<void> {
   }
 }
 
-export async function createApp(): Promise<FastifyInstance> {
+/** 启动服务器，端口被占用则重试 */
+async function listenWithRetry(app: FastifyInstance, port: number, label: string): Promise<void> {
+  while (true) {
+    try {
+      await app.listen({ port, host: '127.0.0.1' });
+      console.log(`${label} → http://localhost:${port}`);
+      break;
+    } catch (err: any) {
+      if (err?.code === 'EADDRINUSE') {
+        console.error(`端口 ${port} 被占用，3 秒后重试…`);
+        await new Promise(r => setTimeout(r, 3000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInstance }> {
   await initDb();
   scheduleDailyRefresh();
   await importDefaultPricing();
   startRecorder();
   setEnqueueRef(enqueueRecord);
 
-  const app = Fastify({ logger: false });
+  // ── 代理服务器（PORT）：只走代理转发，不提供面板 ──
+  const proxy = Fastify({ logger: false });
+  proxy.get('/api/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
+  await registerProxyRoutes(proxy);
 
-  // 健康检查
-  app.get('/api/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
+  // ── 面板服务器（WEBUI_PORT）：API 查询 + 前端 ──
+  const webui = Fastify({ logger: false });
+  registerApiRoutes(webui);
 
-  // 代理路由 + 查询 API
-  await registerProxyRoutes(app);
-
-  // 判断运行模式
   const isDev = process.argv.includes('--dev');
 
   if (isDev) {
-    // ── 开发模式：Vite 中间件（HMR + 前端，单端口） ──
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       configFile: join(__dirname, '..', 'webui', 'vite.config.ts'),
-      server: { middlewareMode: true, hmr: { server: app.server } },
-      appType: 'custom',  // 不做 SPA fallback，由 Fastify 接管
+      server: { middlewareMode: true, hmr: { server: webui.server } },
+      appType: 'custom',
     });
 
-    await app.register(fastifyMiddie);
-    app.use(vite.middlewares);
+    await webui.register(fastifyMiddie);
+    webui.use(vite.middlewares);
 
-    // 读取 index.html 源码（缓存）
     const indexHtml = readFileSync(join(__dirname, '..', 'webui', 'index.html'), 'utf-8');
 
-    // 注册精确的 / 路由（Vite custom 模式下不自动 fallback）
-    app.get('/', async (_req, reply) => {
+    webui.get('/', async (_req, reply) => {
       const html = await vite.transformIndexHtml('/', indexHtml);
       return reply.type('text/html').send(html);
     });
 
-    // SPA fallback：前端路由交给 Vite 转换 index.html
-    app.setNotFoundHandler(async (req, reply) => {
+    webui.setNotFoundHandler(async (req, reply) => {
       const url = req.url || '';
       if (/\/[^/]+\.[a-zA-Z0-9]{1,6}$/.test(url)) {
         return reply.status(404).type('text/plain').send('Not found');
@@ -77,20 +91,18 @@ export async function createApp(): Promise<FastifyInstance> {
       return reply.type('text/html').send(html);
     });
 
-    console.log(`开发模式 — Vite 中间件已挂载（面板: http://localhost:${PORT}）`);
+    console.log(`开发模式 — Vite HMR 已挂载`);
   } else {
-    // ── 生产模式：托管前端静态文件 ──
     const staticDir = join(__dirname, '..', 'dist', 'web');
     if (existsSync(staticDir)) {
-      await app.register(fastifyStatic, {
+      await webui.register(fastifyStatic, {
         root: staticDir,
         prefix: '/',
         wildcard: false,
         decorateReply: true,
       });
 
-      // SPA fallback：仅对无扩展名的路由返回 index.html
-      app.setNotFoundHandler((req, reply) => {
+      webui.setNotFoundHandler((req, reply) => {
         const url = req.url || '';
         if (/\/[^/]+\.[a-zA-Z0-9]{1,6}$/.test(url) && !url.startsWith('/api/')) {
           return reply.status(404).type('text/plain').send('Not found');
@@ -100,18 +112,22 @@ export async function createApp(): Promise<FastifyInstance> {
     }
   }
 
-  app.addHook('onClose', async () => {
+  proxy.addHook('onClose', async () => {
+    stopDailyRefresh();
     stopRecorder();
     closeDb();
   });
 
-  return app;
+  webui.addHook('onClose', async () => {
+    // shared state cleanup handled by proxy's onClose
+  });
+
+  return { proxy, webui };
 }
 
 // 直接运行时启动服务器
 const isMain = process.argv[1]?.includes('main.ts') || process.argv[1]?.includes('main.js');
 if (isMain) {
-  // 优雅关闭：收到 SIGTERM/SIGINT 时释放端口
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
@@ -121,19 +137,9 @@ if (isMain) {
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
 
-  const app = await createApp();
-  while (true) {
-    try {
-      await app.listen({ port: PORT, host: '127.0.0.1' });
-      console.log(`后台代理已启动 → http://localhost:${PORT}`);
-      break;
-    } catch (err: any) {
-      if (err?.code === 'EADDRINUSE') {
-        console.error(`端口 ${PORT} 被占用，3 秒后重试…`);
-        await new Promise(r => setTimeout(r, 3000));
-      } else {
-        throw err;
-      }
-    }
-  }
+  const { proxy, webui } = await createApp();
+  await Promise.all([
+    listenWithRetry(proxy, PORT, '代理'),
+    listenWithRetry(webui, WEBUI_PORT, '面板'),
+  ]);
 }

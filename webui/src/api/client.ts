@@ -36,6 +36,10 @@ export async function updateSessionUpstream(id: number, upstreamProvider: string
   return fetchJson(`/sessions/${id}/upstream`, { method: 'PUT', body: JSON.stringify({ upstream_provider: upstreamProvider }) });
 }
 
+export async function updateSessionModel(id: number, model: string | null) {
+  return fetchJson(`/sessions/${id}/model`, { method: 'PUT', body: JSON.stringify({ model }) });
+}
+
 // ── Calls ──
 export async function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });

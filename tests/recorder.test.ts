@@ -18,8 +18,9 @@ describe('recorder', () => {
     const sid = upsertSession('fp_rec', 'ClaudeCode', '/v1/messages');
     const record: CallRecord = {
       provider: 'anthropic', model: 'claude-sonnet-5-20260101',
-      endpoint: '/v1/messages', method: 'POST', status_code: 200,
-      error_message: null, duration_ms: 1200,
+      endpoint: '/v1/messages', method: 'POST',
+      target_url: 'https://api.anthropic.com/v1/messages', downstream_url: 'http://localhost:9400/anthropic/v1/messages', source_ip: '127.0.0.1',
+      status_code: 200, error_message: null, duration_ms: 1200,
       request_body: null,
       response_body: JSON.stringify({
         model: 'claude-sonnet-5',

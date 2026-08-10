@@ -8,7 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { Switch } from '../components/ui/switch';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Plus, Trash2, Copy, ChevronDown, ChevronRight } from 'lucide-react';
-import { useCurrency, CURRENCIES, PROVIDER_COLORS, type CurrencyKey } from '../lib/currency';
+import { useCurrency, CURRENCIES, providerColor, type CurrencyKey } from '../lib/currency';
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -58,7 +58,11 @@ export default function Settings() {
           <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" />添加供应商</Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          {(providers as any[])?.map((p: any) => (
+          {(providers as any[])?.sort((a: any, b: any) => {
+            const aBuiltin = a.provider in BUILTIN_PROVIDERS ? 0 : 1;
+            const bBuiltin = b.provider in BUILTIN_PROVIDERS ? 0 : 1;
+            return aBuiltin - bBuiltin || a.provider.localeCompare(b.provider);
+          }).map((p: any) => (
             <ProviderItem
               key={p.provider}
               provider={p.provider}
@@ -66,7 +70,7 @@ export default function Settings() {
               baseUrlAnthropic={p.base_url_anthropic || ''}
               apiKey={p.api_key || ''}
               enabled={p.enabled === 1}
-              color={PROVIDER_COLORS[p.provider] || '#6b7280'}
+              color={providerColor(p.provider)}
               prices={providerPrices(p.provider)}
               onToggle={(v) => updateMut.mutate({ p: p.provider, d: { enabled: v, api_format: p.api_format || '' } })}
               onUpdate={(d) => updateMut.mutate({ p: p.provider, d: { ...d, api_format: p.api_format || '' } })}
@@ -122,6 +126,8 @@ export default function Settings() {
   );
 }
 
+const BUILTIN_PROVIDERS: Record<string, string> = { Anthropic: 'anthropic', OpenAI: 'openai' };
+
 function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, color, prices, onToggle, onUpdate, onPricesChanged, onDelete }: {
   provider: string; baseUrl: string; baseUrlAnthropic: string; apiKey: string; enabled: boolean; color: string;
   prices: any[]; onToggle: (v: boolean) => void; onUpdate: (d: Record<string, string>) => void;
@@ -131,6 +137,8 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
   const [urlOpenAI, setUrlOpenAI] = useState(baseUrl);
   const [urlAnthropic, setUrlAnthropic] = useState(baseUrlAnthropic);
   const [expanded, setExpanded] = useState(false);
+  const isBuiltin = provider in BUILTIN_PROVIDERS;
+  const fmt = BUILTIN_PROVIDERS[provider] || '';
   const { currency } = useCurrency();
   const [showAddPrice, setShowAddPrice] = useState(false);
   const [newModel, setNewModel] = useState({ model: '', outPrice: '', inPrice: '', cachePrice: '', currency: 'CNY' as string });
@@ -151,40 +159,51 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center gap-3 py-5 px-4">
-        <button onClick={() => setExpanded(!expanded)} className="text-gray-500 hover:text-foreground">
+        <button onClick={() => setExpanded(!expanded)} className={`text-gray-500 hover:text-foreground ${!enabled ? 'opacity-40' : ''}`}>
           {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
         </button>
-        <div className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: color }}>
+        <div className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: enabled ? color : '#b0b0b5' }}>
           {provider[0].toUpperCase()}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className={`flex-1 min-w-0 ${!enabled ? 'opacity-40' : ''}`}>
           <div className="flex items-center gap-2">
             <div className="w-[140px] flex-shrink-0 flex items-center gap-2">
               <span className="text-sm font-semibold truncate">{provider}</span>
-              {!enabled && <Badge variant="outline" className="text-[10px]">已禁用</Badge>}
               <Badge variant="secondary" className="text-[10px] font-mono flex-shrink-0">{prices.length} 个定价</Badge>
             </div>
             <div className="text-xs text-[#6e6e73] leading-normal min-w-0 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="flex-shrink-0">OpenAI:</span>
-                <Input
-                  value={urlOpenAI}
-                  onChange={e => setUrlOpenAI(e.target.value)}
-                  onBlur={() => { if (urlOpenAI !== baseUrl) onUpdate({ base_url: urlOpenAI }); }}
-                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  placeholder="https://api.openai.com"
-                  className="h-6 text-xs font-mono flex-1"
-                />
-                <span className="flex-shrink-0">Anthropic:</span>
-                <Input
-                  value={urlAnthropic}
-                  onChange={e => setUrlAnthropic(e.target.value)}
-                  onBlur={() => { if (urlAnthropic !== baseUrlAnthropic) onUpdate({ base_url_anthropic: urlAnthropic }); }}
-                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  placeholder="https://api.anthropic.com"
-                  className="h-6 text-xs font-mono flex-1"
-                />
-              </div>
+              {fmt === 'anthropic' ? (
+                <div className="flex items-center gap-2">
+                  <span className="flex-shrink-0 text-[#aeaeb2]">Base URL:</span>
+                  <span className="text-xs font-mono text-[#6e6e73]">{baseUrl || 'https://api.anthropic.com'}</span>
+                </div>
+              ) : fmt === 'openai' ? (
+                <div className="flex items-center gap-2">
+                  <span className="flex-shrink-0 text-[#aeaeb2]">Base URL:</span>
+                  <span className="text-xs font-mono text-[#6e6e73]">{baseUrl || 'https://api.openai.com'}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="flex-shrink-0">OpenAI:</span>
+                  <Input
+                    value={urlOpenAI}
+                    onChange={e => setUrlOpenAI(e.target.value)}
+                    onBlur={() => { if (urlOpenAI !== baseUrl) onUpdate({ base_url: urlOpenAI }); }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    placeholder="https://api.openai.com"
+                    className="h-6 text-xs font-mono flex-1"
+                  />
+                  <span className="flex-shrink-0">Anthropic:</span>
+                  <Input
+                    value={urlAnthropic}
+                    onChange={e => setUrlAnthropic(e.target.value)}
+                    onBlur={() => { if (urlAnthropic !== baseUrlAnthropic) onUpdate({ base_url_anthropic: urlAnthropic }); }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    placeholder="https://api.anthropic.com"
+                    className="h-6 text-xs font-mono flex-1"
+                  />
+                </div>
+              )}
               <div className="flex items-center gap-1">
                 <span className="flex-shrink-0">APIKey:</span>
                 <Input
@@ -204,8 +223,10 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Switch checked={enabled} onCheckedChange={onToggle} />
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:text-destructive" onClick={onDelete}><Trash2 className="h-3 w-3" /></Button>
+          {!isBuiltin && <Switch checked={enabled} onCheckedChange={onToggle} />}
+          {!isBuiltin && (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:text-destructive" onClick={onDelete}><Trash2 className="h-3 w-3" /></Button>
+          )}
         </div>
       </div>
 
@@ -293,12 +314,12 @@ function CurrencySelector() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
   });
 
-  const formatTime = (iso?: string) => {
-    if (!iso) return '未知';
+  const fmtTime = (ts?: number | string | null) => {
+    if (!ts) return '未知';
     try {
-      const d = new Date(iso);
+      const d = new Date(Number(ts));
       return d.toLocaleString('zh-CN', { hour12: false });
-    } catch { return iso; }
+    } catch { return String(ts); }
   };
 
   return (
@@ -316,7 +337,7 @@ function CurrencySelector() {
         </select>
       </div>
       <div className="flex items-center gap-2 text-xs text-gray-400">
-        <span>汇率更新于 {formatTime(ratesUpdatedAt)}</span>
+        <span>汇率更新于 {fmtTime(ratesUpdatedAt)}</span>
         <button
           onClick={() => ratesMut.mutate()}
           disabled={ratesMut.isPending}

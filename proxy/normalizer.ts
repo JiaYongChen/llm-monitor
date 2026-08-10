@@ -3,7 +3,7 @@ import type { NormalizedTokens } from '../shared/types.js';
 
 export function normalizeTokens(provider: string, responseBody: Record<string, any>): NormalizedTokens {
   const usage = responseBody.usage || {};
-  switch (provider) {
+  switch (provider.toLowerCase()) {
     case 'anthropic': return normalizeAnthropic(usage);
     case 'openai': return normalizeOpenAI(usage);
     case 'deepseek': return normalizeDeepSeek(usage);

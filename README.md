@@ -20,21 +20,17 @@ npx tsx proxy/main.ts
 
 ## 对接 CLI 工具
 
+代理通过 URL 首段识别供应商并转发至上游，设置对应环境变量即可接入：
+
 ```bash
-# Claude Code
+# Claude Code CLI
 export ANTHROPIC_BASE_URL="http://localhost:9400/anthropic"
 
-# Codex / OpenAI CLI
+# Codex CLI
 export OPENAI_BASE_URL="http://localhost:9400/openai/v1"
-
-# DeepSeek CLI
-export DEEPSEEK_BASE_URL="http://localhost:9400/deepseek/v1"
-
-# Qwen CLI
-export DASHSCOPE_BASE_URL="http://localhost:9400/dashscope/compatible-mode/v1"
 ```
 
-设置后正常使用 CLI 工具，API 调用自动经过代理并被记录。
+> **工具自动识别**：代理根据请求头中的 `User-Agent` 自动检测连接工具（ClaudeCode / Codex），并在 Web 面板侧边栏按工具分组展示会话。未匹配到已知 UA 时，回退为供应商默认映射（`anthropic` → ClaudeCode，`openai` → codex）。
 
 ## 功能
 
@@ -44,7 +40,8 @@ export DASHSCOPE_BASE_URL="http://localhost:9400/dashscope/compatible-mode/v1"
 - 缓存读写拆分：未缓存输入、缓存写入、缓存命中分别统计
 
 ### 会话管理
-- 三元组指纹识别：provider + 源端口 + API Key 前缀
+- 二元组指纹识别：provider + 源端口 → SHA256 指纹（同一终端进程自动归属同一会话）
+- **URL 前缀区分工具**：`/anthropic` → ClaudeCode，`/openai` → codex，侧边栏按工具分组展示
 - 自动会话聚合，支持手动合并 / 标签编辑
 - 会话级上游供应商覆盖
 
