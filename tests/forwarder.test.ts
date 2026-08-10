@@ -132,4 +132,93 @@ describe('buildCleanResponseBody', () => {
     expect(obj.content).toBe('Hi');
     expect(obj.usage).toEqual({ input_tokens: 10, output_tokens: 1 });
   });
+
+  it('★ 纯 tool_use 响应（无文本）也能提取 usage', () => {
+    const lines = [
+      'event: message_start',
+      `data: ${JSON.stringify({ type: 'message_start', message: { model: 'claude-sonnet-5', id: 'msg_1', type: 'message', role: 'assistant', content: [], usage: { input_tokens: 200 } } })}`,
+      '',
+      'event: content_block_start',
+      `data: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tool_1', name: 'read_file', input: {} } })}`,
+      '',
+      'event: content_block_delta',
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"file_path":"/tmp/test"}' } })}`,
+      '',
+      'event: content_block_stop',
+      `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
+      '',
+      'event: message_delta',
+      `data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 30 } })}`,
+      '',
+      'event: message_stop',
+      `data: ${JSON.stringify({ type: 'message_stop' })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.usage).toEqual({ input_tokens: 200, output_tokens: 30 });
+    // 应包含工具调用标识
+    expect(obj.content).toContain('调用工具');
+    expect(obj.content).toContain('read_file');
+  });
+
+  it('★ 纯思考响应也能提取 usage', () => {
+    const lines = [
+      'event: message_start',
+      `data: ${JSON.stringify({ type: 'message_start', message: { model: 'claude-sonnet-5', id: 'msg_1', type: 'message', role: 'assistant', content: [], usage: { input_tokens: 500 } } })}`,
+      '',
+      'event: content_block_start',
+      `data: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '我需要分析这个文件的内容' } })}`,
+      '',
+      'event: content_block_delta',
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '先读取文件，然后理解其结构' } })}`,
+      '',
+      'event: content_block_stop',
+      `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
+      '',
+      'event: message_delta',
+      `data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 50 } })}`,
+      '',
+      'event: message_stop',
+      `data: ${JSON.stringify({ type: 'message_stop' })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.usage).toEqual({ input_tokens: 500, output_tokens: 50 });
+  });
+
+  it('★ OpenAI 纯 tool_calls 响应（无文本）也能提取 usage', () => {
+    const lines = [
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'gpt-4o', choices: [{ index: 0, delta: { role: 'assistant', content: null, tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '' } }] }, finish_reason: null }] })}`,
+      '',
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'gpt-4o', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"city":"Beijing"}' } }] } }] })}`,
+      '',
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'gpt-4o', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } })}`,
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.usage).toEqual({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 });
+    expect(obj.content).toContain('调用工具');
+    expect(obj.content).toContain('get_weather');
+  });
+
+  it('空流无 usage 仍返回 null', () => {
+    const lines = [
+      'event: message_start',
+      `data: ${JSON.stringify({ type: 'message_start', message: { model: 'claude-sonnet-5', id: 'msg_1', type: 'message', role: 'assistant', content: [], usage: null } })}`,
+      '',
+      'event: message_stop',
+      `data: ${JSON.stringify({ type: 'message_stop' })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).toBeNull();
+  });
 });

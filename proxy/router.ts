@@ -96,14 +96,14 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
     method: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     url: '/*',
     handler: async (request, reply) => {
-      const hasBody = request.body != null;
-      if (hasBody) {
-        const model = (request.body as any)?.model || '?';
-        console.log(`[proxy] ▶ model=${model} stream=${(request.body as any)?.stream ?? false}`);
-      }
       const rawPath = (request.params as any)['*'] || '';
       if (!rawPath || rawPath === '/') {
         return reply.status(404).send('Not found');
+      }
+      const hasBody = request.body != null;
+      if (hasBody) {
+        const model = (request.body as any)?.model || '?';
+        console.log(`[proxy] ▶ ${request.url} model=${model} stream=${(request.body as any)?.stream ?? false}`);
       }
 
       const segments = rawPath.split('/').filter(Boolean);
@@ -186,9 +186,6 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       // provider 记录实际转发目标，非原始路径识别值
       const effectiveProvider = upstreamProvider;
 
-      console.log(`[proxy] ▶ ${request.method} ${downstreamUrl}`);
-      console.log(`         provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
-
       const config = getConfiguredUpstream(upstreamProvider, `/${remaining}`);
       const upstream = config.base_url;
       // 验证上游 URL 有效
@@ -196,6 +193,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(500).send({ error: `Provider "${upstreamProvider}" 未配置有效的 Base URL` });
       }
       const targetUrl = remaining ? `${upstream}/${remaining}` : upstream;
+
+      console.log(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
 
       if (config.api_key && config.api_key.startsWith('sk-')) {
         reqHeaders['authorization'] = `Bearer ${config.api_key}`;

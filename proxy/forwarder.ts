@@ -167,9 +167,18 @@ export function buildCleanResponseBody(raw: string): string | null {
           // content_block 初始文本：流式传输时为空，短响应时可能直接携带完整文本
           if (obj.content_block?.type === 'text' && obj.content_block.text) {
             anthropicText.push(obj.content_block.text);
+          } else if (obj.content_block?.type === 'tool_use') {
+            anthropicText.push(`[调用工具: ${obj.content_block.name}]`);
           }
-        } else if (obj.type === 'content_block_delta' && obj.delta?.text) {
-          anthropicText.push(obj.delta.text);
+        } else if (obj.type === 'content_block_delta') {
+          // 文本增量（text_delta）、工具调用增量（input_json_delta）、思考增量（thinking_delta）
+          if (obj.delta?.text) {
+            anthropicText.push(obj.delta.text);
+          } else if (obj.delta?.partial_json) {
+            anthropicText.push(obj.delta.partial_json);
+          } else if (obj.delta?.thinking) {
+            anthropicText.push(obj.delta.thinking);
+          }
         } else if (obj.type === 'message_delta' && obj.usage) {
           // message_delta 包含 output_tokens
           anthropicOutputUsage = obj.usage;
@@ -179,11 +188,13 @@ export function buildCleanResponseBody(raw: string): string | null {
   }
   // 合并两个事件中的 usage：input 侧来自 message_start，output 侧来自 message_delta
   const anthropicUsage = { ...(anthropicInputUsage || {}), ...(anthropicOutputUsage || {}) };
-  if (anthropicText.length > 0) {
+  const hasAnthropicUsage = Object.keys(anthropicUsage).length > 0;
+  // 有文本内容或 token 数据时均返回结构化 JSON，避免无文本响应（如纯 tool_use）丢失 usage
+  if (anthropicText.length > 0 || hasAnthropicUsage) {
     return JSON.stringify({
       model: anthropicModel,
-      content: anthropicText.join(''),
-      usage: Object.keys(anthropicUsage).length > 0 ? anthropicUsage : undefined,
+      content: anthropicText.join('') || '(非文本响应)',
+      usage: hasAnthropicUsage ? anthropicUsage : undefined,
     });
   }
 
@@ -203,15 +214,23 @@ export function buildCleanResponseBody(raw: string): string | null {
         if (delta) {
           if (delta.role) openaiRole = delta.role;
           if (delta.content) openaiText.push(delta.content);
+          // 工具调用增量（tool_calls）
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              if (tc.function?.arguments) openaiText.push(tc.function.arguments);
+              if (tc.function?.name) openaiText.push(`[调用工具: ${tc.function.name}]`);
+            }
+          }
         }
       } catch {}
     }
   }
-  if (openaiText.length > 0) {
+  // 有文本内容或有 token 数据时均返回结构化 JSON
+  if (openaiText.length > 0 || openaiUsage) {
     return JSON.stringify({
       model: openaiModel,
       role: openaiRole,
-      content: openaiText.join(''),
+      content: openaiText.join('') || '(非文本响应)',
       usage: openaiUsage,
     });
   }

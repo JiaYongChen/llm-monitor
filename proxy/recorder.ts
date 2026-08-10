@@ -2,7 +2,7 @@
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
 import { normalizeTokens } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
-import { insertCall, updateSessionStats, listPricing } from './db.js';
+import { insertCall, updateSessionStats, listPricing, getProviderConfig } from './db.js';
 import { getRates } from './rates.js';
 
 // ── 队列 ──
@@ -43,11 +43,13 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
-  // 1. 归一化
+  // 1. 归一化 — 使用供应商的 api_format 决定解析策略（第三方供应商名可能不被 normalizer 识别）
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
-      const tokens = normalizeTokens(record.provider, respBody);
+      const config = getProviderConfig(record.provider);
+      const format = config?.api_format || record.provider;
+      const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;
       record.cache_read_tokens = tokens.cache_read_tokens ?? null;
