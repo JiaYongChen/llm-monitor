@@ -71,7 +71,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS calls (
-      id              INTEGER PRIMARY KEY,
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id      INTEGER NOT NULL REFERENCES sessions(id),
       provider        TEXT    NOT NULL,
       model           TEXT    NOT NULL,
@@ -99,7 +99,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
-      id            INTEGER PRIMARY KEY,
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
       tool          TEXT    NOT NULL,
       label         TEXT,
       fingerprint   TEXT    NOT NULL UNIQUE,
@@ -117,7 +117,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS pricing (
-      id                INTEGER PRIMARY KEY,
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
       provider          TEXT    NOT NULL,
       model             TEXT    NOT NULL,
       input_price       REAL    NOT NULL,
@@ -132,7 +132,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS provider_config (
-      id         INTEGER PRIMARY KEY,
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
       provider   TEXT    NOT NULL UNIQUE,
       base_url   TEXT    NOT NULL DEFAULT '',
       base_url_anthropic TEXT NOT NULL DEFAULT '',
@@ -331,7 +331,7 @@ export function getCall(callId: number): Record<string, any> | null {
  * 2. 查找同 tool 的 pending 会话 → 命中则「升级」为完整指纹
  * 3. 都不命中 → 新建会话
  * 会话不会自动过期。 */
-export function upsertSession(fullFp: string, tool: string, endpoint: string): number {
+export function upsertSession(fullFp: string, tool: string, endpoint: string, label?: string | null): number {
   const now = Date.now();
 
   // 1. 完整指纹精确匹配
@@ -359,17 +359,17 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string): n
   );
   if (pending) {
     execute(
-      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ?, upstream_provider = ?, upstream_model = ? WHERE id = ?",
-      [fullFp, now, endpoint, tcProvider, tcModel, pending.id],
+      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ?, upstream_provider = ?, upstream_model = ?, label = COALESCE(?, label) WHERE id = ?",
+      [fullFp, now, endpoint, tcProvider, tcModel, label, pending.id],
     );
     return Number(pending.id);
   }
 
   // 3. 新建会话
   return executeInsert(
-    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at, upstream_provider, upstream_model)
-     VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?) RETURNING id`,
-    [tool, fullFp, now, now, endpoint, now, tcProvider, tcModel],
+    `INSERT INTO sessions (tool, label, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at, upstream_provider, upstream_model)
+     VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?) RETURNING id`,
+    [tool, label || null, fullFp, now, now, endpoint, now, tcProvider, tcModel],
   );
 }
 
@@ -583,7 +583,7 @@ export function deleteAllSessions(): number {
     d.run("DROP TABLE IF EXISTS calls_new");
     d.run("DROP TABLE IF EXISTS sessions_new");
     d.run(`CREATE TABLE calls_new (
-      id              INTEGER PRIMARY KEY,
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id      INTEGER,
       provider        TEXT    NOT NULL,
       model           TEXT,
@@ -611,7 +611,7 @@ export function deleteAllSessions(): number {
       created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )`);
     d.run(`CREATE TABLE sessions_new (
-      id            INTEGER PRIMARY KEY,
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
       tool          TEXT    NOT NULL,
       label         TEXT,
       fingerprint   TEXT    NOT NULL UNIQUE,

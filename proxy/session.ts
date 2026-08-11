@@ -35,6 +35,29 @@ function normalizeSystem(system: any): string {
   return JSON.stringify(system ?? '');
 }
 
+/** 从请求 body 中提取会话标签（模型 + 首条用户消息前 40 字） */
+function extractSessionLabel(body: any): string {
+  try {
+    const model = body?.model || '';
+    const msgs = body?.messages;
+    let firstUser = '';
+    if (Array.isArray(msgs)) {
+      const userMsg = msgs.find((m: any) => m?.role === 'user');
+      if (userMsg?.content != null) {
+        firstUser = typeof userMsg.content === 'string'
+          ? userMsg.content
+          : Array.isArray(userMsg.content)
+            ? userMsg.content.map((b: any) => b?.text ?? '').join(' ').trim()
+            : '';
+      }
+    }
+    firstUser = firstUser.replace(/\s+/g, ' ').trim().slice(0, 40);
+    return firstUser ? `${model} — ${firstUser}` : model || null;
+  } catch {
+    return null;
+  }
+}
+
 /** 从请求 body 中提取会话特征种子。
  *  同一聊天的多轮请求共享相同的 system prompt + 第一条用户消息 → 相同种子；
  *  不同聊天的第一条用户消息不同 → 不同种子。 */
@@ -102,5 +125,7 @@ export function getOrCreateSession(
   }
   const fingerprint = computeFingerprint(provider, seed);
   const tool = toolOverride || toolFromProvider(provider);
-  return upsertSession(fingerprint, tool, endpoint);
+  // 从请求体提取会话标签（模型 + 首条用户消息片段）
+  const label = extractSessionLabel(body);
+  return upsertSession(fingerprint, tool, endpoint, label);
 }
