@@ -65,46 +65,77 @@ export default function Dashboard() {
       </div>
 
       {/* 工具级上游配置（仅在筛选到具体工具时显示） */}
-      {tool && providers && (
-        <div className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider shrink-0">默认上游</span>
+      {tool && providers && (() => {
+        // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, codex→OpenAI）
+        const toolBuiltin = tool === 'ClaudeCode' ? 'Anthropic' : tool === 'codex' ? 'OpenAI' : null;
+        const enabledProviders = (providers as any[]).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
+        const currentUpstream = toolConfig?.upstream_provider || '';
+        const currentModel = toolConfig?.upstream_model || '';
+        const modelOrder = ((pricing as any[]) || [])
+          .filter((p: any) => !currentUpstream || p.provider === currentUpstream)
+          .sort((a: any, b: any) => a.id - b.id);
+        const seen = new Set<string>();
+        const models = modelOrder.filter((p: any) => {
+          if (seen.has(p.model)) return false;
+          seen.add(p.model);
+          return true;
+        }).map((p: any) => p.model as string);
+        return (
+        <div className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">代理商</span>
             <select
-              className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[180px]"
-              value={toolConfig?.upstream_provider || ''}
+              className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[200px]"
+              value={currentUpstream}
               onChange={async (e) => {
                 const val = e.target.value || null;
-                await api.updateToolConfig(tool, val, val ? toolConfig?.upstream_model || null : null);
+                if (!val) {
+                  await api.updateToolConfig(tool, null, null);
+                } else {
+                  const filteredModels = [...new Set<string>(((pricing as any[]) || [])
+                    .filter((p: any) => p.provider === val)
+                    .map((p: any) => p.model as string)
+                  )].sort();
+                  await api.updateToolConfig(tool, val, filteredModels[0] || null);
+                }
                 qc.invalidateQueries({ queryKey: ['tool-configs'] });
               }}
             >
-              <option value="">跟随请求路径</option>
-              {(providers as any[])?.filter((p: any) => p.enabled).map((p: any) => (
-                <option key={p.provider} value={p.provider}>{p.provider}</option>
+              <option value="">跟随请求路径（{tool}）</option>
+              {enabledProviders.map((p: any) => (
+                <option key={p.provider} value={p.provider}>{p.provider}{p.base_url ? ` — ${p.base_url}` : ''}</option>
               ))}
             </select>
-            {toolConfig?.upstream_provider && (
-              <>
-                <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider shrink-0">默认模型</span>
-                <select
-                  className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[200px]"
-                  value={toolConfig?.upstream_model || ''}
-                  onChange={async (e) => {
-                    const val = e.target.value || null;
-                    await api.updateToolConfig(tool, toolConfig.upstream_provider, val);
-                    qc.invalidateQueries({ queryKey: ['tool-configs'] });
-                  }}
-                >
-                  <option value="">跟随客户端请求</option>
-                  {[...new Set<string>(((pricing as any[]) || []).filter((p: any) => p.provider === toolConfig.upstream_provider).map((p: any) => p.model as string))].map((m: string) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </>
+            {currentUpstream && (
+              <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">模型</span>
+            {currentUpstream ? (
+              <select
+                className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[200px]"
+                value={currentModel}
+                onChange={async (e) => {
+                  const val = e.target.value || null;
+                  await api.updateToolConfig(tool, currentUpstream, val);
+                  qc.invalidateQueries({ queryKey: ['tool-configs'] });
+                }}
+              >
+                {models.map((m: string) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-sm text-[#aeaeb2] px-3 py-1.5">跟随客户端请求</span>
+            )}
+            {currentModel && (
+              <span className="text-xs text-[#0071e3]">强制使用 {currentModel}</span>
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* KPI 卡片 */}
       <div className={`grid gap-4 ${provider ? 'grid-cols-5' : 'grid-cols-4'}`}>

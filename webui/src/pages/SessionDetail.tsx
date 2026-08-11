@@ -26,9 +26,9 @@ export default function SessionDetail() {
   const inputTokens = callsList.reduce((sum: number, c: any) => sum + (c.prompt_tokens || 0), 0);
   const outputTokens = callsList.reduce((sum: number, c: any) => sum + (c.output_tokens || 0), 0);
 
-  // 只列出非内置供应商（Anthropic/OpenAI 由路径自动识别，无需覆写）
-  const builtins = new Set(['Anthropic', 'OpenAI']);
-  const enabledProviders = (providers || []).filter((p: any) => p.enabled && !builtins.has(p.provider));
+  // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, codex→OpenAI）
+  const toolBuiltin = s.tool === 'ClaudeCode' ? 'Anthropic' : s.tool === 'codex' ? 'OpenAI' : null;
+  const enabledProviders = (providers || []).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
   const enabledProviderNames = new Set(enabledProviders.map((p: any) => p.provider));
   // 如果当前上游已被停用，自动切回跟随请求
   const currentUpstream = s.upstream_provider && enabledProviderNames.has(s.upstream_provider) ? s.upstream_provider : '';

@@ -29,7 +29,7 @@ export const UPSTREAMS: Record<string, string> = {
 };
 
 /** 从 provider_config 表加载上游配置 */
-export function getConfiguredUpstream(provider: string, endpoint?: string): { base_url: string; api_key: string; enabled: boolean } {
+export function getConfiguredUpstream(provider: string, tool?: string, endpoint?: string): { base_url: string; api_key: string; enabled: boolean } {
   const config = getProviderConfig(provider);
   if (!config) {
     return { base_url: UPSTREAMS[provider] || '', api_key: '', enabled: true };
@@ -37,9 +37,9 @@ export function getConfiguredUpstream(provider: string, endpoint?: string): { ba
   if (!config.enabled) {
     return { base_url: '', api_key: '', enabled: false };
   }
-  // 根据端点格式选择 URL：含 /messages → Anthropic，否则 OpenAI
-  const isAnthropic = endpoint?.includes('/messages');
-  const url = isAnthropic && config.base_url_anthropic ? config.base_url_anthropic : config.base_url;
+  // 根据工具类型选择 URL：ClaudeCode → Anthropic 格式 → base_url_anthropic，codex → OpenAI 格式 → base_url
+  const isAnthropicTool = tool === 'ClaudeCode';
+  const url = isAnthropicTool && config.base_url_anthropic ? config.base_url_anthropic : config.base_url;
   return { base_url: url, api_key: config.api_key, enabled: true };
 }
 
@@ -172,7 +172,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       // provider 记录实际转发目标，非原始路径识别值
       const effectiveProvider = upstreamProvider;
 
-      const config = getConfiguredUpstream(upstreamProvider, `/${remaining}`);
+      const config = getConfiguredUpstream(upstreamProvider, tool, `/${remaining}`);
       const upstream = config.base_url;
       // 验证上游 URL 有效
       if (!upstream || !upstream.startsWith('http')) {
