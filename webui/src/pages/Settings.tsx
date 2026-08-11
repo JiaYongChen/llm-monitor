@@ -23,7 +23,7 @@ export default function Settings() {
     mutationFn: (d: any) => api.addProvider(d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['providers'] });
-      setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' });
+      setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' });
       setApiFormatDirty(false);
       setShowAdd(false);
     },
@@ -42,31 +42,13 @@ export default function Settings() {
   const providerPrices = (prov: string) => (pricing as any[])?.filter((p: any) => p.provider === prov) || [];
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newProv, setNewProv] = useState({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' });
-  const [apiFormatDirty, setApiFormatDirty] = useState(false); // 用户手动选择后不再自动覆盖
-
-  /** 根据供应商名称和 URL 自动推断 API 格式。
-   *  DeepSeek/Qwen 的 URL 虽是 OpenAI 兼容格式，但 usage 结构不同，名称必须优先于 URL。 */
-  const detectApiFormat = (name: string, urlOA: string, urlAnth: string): string => {
-    const lower = name.toLowerCase();
-    // DeepSeek/Qwen 名称优先——它们的 URL 长得很像 OpenAI 但 usage 字段不同
-    if (lower.includes('deepseek')) return 'deepseek';
-    if (lower.includes('qwen') || lower.includes('tongyi')) return 'qwen';
-    // URL 信号用于无法从名称推断的通用供应商
-    if (urlOA) return 'openai';
-    if (urlAnth) return 'anthropic';
-    if (lower.includes('anthropic') || lower.includes('claude')) return 'anthropic';
-    if (lower.includes('openai') || lower.includes('gpt')) return 'openai';
-    return '';
-  };
+  const [newProv, setNewProv] = useState({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' });
 
   const handleAddProvider = () => {
     if (!newProv.name) return;
-    const fmt = apiFormatDirty ? newProv.apiFormat : detectApiFormat(newProv.name, newProv.urlOpenAI, newProv.urlAnthropic);
     addMut.mutate({
       provider: newProv.name, base_url: newProv.urlOpenAI, base_url_anthropic: newProv.urlAnthropic,
       api_key: newProv.key,
-      api_format: fmt,
     });
   };
 
@@ -98,8 +80,8 @@ export default function Settings() {
               enabled={p.enabled === 1}
               color={providerColor(p.provider)}
               prices={providerPrices(p.provider)}
-              onToggle={(v) => updateMut.mutate({ p: p.provider, d: { enabled: v, api_format: p.api_format || '' } })}
-              onUpdate={(d) => updateMut.mutate({ p: p.provider, d: { ...d, api_format: p.api_format || '' } })}
+              onToggle={(v) => updateMut.mutate({ p: p.provider, d: { enabled: v } })}
+              onUpdate={(d) => updateMut.mutate({ p: p.provider, d })}
               onPricesChanged={() => qc.invalidateQueries({ queryKey: ['pricing'] })}
               onDelete={() => { if (window.confirm(`删除 "${p.provider}"？`)) delMut.mutate(p.provider); }}
             />
@@ -111,7 +93,7 @@ export default function Settings() {
       </Card>
 
       {/* 添加弹窗 */}
-      <Dialog open={showAdd} onClose={() => { setShowAdd(false); setApiFormatDirty(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' }); }}>
+      <Dialog open={showAdd} onClose={() => { setShowAdd(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' }); }}>
         <DialogHeader>
           <DialogTitle>添加供应商</DialogTitle>
           <DialogDescription>配置 Base URL 和 API Key。模型定价在供应商卡片中单独添加。</DialogDescription>
@@ -125,28 +107,9 @@ export default function Settings() {
             <div className="flex-1"><label className="text-xs text-gray-700 font-medium">Base URL (OpenAI)</label><Input value={newProv.urlOpenAI} onChange={e => setNewProv({ ...newProv, urlOpenAI: e.target.value })} placeholder="https://api.openai.com" /></div>
             <div className="flex-1"><label className="text-xs text-gray-700 font-medium">Base URL (Anthropic)</label><Input value={newProv.urlAnthropic} onChange={e => setNewProv({ ...newProv, urlAnthropic: e.target.value })} placeholder="https://api.anthropic.com" /></div>
           </div>
-          <div className="flex items-end gap-3">
-            <div className="w-48">
-              <label className="text-xs text-gray-700 font-medium">API 格式</label>
-              <select
-                className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white w-full"
-                value={newProv.apiFormat}
-                onChange={e => { setNewProv({ ...newProv, apiFormat: e.target.value }); setApiFormatDirty(e.target.value !== ''); }}
-              >
-                <option value="">自动检测</option>
-                <option value="anthropic">Anthropic Messages</option>
-                <option value="openai">OpenAI Chat Completions</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="qwen">Qwen</option>
-              </select>
-            </div>
-            <span className="text-[11px] text-[#aeaeb2] pb-1.5">
-              {newProv.apiFormat ? '手动指定' : `自动: ${detectApiFormat(newProv.name, newProv.urlOpenAI, newProv.urlAnthropic) || '未识别'}`}
-            </span>
-          </div>
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddProvider} size="sm"><Plus className="h-4 w-4 mr-1" />确认添加</Button>
-            <Button variant="outline" size="sm" onClick={() => { setShowAdd(false); setApiFormatDirty(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' }); }}>取消</Button>
+            <Button variant="outline" size="sm" onClick={() => { setShowAdd(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' }); }}>取消</Button>
           </div>
         </div>
       </Dialog>

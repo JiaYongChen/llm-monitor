@@ -1,6 +1,6 @@
 /** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
-import { normalizeTokens, KNOWN_FORMATS } from './normalizer.js';
+import { normalizeTokens, detectFormatFromUrl } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing, getProviderConfig } from './db.js';
 import { getRates } from './rates.js';
@@ -43,14 +43,11 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
-  // 1. 归一化 — 供应商名优先，api_format 仅作为已知格式的旁路
+  // 1. 归一化 — 由上游实际调用的 URL 决定格式
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
-      const config = getProviderConfig(record.provider);
-      const fmt = config?.api_format?.toLowerCase();
-      // api_format 仅在确认为已知格式时旁路供应商名（大小写不敏感）
-      const format = (fmt && KNOWN_FORMATS.has(fmt)) ? fmt : record.provider;
+      const format = detectFormatFromUrl(record.target_url);
       const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;

@@ -110,11 +110,11 @@ export async function listProviders() {
   return fetchJson('/providers');
 }
 
-export async function updateProvider(provider: string, data: { enabled?: boolean; api_format?: string; api_key?: string; base_url?: string; base_url_anthropic?: string }) {
+export async function updateProvider(provider: string, data: { enabled?: boolean; api_key?: string; base_url?: string; base_url_anthropic?: string }) {
   return fetchJson(`/providers/${provider}`, { method: 'PUT', body: JSON.stringify(data) });
 }
 
-export async function addProvider(data: { provider: string; base_url: string; base_url_anthropic: string; api_key: string; api_format?: string }) {
+export async function addProvider(data: { provider: string; base_url: string; base_url_anthropic: string; api_key: string }) {
   return fetchJson('/providers', { method: 'POST', body: JSON.stringify(data) });
 }
 

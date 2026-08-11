@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardRequest, forwardStream } from './forwarder.js';
 import { needsConversion, convertRequest, convertResponse, createResponseTransform } from './converter.js';
+import { detectFormatFromUrl } from './normalizer.js';
 import { getOrCreateSession, computeFingerprint, extractConversationSeed } from './session.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -111,8 +112,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         hasProviderPrefix = true;
         provider = providerConfig.provider; // 规范化为配置名 e.g. 'anthropic'→'Anthropic'
         remaining = segments.slice(1).join('/') || '';
-        const fmt = providerConfig.api_format?.toLowerCase() || provider.toLowerCase();
-        tool = fmt === 'anthropic' ? 'ClaudeCode' : fmt === 'openai' ? 'codex' : provider;
+        // 工具映射由下游 URL 端点决定：/anthropic/* → ClaudeCode，/openai/* → codex
+        tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'codex' : provider;
       } else {
         // 无 provider 前缀的请求一律拒绝，强制通过 URL 前缀显式指定供应商
         return reply.callNotFound();
@@ -173,10 +174,13 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       // provider 记录实际转发目标，非原始路径识别值
       const effectiveProvider = upstreamProvider;
 
-      // 格式转换检测：工具格式 vs 上游供应商格式
-      const sourceFormat = tool === 'ClaudeCode' ? 'anthropic' : tool === 'codex' ? 'openai' : (providerConfig.api_format?.toLowerCase() || provider.toLowerCase());
-      const upstreamConfig = getProviderConfig(upstreamProvider);
-      const targetFormat = upstreamConfig?.api_format?.toLowerCase() || (upstreamProvider === 'Anthropic' ? 'anthropic' : 'openai');
+      // 先获取上游 URL 用于格式检测
+      let config = getConfiguredUpstream(upstreamProvider, tool, `/${remaining}`);
+      let upstream = config.base_url;
+
+      // 格式转换检测：源格式由工具推断，目标格式由上游 base_url 推断
+      const sourceFormat = tool === 'ClaudeCode' ? 'anthropic' : tool === 'codex' ? 'openai' : 'openai';
+      const targetFormat = detectFormatFromUrl(upstream);
       const convert = needsConversion(sourceFormat, targetFormat);
 
       let actualRemaining = remaining;
@@ -187,10 +191,11 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         model = bodyObj.model || model;
         actualRemaining = converted.path.replace(/^\//, '');
         console.log(`[proxy] 🔄 格式转换: ${sourceFormat} → ${targetFormat} | 路径: ${remaining} → ${actualRemaining}`);
+        // 转换后路径已变，重新获取上游 URL
+        config = getConfiguredUpstream(upstreamProvider, tool, `/${actualRemaining}`);
+        upstream = config.base_url;
       }
 
-      const config = getConfiguredUpstream(upstreamProvider, tool, `/${actualRemaining}`);
-      const upstream = config.base_url;
       // 验证上游 URL 有效
       if (!upstream || !upstream.startsWith('http')) {
         return reply.status(500).send({ error: `Provider "${upstreamProvider}" 未配置有效的 Base URL` });
@@ -378,9 +383,9 @@ function _registerApiRoutes(app: FastifyInstance): void {
     return result;
   });
   app.post('/api/providers', async (req, reply) => {
-    const { provider, base_url, base_url_anthropic, api_key, api_format } = req.body as any;
+    const { provider, base_url, base_url_anthropic, api_key } = req.body as any;
     if (!provider) return reply.status(400).send({ error: 'provider name required' });
-    const id = addProviderConfig(provider, base_url || '', base_url_anthropic || '', api_key || '', api_format || '');
+    const id = addProviderConfig(provider, base_url || '', base_url_anthropic || '', api_key || '');
     return { id };
   });
   app.delete('/api/providers/:provider', async (req, reply) => {

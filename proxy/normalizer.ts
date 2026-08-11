@@ -1,8 +1,21 @@
 /** Token 归一化模块 — 四家 provider usage → 统一字段 */
 import type { NormalizedTokens } from '../shared/types.js';
 
-/** 所有已注册的 API 格式（与 switch case 同步维护，供 recorder/router 复用） */
+/** 所有已注册的 API 格式（供 recorder/router 复用） */
 export const KNOWN_FORMATS = new Set(['anthropic', 'openai', 'deepseek', 'qwen']);
+
+/**
+ * 从上游 URL 检测 API 格式。
+ * 规则：路径包含 /messages → anthropic，主机名 deepseek → deepseek，
+ * 主机名 qwen/tongyi/dashscope → qwen，其余默认 openai。
+ */
+export function detectFormatFromUrl(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes('/v1/messages') || lower.includes('/anthropic')) return 'anthropic';
+  if (lower.includes('deepseek')) return 'deepseek';
+  if (lower.includes('qwen') || lower.includes('tongyi') || lower.includes('dashscope')) return 'qwen';
+  return 'openai';
+}
 
 export function normalizeTokens(provider: string, responseBody: Record<string, any>): NormalizedTokens {
   const usage = responseBody.usage || {};

@@ -10,8 +10,8 @@ beforeAll(async () => {
   await initDb(tmp.dbPath);
   upsertPricing('anthropic', 'claude-sonnet-5', 3.0, 0.3, 15.0);
   upsertPricing('DeepSeek', 'deepseek-chat', 1.0, 0, 2.0, 'CNY');
-  // 模拟 UI 添加"DeepSeek"但 api_format 为空（未识别）
-  addProviderConfig('DeepSeek', 'https://api.deepseek.com', '', '', '');
+  // 添加 DeepSeek 供应商（格式由上游 URL 自动检测）
+  addProviderConfig('DeepSeek', 'https://api.deepseek.com', '', '');
   startRecorder();
 });
 afterAll(() => { stopRecorder(); closeDb(); tmp.cleanup(); });
@@ -44,7 +44,7 @@ describe('recorder', () => {
     expect(calls[0].cache_read_tokens).toBe(200);
   });
 
-  it('★ api_format 为空时回退到供应商名归一化（防 "custom" 回归）', async () => {
+  it('★ 通过上游 URL 检测 DeepSeek 格式并正确归一化', async () => {
     const sid = upsertSession('fp_deepseek', 'codex', '/v1/chat/completions');
     const record: CallRecord = {
       provider: 'DeepSeek', model: 'deepseek-chat',
@@ -66,7 +66,7 @@ describe('recorder', () => {
 
     const calls = listCalls(sid);
     expect(calls.length).toBe(1);
-    // api_format 为空 → 回落用 "DeepSeek" 名 → normalizer 命中 deepseek 分支
+    // target_url 含 'deepseek' → detectFormatFromUrl 返回 'deepseek' → normalizer 命中 deepseek 分支
     expect(calls[0].prompt_tokens).toBe(200);
     expect(calls[0].output_tokens).toBe(100);
     expect(calls[0].cache_read_tokens).toBe(50);

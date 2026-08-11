@@ -142,12 +142,10 @@ export async function initDb(dbPath?: string): Promise<void> {
     )
   `);
 
-  // 初始化四个 provider 的默认配置
-  const defaults: [string, string][] = [
-    ['Anthropic', 'anthropic'], ['OpenAI', 'openai'],
-  ];
-  for (const [p, fmt] of defaults) {
-    db.run('INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, api_format, enabled) VALUES (?, ?, ?, ?, 1)', [p, '', '', fmt]);
+  // 初始化内置 provider 的默认配置
+  const defaults: string[] = ['Anthropic', 'OpenAI'];
+  for (const p of defaults) {
+    db.run('INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, enabled) VALUES (?, ?, ?, 1)', [p, '', '']);
   }
 
   // 索引
@@ -581,13 +579,11 @@ export function deleteAllSessions(): number {
 
 /** 初始化内置供应商（仅当不存在时） */
 export function initDefaultProviders(): void {
-  const defaults: [string, string][] = [
-    ['Anthropic', 'anthropic'], ['OpenAI', 'openai'],
-  ];
-  for (const [p, fmt] of defaults) {
+  const defaults: string[] = ['Anthropic', 'OpenAI'];
+  for (const p of defaults) {
     execute(
-      'INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, api_format, enabled) VALUES (?, ?, ?, ?, 1)',
-      [p, '', '', fmt],
+      'INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, enabled) VALUES (?, ?, ?, 1)',
+      [p, '', ''],
     );
   }
 }
@@ -661,7 +657,7 @@ export function listProviderConfigs(): Record<string, any>[] {
 }
 
 /** 获取单个 provider 的配置（大小写不敏感，base_url 为空时返回官方地址） */
-export function getProviderConfig(provider: string): { provider: string; base_url: string; base_url_anthropic: string; api_key: string; api_format: string; enabled: boolean } | null {
+export function getProviderConfig(provider: string): { provider: string; base_url: string; base_url_anthropic: string; api_key: string; enabled: boolean } | null {
   // 先精确匹配，再大小写不敏感匹配
   let row = queryOne('SELECT * FROM provider_config WHERE provider = ?', [provider]);
   if (!row) {
@@ -675,7 +671,6 @@ export function getProviderConfig(provider: string): { provider: string; base_ur
     base_url: row.base_url || defaultUrl,
     base_url_anthropic: row.base_url_anthropic || '',
     api_key: row.api_key || '',
-    api_format: row.api_format || '',
     enabled: row.enabled === 1,
   };
 }
@@ -686,14 +681,13 @@ function isBuiltinProvider(provider: string): boolean {
 }
 
 /** 更新 provider 配置（内置供应商不允许停用） */
-export function updateProviderConfig(provider: string, data: { enabled?: boolean; api_format?: string; api_key?: string; base_url?: string; base_url_anthropic?: string }): { ok: boolean; error?: string } {
+export function updateProviderConfig(provider: string, data: { enabled?: boolean; api_key?: string; base_url?: string; base_url_anthropic?: string }): { ok: boolean; error?: string } {
   // 内置供应商不允许停用（大小写不敏感）
   if (data.enabled === false && isBuiltinProvider(provider)) {
     return { ok: false, error: `内置供应商 "${provider}" 不可停用` };
   }
   const sets: string[] = [];
   const vals: any[] = [];
-  if (data.api_format !== undefined) { sets.push('api_format = ?'); vals.push(data.api_format); }
   if (data.enabled !== undefined) { sets.push('enabled = ?'); vals.push(data.enabled ? 1 : 0); }
   if (data.api_key !== undefined) { sets.push('api_key = ?'); vals.push(data.api_key); }
   if (data.base_url !== undefined) { sets.push('base_url = ?'); vals.push(data.base_url); }
@@ -712,10 +706,10 @@ export function updateProviderConfig(provider: string, data: { enabled?: boolean
 }
 
 /** 新增自定义 provider */
-export function addProviderConfig(provider: string, baseUrl: string, baseUrlAnthropic: string, apiKey: string, apiFormat: string): number {
+export function addProviderConfig(provider: string, baseUrl: string, baseUrlAnthropic: string, apiKey: string): number {
   return executeInsert(
-    'INSERT INTO provider_config (provider, base_url, base_url_anthropic, api_key, api_format, enabled) VALUES (?, ?, ?, ?, ?, 1) RETURNING id',
-    [provider, baseUrl, baseUrlAnthropic, apiKey, apiFormat],
+    'INSERT INTO provider_config (provider, base_url, base_url_anthropic, api_key, enabled) VALUES (?, ?, ?, ?, 1) RETURNING id',
+    [provider, baseUrl, baseUrlAnthropic, apiKey],
   );
 }
 

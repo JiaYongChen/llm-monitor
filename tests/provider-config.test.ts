@@ -20,7 +20,7 @@ describe('provider_config 持久化', () => {
   });
 
   it('添加自定义供应商后应能列出且字段完整', () => {
-    const id = addProviderConfig('TestCustom', 'https://custom.example.com', 'https://custom-anthropic.example.com', 'sk-test-key', 'custom');
+    const id = addProviderConfig('TestCustom', 'https://custom.example.com', 'https://custom-anthropic.example.com', 'sk-test-key');
     expect(id).toBeGreaterThan(0);
 
     const configs = listProviderConfigs();
@@ -29,7 +29,6 @@ describe('provider_config 持久化', () => {
     expect(tp!.base_url).toBe('https://custom.example.com');
     expect(tp!.base_url_anthropic).toBe('https://custom-anthropic.example.com');
     expect(tp!.api_key).toBe('sk-test-key');
-    expect(tp!.api_format).toBe('custom');
     expect(tp!.enabled).toBe(1);
   });
 
@@ -52,7 +51,6 @@ describe('provider_config 持久化', () => {
     expect(tp).toBeDefined();
     expect(tp!.base_url).toBe('https://custom.example.com');
     expect(tp!.api_key).toBe('sk-test-key');
-    expect(tp!.api_format).toBe('custom');
     expect(tp!.enabled).toBe(1);
   });
 
