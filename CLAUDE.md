@@ -11,10 +11,11 @@ LLM Monitor — 本地 LLM API 调用监控工具。通过代理拦截 CLI 工�
 ```bash
 npm install
 npm run dev              # 开发模式：代理 :9400 + 面板 :9401（Vite HMR 挂载在 :9401）
+npm run dev -- --port 8400 --webui-port 8401  # 自定义端口（CLI 参数）
 npm run build            # 生产构建（前端 vite build → dist/web）
 npm test                 # 运行全部测试（vitest run）
 npx vitest --watch       # 交互式测试
-npx tsx proxy/main.ts    # 生产模式启动（需先 build）
+npx tsx proxy/main.ts    # 生产模式启动（需先 build，可加 --port --webui-port）
 ```
 
 - 始终使用 **Debug 构建**概念验证（本项目构建即 `vite build`，无 Debug/Release 区分）
@@ -51,7 +52,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 上游 API
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
 | `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + updateSessionStats |
 | `proxy/db.ts` | sql.js 数据库全部操作：建表、CRUD、统计聚合、Settings、Provider Config |
-| `proxy/config.ts` | 端口/目录常量（PORT=9400, DATA_DIR=~/.llm-monitor） |
+| `proxy/config.ts` | CLI 参数解析（--port / --webui-port）+ 目录常量（DATA_DIR=~/.llm-monitor） |
 
 ## 数据流
 

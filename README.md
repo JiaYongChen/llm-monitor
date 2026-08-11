@@ -8,26 +8,29 @@
 cd llm-monitor
 npm install
 
-# 开发模式（单端口 :9400，含 HMR）
+# 开发模式（双端口：代理 :9400 + 面板 :9401，含 HMR）
 npm run dev
+
+# 自定义端口
+npm run dev -- --port 8400 --webui-port 8401
 
 # 生产模式
 npm run build
-npx tsx proxy/main.ts
+npx tsx proxy/main.ts --port 9400 --webui-port 9401
 ```
 
-代理 + 面板：`http://localhost:9400`
+代理 → `http://localhost:9400`  ·  面板 → `http://localhost:9401`
 
 ## 对接 CLI 工具
 
 代理通过 URL 首段识别供应商并转发至上游，设置对应环境变量即可接入：
 
-```bash
-# Claude Code CLI
-export ANTHROPIC_BASE_URL="http://localhost:9400/anthropic"
+```powershell
+# Claude Code CLI（PowerShell）
+$env:ANTHROPIC_BASE_URL = "http://localhost:9400/anthropic"
 
-# Codex CLI
-export OPENAI_BASE_URL="http://localhost:9400/openai/v1"
+# Codex CLI（PowerShell）
+$env:OPENAI_BASE_URL = "http://localhost:9400/openai/v1"
 ```
 
 > **工具自动识别**：代理根据请求头中的 `User-Agent` 自动检测连接工具（ClaudeCode / Codex），并在 Web 面板侧边栏按工具分组展示会话。未匹配到已知 UA 时，回退为供应商默认映射（`anthropic` → ClaudeCode，`openai` → codex）。
@@ -40,10 +43,10 @@ export OPENAI_BASE_URL="http://localhost:9400/openai/v1"
 - 缓存读写拆分：未缓存输入、缓存写入、缓存命中分别统计
 
 ### 会话管理
-- 二元组指纹识别：provider + 源端口 → SHA256 指纹（同一终端进程自动归属同一会话）
-- **URL 前缀区分工具**：`/anthropic` → ClaudeCode，`/openai` → codex，侧边栏按工具分组展示
+- **指纹识别**：SHA256(provider + 首条消息种子) → 同一聊天自动归属同一会话
+- **工具标识**：URL 前缀 + API 端点反推工具类型（`/anthropic` → ClaudeCode，`/openai` → codex）
 - 自动会话聚合，支持手动合并 / 标签编辑
-- 会话级上游供应商覆盖
+- 会话级上游供应商 + 模型覆盖
 
 ### 费用计算
 - 可编辑的多币种模型定价表（CNY / USD / EUR / JPY / GBP）
@@ -139,6 +142,6 @@ llm-monitor/
 ## 测试
 
 ```bash
-npm test                  # 运行全部 35 个测试
+npm test                  # 运行全部 69 个测试
 npx vitest --watch        # watch 模式
 ```
