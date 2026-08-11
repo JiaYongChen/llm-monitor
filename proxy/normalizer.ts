@@ -1,6 +1,9 @@
 /** Token 归一化模块 — 四家 provider usage → 统一字段 */
 import type { NormalizedTokens } from '../shared/types.js';
 
+/** 所有已注册的 API 格式（与 switch case 同步维护，供 recorder/router 复用） */
+export const KNOWN_FORMATS = new Set(['anthropic', 'openai', 'deepseek', 'qwen']);
+
 export function normalizeTokens(provider: string, responseBody: Record<string, any>): NormalizedTokens {
   const usage = responseBody.usage || {};
   switch (provider.toLowerCase()) {

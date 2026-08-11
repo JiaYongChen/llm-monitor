@@ -1,12 +1,9 @@
 /** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
-import { normalizeTokens } from './normalizer.js';
+import { normalizeTokens, KNOWN_FORMATS } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing, getProviderConfig } from './db.js';
 import { getRates } from './rates.js';
-
-// ── 已知 API 格式（与 normalizer.ts switch 同步维护，大小写不敏感） ──
-const KNOWN_FORMATS = new Set(['anthropic', 'openai', 'deepseek', 'qwen']);
 
 // ── 队列 ──
 const queue: CallRecord[] = [];
