@@ -7,7 +7,7 @@ export default function KpiCards({ totalCalls, totalCost, totalTokens, cacheHitR
   const cards = [
     { label: '总调用', value: totalCalls.toLocaleString(), icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6', color: '#6366f1' },
     { label: '总费用', value: formatCost(totalCost, currency, rates), icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', color: '#f59e0b' },
-    { label: '总 Token', value: `${(totalTokens / 1000).toFixed(1)}K`, icon: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z', color: '#22c55e' },
+    { label: '总 Token', value: totalTokens.toLocaleString(), icon: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z', color: '#22c55e' },
     { label: '缓存命中率', value: cacheHitRate != null ? `${(cacheHitRate * 100).toFixed(0)}%` : '--', icon: 'M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M4 7c0-2 1-3 3-3h10c2 0 3 1 3 3M4 7h16M9 3v4m6-4v4', color: '#8b5cf6' },
   ];
 

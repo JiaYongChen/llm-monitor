@@ -151,10 +151,10 @@ export default function Dashboard() {
         {[
           { l: '总调用次数', v: totalCalls.toLocaleString(), s: undefined, icon: Activity, c: 'text-violet-500' },
           { l: '累计费用', v: formatCost(totalCost, currency, rates), icon: ({ className }: any) => <span className={className}>{sym}</span>, c: 'text-amber-500' },
-          { l: '输出 Token', v: totalOutput >= 1000 ? `${(totalOutput / 1000).toFixed(0)}K` : String(totalOutput), icon: Zap, c: 'text-sky-500' },
-          { l: '输入 Token', v: totalInput >= 1000 ? `${(totalInput / 1000).toFixed(0)}K` : String(totalInput), icon: Zap, c: 'text-blue-500' },
+          { l: '输出 Token', v: totalOutput.toLocaleString(), icon: Zap, c: 'text-sky-500' },
+          { l: '输入 Token', v: totalInput.toLocaleString(), icon: Zap, c: 'text-blue-500' },
           ...(provider ? [
-            { l: '缓存命中率', v: totalInput > 0 ? `${(totalCacheRead / totalInput * 100).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${(totalCacheRead / 1000).toFixed(0)}K 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
+            { l: '缓存命中率', v: totalInput > 0 ? `${(totalCacheRead / totalInput * 100).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
           ] : []),
         ].map(k => (
           <Card key={k.l}>

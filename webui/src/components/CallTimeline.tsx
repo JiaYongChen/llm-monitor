@@ -11,11 +11,9 @@ function providerLabel(raw: string): string {
   return PROVIDER_DISPLAY[raw] || raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
-/** Token 数量短格式 */
 function fmtTokens(n: number | null | undefined): string {
   if (n == null || n === 0) return '0';
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
+  return n.toLocaleString();
 }
 
 export default function CallTimeline({ calls }: { calls: any[] }) {
