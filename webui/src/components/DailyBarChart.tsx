@@ -2,7 +2,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 const COLORS = {
   output: '#5e5ce6',
-  uncached: '#6366f1',
+  uncached: '#f59e0b',
   cached: '#30b48b',
 };
 
