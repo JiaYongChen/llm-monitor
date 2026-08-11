@@ -1,6 +1,6 @@
 /** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
-import { normalizeTokens, detectFormatFromTool } from './normalizer.js';
+import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing } from './db.js';
 import { getRates } from './rates.js';
@@ -43,11 +43,11 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
-  // 1. 归一化 — 由下游调用工具决定解析方式（支持 6 家：anthropic/openai/deepseek/qwen/kimi/glm）
+  // 1. 归一化 — 由上游 URL 决定解析方式（实际响应格式），而非工具类型
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
-      const format = detectFormatFromTool(record.tool);
+      const format = record.target_url ? detectFormatFromUrl(record.target_url) : detectFormatFromTool(record.tool);
       const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;

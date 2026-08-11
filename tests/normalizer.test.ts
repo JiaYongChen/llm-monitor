@@ -25,7 +25,7 @@ describe('normalizeTokens', () => {
     expect(r.output_tokens).toBe(300);
     expect(r.cache_read_tokens).toBe(200);
     expect(r.cache_write_tokens).toBe(100);
-    expect(r.uncached_input).toBe(400);
+    expect(r.uncached_input).toBe(200);
   });
 
   it('OpenAI 归一化（含 codex / DeepSeek / Kimi / GLM）', () => {

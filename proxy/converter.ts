@@ -69,7 +69,7 @@ function anthropicRequestToOpenAI(body: Record<string, any>): { body: Record<str
     const sysContent = typeof body.system === 'string'
       ? body.system
       : Array.isArray(body.system)
-        ? body.system.map((s: any) => s.text || s.type === 'text' ? s.text : '').filter(Boolean).join('\n')
+        ? body.system.map((s: any) => s.text || '').filter(Boolean).join('\n')
         : String(body.system);
     if (sysContent) {
       out.messages = [{ role: 'system', content: sysContent }, ...(out.messages || [])];
