@@ -73,6 +73,14 @@ export function registerApiRoutes(app: FastifyInstance): void {
 }
 
 async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
+  // 启动通知：CLI 包装脚本在启动工具前调用，预创建 pending 会话
+  app.post('/api/sessions/start', async (req, reply) => {
+    const { tool } = req.body as any;
+    if (!tool) return reply.status(400).send({ error: 'tool 参数必填' });
+    const id = createPendingSession(tool);
+    return { id, tool, status: 'pending' };
+  });
+
   // 动态路由：/* 匹配所有非 /api 路径
   // URL 首段必须为已注册的 provider（如 /anthropic/v1/messages）→ 剥离首段后转发
   // 无 provider 前缀的请求直接 404
@@ -303,14 +311,6 @@ function _registerApiRoutes(app: FastifyInstance): void {
     const { upstream_provider, upstream_model } = req.body as any;
     updateToolConfig((req.params as any).tool, upstream_provider || null, upstream_model || null);
     return { ok: true };
-  });
-
-  // 启动通知：CLI 包装脚本在启动工具前调用，预创建 pending 会话
-  app.post('/api/sessions/start', async (req, reply) => {
-    const { tool } = req.body as any;
-    if (!tool) return reply.status(400).send({ error: 'tool 参数必填' });
-    const id = createPendingSession(tool);
-    return { id, tool, status: 'pending' };
   });
 
   // Calls

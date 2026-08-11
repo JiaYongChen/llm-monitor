@@ -33,11 +33,10 @@ Write-Host "  工具: $Tool" -ForegroundColor Gray
 Write-Host "  项目: $Project" -ForegroundColor Gray
 Write-Host "  代理: http://localhost:$Port" -ForegroundColor Gray
 
-# 预创建 pending 会话（API 在 WebUI 端口，默认 Port+1）
-$WebuiPort = $Port + 1
+# 预创建 pending 会话
 try {
   $body = @{ tool = $Tool } | ConvertTo-Json
-  $result = Invoke-RestMethod -Uri "http://localhost:$WebuiPort/api/sessions/start" -Method Post -Body $body -ContentType 'application/json' -ErrorAction SilentlyContinue
+  $result = Invoke-RestMethod -Uri "http://localhost:$Port/api/sessions/start" -Method Post -Body $body -ContentType 'application/json' -ErrorAction SilentlyContinue
   if ($result) {
     Write-Host "  会话: #$($result.id) ($($result.status))" -ForegroundColor Green
   }
