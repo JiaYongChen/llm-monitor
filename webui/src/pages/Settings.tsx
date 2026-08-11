@@ -162,16 +162,10 @@ export default function Settings() {
       {/* 数据管理 */}
       <Card>
         <CardHeader><CardTitle>数据管理</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Button variant="destructive" size="sm" title="清除全部调用记录、会话、定价、供应商配置" onClick={() => setConfirm({ title: '清空全部数据', desc: '将删除所有调用记录、会话、定价和供应商配置，此操作不可恢复。', onOk: () => clearMut.mutate() })}>清空全部数据</Button>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="destructive" size="sm" title="只删除手动添加的供应商，保留内置 Anthropic 和 OpenAI" onClick={() => setConfirm({ title: '清空第三方供应商', desc: '将删除所有手动添加的供应商，内置 Anthropic 和 OpenAI 将保留。', onOk: () => clearProvidersMut.mutate() })}>清空第三方供应商</Button>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="destructive" size="sm" title="删除所有调用记录和会话，保留供应商配置和定价" onClick={() => setConfirm({ title: '清空全部会话记录', desc: '将删除所有调用记录和会话，供应商配置和定价保留。', onOk: () => clearSessionsMut.mutate() })}>清空全部会话记录</Button>
-          </div>
+        <CardContent className="flex items-center gap-3">
+          <Button variant="destructive" size="sm" title="清除全部调用记录、会话、定价、供应商配置" onClick={() => setConfirm({ title: '清空全部数据', desc: '将删除所有调用记录、会话、定价和供应商配置，此操作不可恢复。', onOk: () => clearMut.mutate() })}>清空全部数据</Button>
+          <Button variant="destructive" size="sm" title="只删除手动添加的供应商，保留内置 Anthropic 和 OpenAI" onClick={() => setConfirm({ title: '清空第三方供应商', desc: '将删除所有手动添加的供应商，内置 Anthropic 和 OpenAI 将保留。', onOk: () => clearProvidersMut.mutate() })}>清空第三方供应商</Button>
+          <Button variant="destructive" size="sm" title="删除所有调用记录和会话，保留供应商配置和定价" onClick={() => setConfirm({ title: '清空全部会话记录', desc: '将删除所有调用记录和会话，供应商配置和定价保留。', onOk: () => clearSessionsMut.mutate() })}>清空全部会话记录</Button>
         </CardContent>
       </Card>
 
