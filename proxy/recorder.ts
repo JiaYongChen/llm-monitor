@@ -43,11 +43,11 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
-  // 1. 归一化 — 由上游代理商名称决定解析方式（支持 6 家：anthropic/openai/deepseek/qwen/kimi/glm）
+  // 1. 归一化 — 由下游调用工具决定解析方式（支持 6 家：anthropic/openai/deepseek/qwen/kimi/glm）
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
-      const format = detectFormatFromProvider(record.provider);
+      const format = detectFormatFromProvider(record.tool);
       const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;

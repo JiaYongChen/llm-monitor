@@ -2,6 +2,7 @@
 export interface CallRecord {
   provider: string;
   model: string;
+  tool: string;
   endpoint: string;
   method: string;
   target_url: string | null;

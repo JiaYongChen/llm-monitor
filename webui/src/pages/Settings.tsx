@@ -24,7 +24,6 @@ export default function Settings() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['providers'] });
       setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' });
-      setApiFormatDirty(false);
       setShowAdd(false);
     },
     onError: (err) => alert('添加失败: ' + (err as Error).message),

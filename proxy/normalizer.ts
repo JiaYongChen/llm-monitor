@@ -12,13 +12,17 @@ export function detectFormatFromUrl(url: string): string {
   return url.toLowerCase().includes('anthropic') ? 'anthropic' : 'openai';
 }
 
-/** 根据供应商名称映射到归一化格式 */
-export function detectFormatFromProvider(provider: string): string {
-  const lower = provider.toLowerCase();
+/** 根据工具名或供应商名映射到归一化格式 */
+export function detectFormatFromProvider(name: string): string {
+  const lower = name.toLowerCase();
+  // 工具名映射
+  if (lower === 'claudecode') return 'anthropic';
+  if (lower === 'codex') return 'openai';
+  // 供应商名映射
   if (lower === 'anthropic') return 'anthropic';
   if (lower === 'deepseek') return 'deepseek';
   if (lower.includes('qwen') || lower.includes('tongyi')) return 'qwen';
-  // openai / kimi / glm 及其他 OpenAI 兼容供应商
+  // openai / kimi / glm 及其他 OpenAI 兼容
   return 'openai';
 }
 

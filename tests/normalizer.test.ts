@@ -2,7 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { normalizeTokens, detectFormatFromProvider } from '../proxy/normalizer.js';
 
 describe('detectFormatFromProvider', () => {
-  it('Anthropic → anthropic', () => {
+  it('工具名 ClaudeCode → anthropic', () => {
+    expect(detectFormatFromProvider('ClaudeCode')).toBe('anthropic');
+  });
+
+  it('工具名 codex → openai', () => {
+    expect(detectFormatFromProvider('codex')).toBe('openai');
+  });
+
+  it('供应商名 Anthropic → anthropic', () => {
     expect(detectFormatFromProvider('Anthropic')).toBe('anthropic');
     expect(detectFormatFromProvider('anthropic')).toBe('anthropic');
   });

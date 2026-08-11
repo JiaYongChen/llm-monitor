@@ -20,7 +20,7 @@ describe('recorder', () => {
   it('消费记录：归一化 → 定价 → 写库', async () => {
     const sid = upsertSession('fp_rec', 'ClaudeCode', '/v1/messages');
     const record: CallRecord = {
-      provider: 'anthropic', model: 'claude-sonnet-5-20260101',
+      provider: 'anthropic', model: 'claude-sonnet-5-20260101', tool: 'ClaudeCode',
       endpoint: '/v1/messages', method: 'POST',
       target_url: 'https://api.anthropic.com/v1/messages', downstream_url: 'http://localhost:9400/anthropic/v1/messages', source_ip: '127.0.0.1',
       status_code: 200, error_message: null, duration_ms: 1200,
@@ -47,7 +47,7 @@ describe('recorder', () => {
   it('★ 通过上游 URL 检测格式：非 anthropic 一律按 OpenAI 归一化', async () => {
     const sid = upsertSession('fp_deepseek', 'codex', '/v1/chat/completions');
     const record: CallRecord = {
-      provider: 'DeepSeek', model: 'deepseek-chat',
+      provider: 'DeepSeek', model: 'deepseek-chat', tool: 'DeepSeek',
       endpoint: '/v1/chat/completions', method: 'POST',
       target_url: 'https://api.deepseek.com/v1/chat/completions', downstream_url: 'http://localhost:9400/DeepSeek/v1/chat/completions', source_ip: '127.0.0.1',
       status_code: 200, error_message: null, duration_ms: 800,

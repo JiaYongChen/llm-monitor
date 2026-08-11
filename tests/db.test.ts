@@ -34,7 +34,7 @@ describe('db', () => {
   it('insertCall 插入并查询', () => {
     const sid = upsertSession('fp_calls', 'ClaudeCode', '/v1/messages');
     const rec: CallRecord = {
-      provider: 'anthropic', model: 'claude-sonnet-5', endpoint: '/v1/messages',
+      provider: 'anthropic', model: 'claude-sonnet-5', tool: 'ClaudeCode', endpoint: '/v1/messages',
       method: 'POST', target_url: 'https://api.anthropic.com/v1/messages', downstream_url: 'http://localhost:9400/anthropic/v1/messages', source_ip: '127.0.0.1',
       status_code: 200, error_message: null, duration_ms: 1200,
       prompt_tokens: 500, output_tokens: 300, cache_read_tokens: 200,
@@ -59,7 +59,7 @@ describe('db', () => {
     const sid = upsertSession('fp_page', 'codex', '/v1/chat/completions');
     for (let i = 0; i < 5; i++) {
       const rec: CallRecord = {
-        provider: 'openai', model: 'gpt-4o', endpoint: '/v1/chat/completions',
+        provider: 'openai', model: 'gpt-4o', tool: 'codex', endpoint: '/v1/chat/completions',
         method: 'POST', target_url: 'https://api.openai.com/v1/chat/completions', downstream_url: 'http://localhost:9400/openai/v1/chat/completions', source_ip: '127.0.0.1',
         status_code: 200, error_message: null, duration_ms: 100,
         prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
@@ -87,7 +87,7 @@ describe('db', () => {
   it('getStats 聚合统计', () => {
     const sid = upsertSession('fp_aggr', 'ClaudeCode', '/v1/messages');
     const rec: CallRecord = {
-      provider: 'anthropic', model: 'claude-sonnet-5', endpoint: '/v1/messages',
+      provider: 'anthropic', model: 'claude-sonnet-5', tool: 'ClaudeCode', endpoint: '/v1/messages',
       method: 'POST', target_url: 'https://api.anthropic.com/v1/messages', downstream_url: 'http://localhost:9400/anthropic/v1/messages', source_ip: '127.0.0.1',
       status_code: 200, error_message: null, duration_ms: 100,
       prompt_tokens: 100, output_tokens: 50, cache_read_tokens: null,
@@ -107,7 +107,7 @@ describe('db', () => {
     const sid1 = upsertSession('fp_merge_a', 'ClaudeCode', '/v1/messages');
     const sid2 = upsertSession('fp_merge_b', 'ClaudeCode', '/v1/messages');
     const rec: CallRecord = {
-      provider: 'anthropic', model: 'c', endpoint: '/e', method: 'POST',
+      provider: 'anthropic', model: 'c', tool: 'ClaudeCode', endpoint: '/e', method: 'POST',
       target_url: 'https://api.anthropic.com/e', downstream_url: 'http://localhost:9400/e', source_ip: '127.0.0.1',
       status_code: 200, error_message: null, duration_ms: 100,
       fingerprint: 'fp_merge_b', session_id: sid2,

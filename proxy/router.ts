@@ -133,7 +133,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const sourcePort = request.socket.remotePort || 0;
       const sourceIp = request.socket.remoteAddress || '127.0.0.1';
       const downstreamUrl = `http://${request.hostname || 'localhost'}:${PORT}${request.url}`;
-      const bodyObj = (request.body ?? {}) as Record<string, any>;
+      let bodyObj = (request.body ?? {}) as Record<string, any>;
 
       // 基于会话种子（首条消息）的会话识别：
       // 同一聊天 → 相同种子 → 同一会话；不同聊天 → 不同种子 → 不同会话
@@ -215,7 +215,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         collectResult().then(result => {
           if (_enqueueRef) {
             _enqueueRef({
-              provider: effectiveProvider, model, endpoint, method: request.method,
+              provider: effectiveProvider, model, tool, endpoint, method: request.method,
               target_url: targetUrl, downstream_url: downstreamUrl, source_ip: sourceIp,
               status_code: result.status, error_message: result.status >= 400 ? result.text.slice(0, 200) : null,
               duration_ms: result.durationMs, request_body: body?.toString('utf-8') || null, response_body: result.text,
@@ -236,7 +236,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         const responseText = convert ? convertResponse(result.text, targetFormat, sourceFormat) : result.text;
         if (_enqueueRef) {
           _enqueueRef({
-            provider: effectiveProvider, model, endpoint, method: request.method,
+            provider: effectiveProvider, model, tool, endpoint, method: request.method,
             target_url: targetUrl, downstream_url: downstreamUrl, source_ip: sourceIp,
             status_code: result.status, error_message: result.status >= 400 ? result.text.slice(0, 200) : null,
             duration_ms: result.durationMs, request_body: body?.toString('utf-8') || null, response_body: result.text,
