@@ -93,7 +93,7 @@ export default function DailyBarChart({ data, days, modelData }: { data: DailyDa
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => d.slice(5)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} allowDecimals={false} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 12 }} formatter={(v: number) => [v.toLocaleString(), '次']} labelFormatter={(d: string) => d} />
+              <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 12 }} formatter={(v: number) => [v.toLocaleString(), '请求数']} labelFormatter={(d: string) => d} />
               <Line type="monotone" dataKey="count" name="调用次数" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
