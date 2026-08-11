@@ -2,7 +2,7 @@
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
-import { insertCall, updateSessionStats, listPricing, getProviderConfig } from './db.js';
+import { insertCall, updateSessionStats, listPricing } from './db.js';
 import { getRates } from './rates.js';
 
 // ── 队列 ──

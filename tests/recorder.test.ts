@@ -44,7 +44,7 @@ describe('recorder', () => {
     expect(calls[0].cache_read_tokens).toBe(200);
   });
 
-  it('★ 通过上游 URL 检测 DeepSeek 格式并正确归一化', async () => {
+  it('★ 通过上游 URL 检测格式：非 anthropic 一律按 OpenAI 归一化', async () => {
     const sid = upsertSession('fp_deepseek', 'codex', '/v1/chat/completions');
     const record: CallRecord = {
       provider: 'DeepSeek', model: 'deepseek-chat',
@@ -54,7 +54,7 @@ describe('recorder', () => {
       request_body: null,
       response_body: JSON.stringify({
         model: 'deepseek-chat',
-        usage: { prompt_tokens: 200, completion_tokens: 100, prompt_cache_hit_tokens: 50, prompt_cache_miss_tokens: 150 },
+        usage: { prompt_tokens: 200, completion_tokens: 100 },
       }),
       fingerprint: 'fp_deepseek', source_port: 54322, session_id: sid,
       prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
@@ -66,10 +66,9 @@ describe('recorder', () => {
 
     const calls = listCalls(sid);
     expect(calls.length).toBe(1);
-    // target_url 含 'deepseek' → detectFormatFromUrl 返回 'deepseek' → normalizer 命中 deepseek 分支
+    // target_url 不含 'anthropic' → detectFormatFromUrl 返回 'openai' → OpenAI 归一化
     expect(calls[0].prompt_tokens).toBe(200);
     expect(calls[0].output_tokens).toBe(100);
-    expect(calls[0].cache_read_tokens).toBe(50);
     expect(calls[0].total_cost).toBeGreaterThan(0);
   });
 });
