@@ -272,7 +272,7 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
         </div>
 
       {expanded && (
-        <div className="border-t bg-muted/30 overflow-x-auto">
+        <div className="border-t border-[#e5e5ea] overflow-x-auto">
           {/* 表头 */}
           <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 px-4 py-1 min-w-fit">
             <span className="flex-1 min-w-0">模型</span>
