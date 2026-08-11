@@ -11,6 +11,7 @@ import {
   listCalls as dbListCalls, getCall as dbGetCall, getStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
+  deleteAllThirdPartyProviders, deleteAllSessions,
   listProviderConfigs, updateProviderConfig, getProviderConfig,
   addProviderConfig, deleteProviderConfig, getSetting, setSetting,
 } from './db.js';
@@ -316,6 +317,14 @@ function _registerApiRoutes(app: FastifyInstance): void {
   });
   app.post('/api/data/cleanup', async (req) => {
     const count = cleanupOldCalls((req.body as any).days);
+    return { deleted: count };
+  });
+  app.post('/api/data/clear-providers', async () => {
+    const count = deleteAllThirdPartyProviders();
+    return { deleted: count };
+  });
+  app.post('/api/data/clear-sessions', async () => {
+    const count = deleteAllSessions();
     return { deleted: count };
   });
 

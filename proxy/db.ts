@@ -529,6 +529,26 @@ export function clearAllData(): void {
   saveDb();
 }
 
+/** 删除所有第三方供应商（保留内置 Anthropic 和 OpenAI） */
+export function deleteAllThirdPartyProviders(): number {
+  const d = getDb();
+  d.run("DELETE FROM provider_config WHERE LOWER(provider) NOT IN ('anthropic', 'openai')");
+  const count = d.getRowsModified();
+  saveDb();
+  return count;
+}
+
+/** 清空所有会话及其关联调用 */
+export function deleteAllSessions(): number {
+  const d = getDb();
+  d.run('DELETE FROM calls');
+  const count = d.getRowsModified();
+  d.run('DELETE FROM sessions');
+  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions')");
+  saveDb();
+  return count;
+}
+
 /** 初始化内置供应商（仅当不存在时） */
 export function initDefaultProviders(): void {
   const defaults: [string, string][] = [

@@ -87,6 +87,14 @@ export async function clearAllData() {
   return fetchJson('/data/clear', { method: 'POST' });
 }
 
+export async function clearThirdPartyProviders() {
+  return fetchJson('/data/clear-providers', { method: 'POST' });
+}
+
+export async function clearAllSessions() {
+  return fetchJson('/data/clear-sessions', { method: 'POST' });
+}
+
 // ── Providers ──
 export async function listProviders() {
   return fetchJson('/providers');

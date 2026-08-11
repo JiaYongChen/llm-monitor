@@ -34,6 +34,8 @@ export default function Settings() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['providers'] }),
   });
   const clearMut = useMutation({ mutationFn: api.clearAllData, onSuccess: () => qc.invalidateQueries() });
+  const clearProvidersMut = useMutation({ mutationFn: api.clearThirdPartyProviders, onSuccess: () => qc.invalidateQueries({ queryKey: ['providers'] }) });
+  const clearSessionsMut = useMutation({ mutationFn: api.clearAllSessions, onSuccess: () => qc.invalidateQueries() });
 
   const providerPrices = (prov: string) => (pricing as any[])?.filter((p: any) => p.provider === prov) || [];
 
@@ -158,9 +160,19 @@ export default function Settings() {
       {/* 数据管理 */}
       <Card>
         <CardHeader><CardTitle>数据管理</CardTitle></CardHeader>
-        <CardContent className="flex items-center gap-4">
-          <Button variant="destructive" size="sm" onClick={() => { if (window.confirm('确认清空所有数据？')) clearMut.mutate(); }}>清空全部数据</Button>
-          <span className="text-xs text-gray-500">保留供应商配置</span>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Button variant="destructive" size="sm" onClick={() => { if (window.confirm('确认清空所有数据？')) clearMut.mutate(); }}>清空全部数据</Button>
+            <span className="text-xs text-gray-500">清除全部调用记录、会话、定价、供应商配置</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => { if (window.confirm('确认删除所有第三方供应商？内置 Anthropic 和 OpenAI 将保留。')) clearProvidersMut.mutate(); }}>清空第三方供应商</Button>
+            <span className="text-xs text-gray-500">只删除手动添加的供应商，保留内置</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => { if (window.confirm('确认清空全部会话记录？')) clearSessionsMut.mutate(); }}>清空全部会话记录</Button>
+            <span className="text-xs text-gray-500">删除所有调用记录和会话，保留供应商配置和定价</span>
+          </div>
         </CardContent>
       </Card>
     </div>
