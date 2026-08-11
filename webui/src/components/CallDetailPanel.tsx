@@ -59,9 +59,9 @@ export default function CallDetailPanel({ call }: { call: any }) {
         </div>
       </div>
 
-      {/* Token 与费用 */}
+      {/* token 与费用 */}
       <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-4">Token 与费用</h3>
+        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-4">token 与费用</h3>
         {call.prompt_tokens != null || call.output_tokens != null ? (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -100,7 +100,7 @@ export default function CallDetailPanel({ call }: { call: any }) {
             </div>
           </>
         ) : (
-          <div className="text-xs text-[#aeaeb2]">无 Token 数据（非聊天请求或未成功响应）</div>
+          <div className="text-xs text-[#aeaeb2]">无 token 数据（非聊天请求或未成功响应）</div>
         )}
       </div>
 
