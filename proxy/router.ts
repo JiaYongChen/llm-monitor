@@ -52,26 +52,6 @@ function cleanHeaders(headers: Record<string, string | string[] | undefined>): R
   return result;
 }
 
-/** 从 API 端点路径反推下游工具类型和默认上游供应商（用于无 provider 前缀的请求）。
- *  path 不含前导 /。返回 { tool, upstream } — tool 用于会话，upstream 用于转发。 */
-function detectFromPath(path: string): { tool: string; upstream: string } | null {
-  const configs = listProviderConfigs().filter(c => c.enabled);
-  if (path === 'v1/messages' || path.startsWith('v1/messages/')) {
-    // 优先匹配内置 Anthropic，其次匹配 api_format 为 anthropic 的供应商
-    const anthropic = configs.find(c => c.provider === 'Anthropic')
-      || configs.find(c => (c.api_format?.toLowerCase() || c.provider.toLowerCase()) === 'anthropic');
-    return { tool: 'ClaudeCode', upstream: anthropic?.provider || 'Anthropic' };
-  }
-  if (path === 'v1/chat/completions' || path.startsWith('v1/chat/completions/')) {
-    // 内置 OpenAI 恒存在且不可停用/删除 → 直接用它；第三方供应商通过 URL 前缀匹配
-    const match = configs.find(c => c.provider === 'OpenAI')
-      || configs.find(c => (c.api_format?.toLowerCase() || c.provider.toLowerCase()) === 'openai');
-    const p = match?.provider || 'OpenAI';
-    return { tool: p === 'OpenAI' ? 'codex' : p, upstream: p };
-  }
-  return null;
-}
-
 /** recorder 入队函数引用（在 Task 10 中设置为实际实现） */
 let _enqueueRef: ((record: CallRecord) => void) | null = null;
 export function setEnqueueRef(fn: (record: CallRecord) => void): void {
@@ -90,8 +70,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
 
 async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
   // 动态路由：/* 匹配所有非 /api 路径
-  // 策略 1：URL 首段为已知 provider（如 /anthropic/v1/messages）→ 剥离首段后转发
-  // 策略 2：URL 直接为 API 路径（如 /v1/messages）→ 从端点模式反推 provider，完整路径转发
+  // URL 首段必须为已注册的 provider（如 /anthropic/v1/messages）→ 剥离首段后转发
+  // 无 provider 前缀的请求直接 404
   app.route({
     method: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     url: '/*',
@@ -131,19 +111,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         const fmt = providerConfig.api_format?.toLowerCase() || provider.toLowerCase();
         tool = fmt === 'anthropic' ? 'ClaudeCode' : fmt === 'openai' ? 'codex' : provider;
       } else {
-        // 策略 2：首段不是已知供应商，从端点反推下游工具类型 → 使用默认上游
-        const detected = detectFromPath(rawPath);
-        if (detected) {
-          provider = detected.upstream;
-          tool = detected.tool;
-          remaining = rawPath;
-          providerConfig = getProviderConfig(provider);
-          if (providerConfig) provider = providerConfig.provider;
-        }
-        if (!providerConfig) {
-          reply.callNotFound();
-          return;
-        }
+        // 无 provider 前缀的请求一律拒绝，强制通过 URL 前缀显式指定供应商
+        return reply.callNotFound();
       }
       // provider 已统一规范化为配置名，后续指纹、会话、CallRecord 均使用统一名称
 
