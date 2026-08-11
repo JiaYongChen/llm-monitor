@@ -1,6 +1,6 @@
 /** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
-import { normalizeTokens, detectFormatFromUrl } from './normalizer.js';
+import { normalizeTokens } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing } from './db.js';
 import { getRates } from './rates.js';
@@ -43,11 +43,11 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
-  // 1. 归一化 — 由上游实际调用的 URL 决定格式
+  // 1. 归一化 — 由上游选择的代理商决定格式（Anthropic → anthropic，其余 → openai）
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
-      const format = detectFormatFromUrl(record.target_url);
+      const format = record.provider.toLowerCase() === 'anthropic' ? 'anthropic' : 'openai';
       const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;

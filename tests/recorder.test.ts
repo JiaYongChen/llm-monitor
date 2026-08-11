@@ -66,7 +66,7 @@ describe('recorder', () => {
 
     const calls = listCalls(sid);
     expect(calls.length).toBe(1);
-    // target_url 不含 'anthropic' → detectFormatFromUrl 返回 'openai' → OpenAI 归一化
+    // provider 不是 'Anthropic' → 按 OpenAI 格式归一化
     expect(calls[0].prompt_tokens).toBe(200);
     expect(calls[0].output_tokens).toBe(100);
     expect(calls[0].total_cost).toBeGreaterThan(0);
