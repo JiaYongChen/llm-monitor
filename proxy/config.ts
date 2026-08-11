@@ -5,9 +5,8 @@ import { mkdirSync } from 'node:fs';
 const DATA_DIR = join(homedir(), '.llm-monitor');
 const DB_PATH = join(DATA_DIR, 'calls.db');
 
-/** 从 CLI 参数或环境变量解析端口，优先级：CLI --port 8400 > env > 默认值 */
-function resolvePort(flag: string, envVar: string, fallback: number): number {
-  // 1) CLI 参数（--port=8400 / --port 8400）
+/** 从 CLI 参数解析端口：--port 8400 --webui-port 8401（也支持 --port=8400），未指定则用默认值 */
+function resolvePort(flag: string, fallback: number): number {
   for (let i = 0; i < process.argv.length; i++) {
     const arg = process.argv[i];
     if (arg.startsWith(flag + '=')) {
@@ -28,18 +27,11 @@ function resolvePort(flag: string, envVar: string, fallback: number): number {
       console.warn(`非法端口值 "${next}"（应为 1-65535 纯数字），使用默认 ${fallback}`);
     }
   }
-  // 2) 环境变量（连通 notify-start.ps1 的 LLM_MONITOR_WEBUI_PORT）
-  const env = process.env[envVar];
-  if (env && /^\d+$/.test(env)) {
-    const v = parseInt(env, 10);
-    if (v >= 1 && v <= 65535) return v;
-  }
-  // 3) 默认值
   return fallback;
 }
 
-const PORT = resolvePort('--port', 'LLM_MONITOR_PORT', 9400);
-const WEBUI_PORT = resolvePort('--webui-port', 'LLM_MONITOR_WEBUI_PORT', 9401);
+const PORT = resolvePort('--port', 9400);
+const WEBUI_PORT = resolvePort('--webui-port', 9401);
 const SESSION_TIMEOUT_SEC = 180;
 const AUTO_CLEANUP_DAYS = 0;
 
