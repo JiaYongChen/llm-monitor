@@ -74,7 +74,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
 
 async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
   // 启动通知：CLI 包装脚本在启动工具前调用，预创建 pending 会话
-  app.post('/sessions/start', async (req, reply) => {
+  app.post('/proxy/sessions/start', async (req, reply) => {
     const { tool } = req.body as any;
     if (!tool) return reply.status(400).send({ error: 'tool 参数必填' });
     const id = createPendingSession(tool);
