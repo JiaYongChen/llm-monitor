@@ -24,23 +24,56 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-function fillDateRange(days: number, hourly?: boolean): string[] {
-  const result: string[] = [];
+/** 生成指定范围的完整日期序列 */
+function fillDateRange(range: string): string[] {
   const now = new Date();
-  if (hourly) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  if (range === 'today') {
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const r: string[] = [];
     for (let h = 0; h < 24; h++) {
       const d = new Date(start.getTime() + h * 60 * 60 * 1000);
-      result.push(d.toISOString().slice(0, 13) + ':00');
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:00`);
     }
-    return result;
+    return r;
   }
+  if (range === 'yesterday') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const r: string[] = [];
+    for (let h = 0; h < 24; h++) {
+      const d = new Date(start.getTime() + h * 60 * 60 * 1000);
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:00`);
+    }
+    return r;
+  }
+  if (range === 'thisMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = now;
+    const r: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+    return r;
+  }
+  if (range === 'lastMonth') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    const r: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+    return r;
+  }
+  // 7d / 14d / 30d / 60d
+  const days = parseInt(range) || 30;
+  const r: string[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    result.push(d.toISOString().slice(0, 10));
+    r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
   }
-  return result;
+  return r;
 }
 
 const ZERO_ROW: DailyData = {
@@ -56,12 +89,13 @@ function fmtXAxis(d: string, hourly?: boolean): string {
   return d.slice(5); // '2024-01-15' → '01-15'
 }
 
-export default function DailyBarChart({ data, days, isHourly, modelData }: { data: DailyData[]; days: number; isHourly?: boolean; modelData?: DailyData[] }) {
+export default function DailyBarChart({ data, range, modelData }: { data: DailyData[]; range: string; modelData?: DailyData[] }) {
+  const isHourly = range === 'today' || range === 'yesterday';
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
     for (const d of data) map.set(d.date, d);
-    return fillDateRange(days, isHourly).map(date => map.get(date) || { ...ZERO_ROW, date });
-  }, [data, days, isHourly]);
+    return fillDateRange(range).map(date => map.get(date) || { ...ZERO_ROW, date });
+  }, [data, range]);
 
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;
@@ -73,13 +107,13 @@ export default function DailyBarChart({ data, days, isHourly, modelData }: { dat
       if (!row) { row = {}; byDate.set(d.date, row); }
       row[d.model] = (row[d.model] || 0) + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens;
     }
-    return fillDateRange(days, isHourly).map(date => {
+    return fillDateRange(range).map(date => {
       const row: any = { date };
       const entry = byDate.get(date) || {};
       for (const m of models) row[m] = entry[m] || 0;
       return row;
     });
-  }, [modelData, days, isHourly]);
+  }, [modelData, range]);
 
   const hasData = filledData.some(d =>
     d.total_output_tokens > 0 || d.total_uncached_input > 0 || d.total_cache_read_tokens > 0,

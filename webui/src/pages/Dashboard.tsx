@@ -50,9 +50,6 @@ export default function Dashboard() {
   const [dailyRange, setDailyRange] = useState('30d');
   const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange], queryFn: () => api.getDailyStats(provider, tool, dailyRange), enabled: !!provider, refetchInterval: 60000 });
   const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange], queryFn: () => api.getDailyStats(provider, tool, dailyRange, true), enabled: !!provider, refetchInterval: 60000 });
-  // 判断是否为小时级粒度（today/yesterday）
-  const isHourly = dailyRange === 'today' || dailyRange === 'yesterday';
-  const rangeDays = { today: 1, yesterday: 1, '7d': 7, '14d': 14, '30d': 30, '60d': 60, thisMonth: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate(), lastMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 0).getDate() }[dailyRange] || 30;
   const totalCalls = stats?.reduce((a: number, b: any) => a + b.count, 0) || 0;
   const totalCost = stats?.reduce((a: number, b: any) => a + b.total_cost, 0) || 0;
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
@@ -200,7 +197,7 @@ export default function Dashboard() {
               </select>
             </CardHeader>
             <CardContent>
-              <DailyBarChart data={dailyStats} days={rangeDays} isHourly={isHourly} modelData={dailyModelStats} />
+              <DailyBarChart data={dailyStats} range={dailyRange} modelData={dailyModelStats} />
             </CardContent>
           </Card>
         </>
