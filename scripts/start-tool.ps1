@@ -36,7 +36,7 @@ Write-Host "  代理: http://localhost:$Port" -ForegroundColor Gray
 # 预创建 pending 会话
 try {
   $body = @{ tool = $Tool } | ConvertTo-Json
-  $result = Invoke-RestMethod -Uri "http://localhost:$Port/api/sessions/start" -Method Post -Body $body -ContentType 'application/json' -ErrorAction SilentlyContinue
+  $result = Invoke-RestMethod -Uri "http://localhost:$Port/sessions/start" -Method Post -Body $body -ContentType 'application/json' -ErrorAction SilentlyContinue
   if ($result) {
     Write-Host "  会话: #$($result.id) ($($result.status))" -ForegroundColor Green
   }
