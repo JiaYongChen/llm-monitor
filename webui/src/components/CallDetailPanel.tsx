@@ -71,7 +71,7 @@ export default function CallDetailPanel({ call }: { call: any }) {
                   <span className="text-xs font-semibold text-[#6e6e73]">输入</span>
                   <span className="text-xs font-mono ml-auto text-[#aeaeb2]">{call.prompt_tokens.toLocaleString()} token</span>
                 </div>
-                <Line l="未缓存" n={call.uncached_input || 0} c="#6e6e73" />
+                <Line l="未缓存" n={call.uncached_input > 0 ? call.uncached_input : 0} c="#6e6e73" />
                 {call.cache_write_tokens > 0 && <Line l="写入缓存" n={call.cache_write_tokens} c="#e69900" />}
                 {call.cache_read_tokens > 0 && <Line l="命中缓存" n={call.cache_read_tokens} c="#30b48b" />}
                 <div className="flex justify-between mt-3 pt-3 border-t border-[#e5e5ea]">
