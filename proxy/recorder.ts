@@ -1,6 +1,6 @@
 /** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
-import { normalizeTokens, detectFormatFromProvider } from './normalizer.js';
+import { normalizeTokens, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing } from './db.js';
 import { getRates } from './rates.js';
@@ -47,7 +47,7 @@ function processRecord(record: CallRecord): void {
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
-      const format = detectFormatFromProvider(record.tool);
+      const format = detectFormatFromTool(record.tool);
       const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;

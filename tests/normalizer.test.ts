@@ -1,18 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeTokens, detectFormatFromProvider } from '../proxy/normalizer.js';
+import { normalizeTokens, detectFormatFromTool } from '../proxy/normalizer.js';
 
-describe('detectFormatFromProvider', () => {
+describe('detectFormatFromTool', () => {
   it('ClaudeCode → anthropic', () => {
-    expect(detectFormatFromProvider('ClaudeCode')).toBe('anthropic');
-    expect(detectFormatFromProvider('claudecode')).toBe('anthropic');
+    expect(detectFormatFromTool('ClaudeCode')).toBe('anthropic');
+    expect(detectFormatFromTool('claudecode')).toBe('anthropic');
   });
 
   it('其余工具 → openai（codex / DeepSeek / Kimi / GLM 等）', () => {
-    expect(detectFormatFromProvider('codex')).toBe('openai');
-    expect(detectFormatFromProvider('DeepSeek')).toBe('openai');
-    expect(detectFormatFromProvider('Kimi')).toBe('openai');
-    expect(detectFormatFromProvider('GLM')).toBe('openai');
-    expect(detectFormatFromProvider('unknown')).toBe('openai');
+    expect(detectFormatFromTool('codex')).toBe('openai');
+    expect(detectFormatFromTool('DeepSeek')).toBe('openai');
+    expect(detectFormatFromTool('Kimi')).toBe('openai');
+    expect(detectFormatFromTool('GLM')).toBe('openai');
+    expect(detectFormatFromTool('unknown')).toBe('openai');
   });
 });
 

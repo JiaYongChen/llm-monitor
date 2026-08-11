@@ -10,7 +10,7 @@ export function detectFormatFromUrl(url: string): string {
 }
 
 /** 根据下游工具名映射到归一化格式（仅两种：ClaudeCode→anthropic，其余→openai） */
-export function detectFormatFromProvider(name: string): string {
+export function detectFormatFromTool(name: string): string {
   return name.toLowerCase() === 'claudecode' ? 'anthropic' : 'openai';
 }
 
