@@ -23,7 +23,8 @@ export default function SessionDetail() {
   if (!s) return <div className="p-8 text-sm text-[#aeaeb2]">加载中...</div>;
 
   const callsList = calls || [];
-  const inputTokens = callsList.reduce((sum: number, c: any) => sum + (c.uncached_input || 0) + (c.cache_read_tokens || 0), 0);
+  const uncachedTokens = callsList.reduce((sum: number, c: any) => sum + (c.uncached_input || 0), 0);
+  const cacheHitTokens = callsList.reduce((sum: number, c: any) => sum + (c.cache_read_tokens || 0), 0);
   const outputTokens = callsList.reduce((sum: number, c: any) => sum + (c.output_tokens || 0), 0);
 
   // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, codex→OpenAI）
@@ -125,8 +126,8 @@ export default function SessionDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        {[{ l: '调用次数', v: s.request_count.toLocaleString() }, { l: '总费用', v: formatCost(s.total_cost, currency, rates), c: '#e69900' }, { l: '输出 token', v: outputTokens.toLocaleString() }, { l: '输入 token', v: inputTokens.toLocaleString() }].map(k => (
+      <div className="grid grid-cols-5 gap-4">
+        {[{ l: '调用次数', v: s.request_count.toLocaleString() }, { l: '总费用', v: formatCost(s.total_cost, currency, rates), c: '#e69900' }, { l: '输出 token', v: outputTokens.toLocaleString() }, { l: '未缓存输入', v: uncachedTokens.toLocaleString() }, { l: '缓存命中', v: cacheHitTokens.toLocaleString(), c: '#30b48b' }].map(k => (
           <div key={k.l} className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm"><div className="text-[11px] font-medium uppercase tracking-wider text-[#aeaeb2] mb-1">{k.l}</div><div className="text-xl font-bold text-[#1d1d1f]" style={k.c ? { color: k.c } : {}}>{k.v}</div></div>
         ))}
       </div>
