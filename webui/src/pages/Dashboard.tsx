@@ -108,7 +108,15 @@ export default function Dashboard() {
             </select>
             {currentUpstream && (() => {
               const up = (providers as any[]).find((p: any) => p.provider === currentUpstream);
-              return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{up?.base_url ? ` — ${up.base_url}` : ''}</span>;
+              const officialUrls: Record<string, string> = { Anthropic: 'https://api.anthropic.com', OpenAI: 'https://api.openai.com' };
+              // ClaudeCode 优先 base_url_anthropic，codex 只用 base_url；内置供应商兜底官方地址
+              const baseUrl = (tool === 'ClaudeCode' && up?.base_url_anthropic)
+                ? up.base_url_anthropic
+                : (up?.base_url || officialUrls[currentUpstream] || '');
+              // 目标格式：URL 含 anthropic → /v1/messages，其余 → /v1/chat/completions
+              const targetPath = baseUrl.toLowerCase().includes('anthropic') ? '/v1/messages' : '/v1/chat/completions';
+              const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${targetPath}` : '';
+              return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{fullUrl ? ` — ${fullUrl}` : ''}</span>;
             })()}
           </div>
           <div className="flex items-center gap-3">
