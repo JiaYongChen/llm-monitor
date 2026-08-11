@@ -37,6 +37,8 @@ export default function Settings() {
   const clearProvidersMut = useMutation({ mutationFn: api.clearThirdPartyProviders, onSuccess: () => qc.invalidateQueries({ queryKey: ['providers'] }) });
   const clearSessionsMut = useMutation({ mutationFn: api.clearAllSessions, onSuccess: () => qc.invalidateQueries() });
 
+  const [confirm, setConfirm] = useState<{ title: string; desc: string; onOk: () => void } | null>(null);
+
   const providerPrices = (prov: string) => (pricing as any[])?.filter((p: any) => p.provider === prov) || [];
 
   const [showAdd, setShowAdd] = useState(false);
@@ -162,19 +164,30 @@ export default function Settings() {
         <CardHeader><CardTitle>数据管理</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-3">
-            <Button variant="destructive" size="sm" onClick={() => { if (window.confirm('确认清空所有数据？')) clearMut.mutate(); }}>清空全部数据</Button>
+            <Button variant="destructive" size="sm" onClick={() => setConfirm({ title: '清空全部数据', desc: '将删除所有调用记录、会话、定价和供应商配置，此操作不可恢复。', onOk: () => clearMut.mutate() })}>清空全部数据</Button>
             <span className="text-xs text-gray-500">清除全部调用记录、会话、定价、供应商配置</span>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => { if (window.confirm('确认删除所有第三方供应商？内置 Anthropic 和 OpenAI 将保留。')) clearProvidersMut.mutate(); }}>清空第三方供应商</Button>
+            <Button variant="destructive" size="sm" onClick={() => setConfirm({ title: '清空第三方供应商', desc: '将删除所有手动添加的供应商，内置 Anthropic 和 OpenAI 将保留。', onOk: () => clearProvidersMut.mutate() })}>清空第三方供应商</Button>
             <span className="text-xs text-gray-500">只删除手动添加的供应商，保留内置</span>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => { if (window.confirm('确认清空全部会话记录？')) clearSessionsMut.mutate(); }}>清空全部会话记录</Button>
+            <Button variant="destructive" size="sm" onClick={() => setConfirm({ title: '清空全部会话记录', desc: '将删除所有调用记录和会话，供应商配置和定价保留。', onOk: () => clearSessionsMut.mutate() })}>清空全部会话记录</Button>
             <span className="text-xs text-gray-500">删除所有调用记录和会话，保留供应商配置和定价</span>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={confirm !== null} onClose={() => setConfirm(null)}>
+        <DialogHeader>
+          <DialogTitle>{confirm?.title}</DialogTitle>
+          <DialogDescription>{confirm?.desc}</DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2 pt-2">
+          <Button variant="destructive" size="sm" onClick={() => { confirm?.onOk(); setConfirm(null); }}>确认</Button>
+          <Button variant="outline" size="sm" onClick={() => setConfirm(null)}>取消</Button>
+        </div>
+      </Dialog>
     </div>
   );
 }

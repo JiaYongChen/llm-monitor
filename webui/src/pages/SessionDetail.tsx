@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { useCurrency, formatCost } from '../lib/currency';
 import { formatTime } from '../lib/utils';
 import CallTimeline from '../components/CallTimeline';
+import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
+import { Button } from '../components/ui/button';
 
 export default function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -11,6 +14,7 @@ export default function SessionDetail() {
   const { currency, rates } = useCurrency();
   const qc = useQueryClient();
   const nav = useNavigate();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const { data: s } = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.getSession(sessionId), enabled: !!sessionId });
   const { data: calls } = useQuery({ queryKey: ['calls', sessionId], queryFn: () => api.listCalls(sessionId, undefined, undefined, 10000, 0), enabled: !!sessionId });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
@@ -52,7 +56,7 @@ export default function SessionDetail() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={async () => { const l = window.prompt('名称:', s.label || ''); if (l) { await api.renameSession(s.id, l); qc.invalidateQueries({ queryKey: ['session', sessionId] }); qc.invalidateQueries({ queryKey: ['sessions'] }); } }} className="btn btn-ghost">重命名</button>
-          <button onClick={async () => { if (window.confirm(`确认删除会话 #${s.id}？其下所有调用记录也将被删除。`)) { await api.deleteSession(s.id); qc.invalidateQueries({ queryKey: ['sessions'] }); nav('/'); } }} className="btn btn-ghost text-[#e03a3a] hover:text-[#e03a3a]">删除</button>
+          <button onClick={() => setDeleteConfirm(true)} className="btn btn-ghost text-[#e03a3a] hover:text-[#e03a3a]">删除</button>
         </div>
       </div>
 
@@ -124,6 +128,17 @@ export default function SessionDetail() {
         <div className="px-5 py-3 border-b border-[#e5e5ea] flex items-center gap-2"><h2 className="text-sm font-semibold text-[#1d1d1f]">调用时间线</h2><span className="text-xs font-mono text-[#aeaeb2]">{calls?.length || 0} 条</span></div>
         <CallTimeline calls={calls || []} />
       </div>
+
+      <Dialog open={deleteConfirm} onClose={() => setDeleteConfirm(false)}>
+        <DialogHeader>
+          <DialogTitle>删除会话</DialogTitle>
+          <DialogDescription>确认删除会话 #{s.id}？其下所有调用记录也将被删除，此操作不可恢复。</DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2 pt-2">
+          <Button variant="destructive" size="sm" onClick={async () => { await api.deleteSession(s.id); qc.invalidateQueries({ queryKey: ['sessions'] }); nav('/'); }}>确认删除</Button>
+          <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(false)}>取消</Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
