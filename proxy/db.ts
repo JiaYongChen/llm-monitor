@@ -347,6 +347,11 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string): n
     return Number(fullMatch.id);
   }
 
+  // 从工具级配置继承上游供应商和模型
+  const tc = getToolConfig(tool);
+  const tcProvider = tc?.upstream_provider || null;
+  const tcModel = tc?.upstream_model || null;
+
   // 2. 查找同工具最近的 pending 会话 → 升级
   const pending = queryOne(
     "SELECT id FROM sessions WHERE tool = ? AND status = 'pending' ORDER BY last_call_at DESC LIMIT 1",
@@ -354,17 +359,17 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string): n
   );
   if (pending) {
     execute(
-      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ? WHERE id = ?",
-      [fullFp, now, endpoint, pending.id],
+      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ?, upstream_provider = ?, upstream_model = ? WHERE id = ?",
+      [fullFp, now, endpoint, tcProvider, tcModel, pending.id],
     );
     return Number(pending.id);
   }
 
   // 3. 新建会话
   return executeInsert(
-    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at)
-     VALUES (?, ?, 'active', ?, ?, ?, ?) RETURNING id`,
-    [tool, fullFp, now, now, endpoint, now],
+    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at, upstream_provider, upstream_model)
+     VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?) RETURNING id`,
+    [tool, fullFp, now, now, endpoint, now, tcProvider, tcModel],
   );
 }
 
@@ -372,10 +377,11 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string): n
 export function createPendingSession(tool: string): number {
   const now = Date.now();
   const fp = `pending:${tool}:${now}`;
+  const tc = getToolConfig(tool);
   return executeInsert(
-    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at)
-     VALUES (?, ?, 'pending', ?, ?, '/_startup_', ?) RETURNING id`,
-    [tool, fp, now, now, now],
+    `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at, upstream_provider, upstream_model)
+     VALUES (?, ?, 'pending', ?, ?, '/_startup_', ?, ?, ?) RETURNING id`,
+    [tool, fp, now, now, now, tc?.upstream_provider || null, tc?.upstream_model || null],
   );
 }
 
