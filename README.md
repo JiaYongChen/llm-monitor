@@ -136,6 +136,7 @@ llm-monitor/
 | GET | `/api/providers` | 供应商列表 |
 | GET | `/api/tool-configs` | 工具级上游配置 |
 | GET | `/api/config` | 全局配置（含汇率） |
+| GET | `/api/health` | 健康检查 |
 
 ### 写入
 | 方法 | 路径 | 说明 |
@@ -158,6 +159,7 @@ llm-monitor/
 | POST | `/api/data/clear` | 清空全部数据 |
 | POST | `/api/data/clear-providers` | 清空第三方供应商 |
 | POST | `/api/data/clear-sessions` | 清空全部会话 |
+| POST | `/api/data/cleanup` | 清理 N 天前的旧调用 |
 
 ## 测试
 

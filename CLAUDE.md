@@ -69,7 +69,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别 provider（如 `/anthropic/v1/messages`）→ 检测格式差异 → 如需转换调用 `converter.ts` → `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
 2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body + tool）入队 — 此处不阻塞响应
-3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据 `tool` 字段选择归一化方式 → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `updateSessionStats` 更新会话聚合
+3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据上游 URL 检测响应格式（`detectFormatFromUrl`）→ `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `updateSessionStats` 更新会话聚合
 4. **展示阶段**：Web 面板通过 `/api/*` 端点查询统计数据和明细
 
 ## Provider 支持
@@ -99,7 +99,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 ## Token 归一化
 
-- 下游工具决定归一化格式：ClaudeCode → anthropic，其余 → openai
+- 归一化格式由上游实际响应 URL 决定（`detectFormatFromUrl`），兜底用工具类型（`detectFormatFromTool`）
 - Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`
 - OpenAI（含 Kimi / GLM 等兼容供应商）：`prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`
 
@@ -121,6 +121,6 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - sql.js 是纯 WASM 实现，数据库运行在内存中，每次写入后需手动调用 `saveDb()` 持久化到磁盘
 - 生产模式下前端需先 `npm run build` 输出到 `dist/web/`，`dist/` 已加入 `.gitignore`
 - 开发模式使用 Vite 中间件模式（`middlewareMode: true`），HMR 复用 Fastify 的 HTTP server
-- `router.ts` 中 API 路由先于通配路由注册，确保 `/api/*` 不被代理拦截
+- `/api/*` 路由注册在 WebUI 端口的独立 Fastify 实例上，通配路由在代理端口，两个端口隔离确保 API 不被代理拦截
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
 - 会话表使用 `AUTOINCREMENT`，删除全部会话后 ID 不会重置
