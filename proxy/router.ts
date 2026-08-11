@@ -341,6 +341,7 @@ function _registerApiRoutes(app: FastifyInstance): void {
       q?.days ? parseInt(q.days) : 30,
       q?.provider || undefined,
       q?.tool || undefined,
+      q?.group_by_model === '1',
     );
   });
 

@@ -550,9 +550,11 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
   return results;
 }
 
-/** 每日统计：按天聚合 token 和费用 */
-export function getDailyStats(days: number, provider?: string, tool?: string): Record<string, any>[] {
-  const aggs = `strftime('%Y-%m-%d', c.created_at / 1000, 'unixepoch') as date,
+/** 每日统计：按天（+ 可选模型）聚合 token 和调用次数 */
+export function getDailyStats(days: number, provider?: string, tool?: string, groupByModel?: boolean): Record<string, any>[] {
+  const modelCol = groupByModel ? "c.model as model," : '';
+  const aggs = `${modelCol}
+     strftime('%Y-%m-%d', c.created_at / 1000, 'unixepoch') as date,
      COUNT(*) as count,
      SUM(c.total_cost) as total_cost,
      SUM(c.output_tokens) as total_output_tokens,
@@ -565,7 +567,8 @@ export function getDailyStats(days: number, provider?: string, tool?: string): R
   if (tool) { sql += ' JOIN sessions s ON c.session_id = s.id'; conditions.push('s.tool = ?'); params.push(tool); }
   if (provider) { conditions.push('c.provider = ?'); params.push(provider); }
   sql += ' WHERE ' + conditions.join(' AND ');
-  sql += ' GROUP BY date ORDER BY date ASC';
+  sql += ' GROUP BY date' + (groupByModel ? ', c.model' : '');
+  sql += ' ORDER BY date ASC';
   return queryAll(sql, params);
 }
 
