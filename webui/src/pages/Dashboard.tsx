@@ -154,7 +154,7 @@ export default function Dashboard() {
           { l: '输出 token', v: totalOutput.toLocaleString(), icon: Zap, c: 'text-sky-500' },
           { l: '输入 token', v: totalInput.toLocaleString(), icon: Zap, c: 'text-blue-500' },
           ...(provider ? [
-            { l: '缓存命中率', v: totalInput > 0 ? `${(totalCacheRead / totalInput * 100).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
+            { l: '缓存命中率', v: totalInput > 0 ? `${(Math.min(totalCacheRead / totalInput * 100, 100)).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
           ] : []),
         ].map(k => (
           <Card key={k.l}>
