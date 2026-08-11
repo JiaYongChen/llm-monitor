@@ -64,7 +64,7 @@ export default function SessionDetail() {
       {/* 上游选择器 */}
       <div className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm space-y-3">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">代理商</span>
+          <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">供应商</span>
           <select
             className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[200px]"
             value={currentUpstream}
@@ -87,19 +87,12 @@ export default function SessionDetail() {
           >
             <option value="">跟随请求路径（{s.tool}）</option>
             {enabledProviders.map((p: any) => (
-              <option key={p.provider} value={p.provider}>{p.provider}{p.base_url ? ` — ${p.base_url}` : ''}</option>
+              <option key={p.provider} value={p.provider}>{p.provider}</option>
             ))}
           </select>
-          {currentUpstream && (() => {
-            const officialUrls: Record<string, string> = { Anthropic: 'https://api.anthropic.com', OpenAI: 'https://api.openai.com' };
-            const up = (providers || []).find((p: any) => p.provider === currentUpstream);
-            const baseUrl = (s.tool === 'ClaudeCode' && up?.base_url_anthropic)
-              ? up.base_url_anthropic
-              : (up?.base_url || officialUrls[currentUpstream] || '');
-            const targetPath = baseUrl.toLowerCase().includes('anthropic') ? '/v1/messages' : '/v1/chat/completions';
-            const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${targetPath}` : '';
-            return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{fullUrl ? ` — ${fullUrl}` : ''}</span>;
-          })()}
+          {currentUpstream && (
+            <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">模型</span>
