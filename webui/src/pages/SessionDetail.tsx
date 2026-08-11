@@ -127,7 +127,7 @@ export default function SessionDetail() {
       </div>
 
       <div className="grid grid-cols-5 gap-4">
-        {[{ l: '调用次数', v: s.request_count.toLocaleString() }, { l: '总费用', v: formatCost(s.total_cost, currency, rates), c: '#e69900' }, { l: '输出 token', v: outputTokens.toLocaleString() }, { l: '输入(未命中缓存)', v: uncachedTokens.toLocaleString() }, { l: '输入(命中缓存)', v: cacheHitTokens.toLocaleString(), c: '#30b48b' }].map(k => (
+        {[{ l: '调用次数', v: s.request_count.toLocaleString() }, { l: '总费用', v: formatCost(s.total_cost, currency, rates), c: '#e69900' }, { l: '输出 token', v: outputTokens.toLocaleString() }, { l: '输入 tokens (未命中缓存)', v: uncachedTokens.toLocaleString() }, { l: '输入 tokens (命中缓存)', v: cacheHitTokens.toLocaleString(), c: '#30b48b' }].map(k => (
           <div key={k.l} className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm"><div className="text-[11px] font-medium uppercase tracking-wider text-[#aeaeb2] mb-1">{k.l}</div><div className="text-xl font-bold text-[#1d1d1f]" style={k.c ? { color: k.c } : {}}>{k.v}</div></div>
         ))}
       </div>
