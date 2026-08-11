@@ -189,8 +189,8 @@ export default function Dashboard() {
                 value={dailyRange}
                 onChange={e => setDailyRange(e.target.value)}
               >
-                <option value="today">今天</option>
                 <option value="yesterday">昨天</option>
+                <option value="today">今天</option>
                 <option value="7d">7 天</option>
                 <option value="14d">14 天</option>
                 <option value="30d">30 天</option>
