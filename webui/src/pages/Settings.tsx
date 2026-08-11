@@ -198,9 +198,8 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
   });
 
   return (
-    <div>
-      <div className={`rounded-lg border bg-card ${expanded ? 'rounded-b-none' : ''}`}>
-        <div className="flex items-center gap-3 py-5 px-4">
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center gap-3 py-5 px-4">
           <button onClick={() => setExpanded(!expanded)} className={`text-gray-500 hover:text-foreground ${!enabled ? 'opacity-40' : ''}`}>
             {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
           </button>
@@ -271,10 +270,9 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
             )}
           </div>
         </div>
-      </div>
 
       {expanded && (
-        <div className="border border-t-0 rounded-b-lg bg-muted/30 overflow-x-auto">
+        <div className="border-t bg-muted/30 overflow-x-auto">
           {/* 表头 */}
           <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 px-4 py-1 min-w-fit">
             <span className="flex-1 min-w-0">模型</span>
