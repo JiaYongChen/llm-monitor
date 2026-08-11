@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardRequest, forwardStream } from './forwarder.js';
+import { needsConversion, convertRequest, convertResponse, createResponseTransform } from './converter.js';
 import { getOrCreateSession, computeFingerprint, extractConversationSeed } from './session.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -172,13 +173,29 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       // provider 记录实际转发目标，非原始路径识别值
       const effectiveProvider = upstreamProvider;
 
-      const config = getConfiguredUpstream(upstreamProvider, tool, `/${remaining}`);
+      // 格式转换检测：工具格式 vs 上游供应商格式
+      const sourceFormat = tool === 'ClaudeCode' ? 'anthropic' : tool === 'codex' ? 'openai' : (providerConfig.api_format?.toLowerCase() || provider.toLowerCase());
+      const upstreamConfig = getProviderConfig(upstreamProvider);
+      const targetFormat = upstreamConfig?.api_format?.toLowerCase() || (upstreamProvider === 'Anthropic' ? 'anthropic' : 'openai');
+      const convert = needsConversion(sourceFormat, targetFormat);
+
+      let actualRemaining = remaining;
+      if (convert && hasBody) {
+        const converted = convertRequest(JSON.stringify(bodyObj), sourceFormat, targetFormat);
+        bodyObj = JSON.parse(converted.body);
+        request.body = bodyObj;
+        model = bodyObj.model || model;
+        actualRemaining = converted.path.replace(/^\//, '');
+        console.log(`[proxy] 🔄 格式转换: ${sourceFormat} → ${targetFormat} | 路径: ${remaining} → ${actualRemaining}`);
+      }
+
+      const config = getConfiguredUpstream(upstreamProvider, tool, `/${actualRemaining}`);
       const upstream = config.base_url;
       // 验证上游 URL 有效
       if (!upstream || !upstream.startsWith('http')) {
         return reply.status(500).send({ error: `Provider "${upstreamProvider}" 未配置有效的 Base URL` });
       }
-      const targetUrl = remaining ? `${upstream}/${remaining}` : upstream;
+      const targetUrl = actualRemaining ? `${upstream}/${actualRemaining}` : upstream;
 
       console.log(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
 
@@ -204,9 +221,14 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
           }
         });
         console.log(`[proxy] ◀ stream 已建立 | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
+        if (convert) {
+          const convertedStream = stream.pipeThrough(createResponseTransform(targetFormat, sourceFormat));
+          return reply.type('text/event-stream').send(convertedStream);
+        }
         return reply.type('text/event-stream').send(stream);
       } else {
         const result = await forwardRequest(request.method, targetUrl, reqHeaders, body);
+        const responseText = convert ? convertResponse(result.text, targetFormat, sourceFormat) : result.text;
         if (_enqueueRef) {
           _enqueueRef({
             provider: effectiveProvider, model, endpoint, method: request.method,
@@ -219,7 +241,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         console.log(`[proxy] ◀ status=${result.status} | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
-        return reply.status(result.status).header('content-type', 'application/json').send(result.text);
+        return reply.status(result.status).header('content-type', 'application/json').send(responseText);
       }
     },
   });
