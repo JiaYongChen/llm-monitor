@@ -106,9 +106,10 @@ export default function Dashboard() {
                 <option key={p.provider} value={p.provider}>{p.provider}{p.base_url ? ` — ${p.base_url}` : ''}</option>
               ))}
             </select>
-            {currentUpstream && (
-              <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}</span>
-            )}
+            {currentUpstream && (() => {
+              const up = (providers as any[]).find((p: any) => p.provider === currentUpstream);
+              return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{up?.base_url ? ` — ${up.base_url}` : ''}</span>;
+            })()}
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">模型</span>
