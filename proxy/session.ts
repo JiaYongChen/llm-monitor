@@ -1,6 +1,6 @@
 /** 会话识别模块 — 指纹 + 会话生命周期 */
 import { createHash } from 'node:crypto';
-import { upsertSession } from './db.js';
+import { upsertSession, getSession, activateSession } from './db.js';
 
 // ── Provider → 工具名映射 ──
 
@@ -105,6 +105,7 @@ export function computeFingerprint(provider: string, conversationSeed: string): 
 
 /**
  * 查找或创建会话：
+ * 0. knownSessionId 已提供（URL 路径嵌入 /s/<id>/）→ 直接激活并复用
  * 1. 用完整指纹精确匹配 → 命中则复用（同一聊天的后续请求）
  * 2. 未命中且有 pending 会话 → 升级并复用（包装脚本预创建的启动会话）
  * 3. 都不命中 → 新建会话
@@ -116,7 +117,19 @@ export function getOrCreateSession(
   endpoint: string,
   body: any,
   toolOverride?: string,
+  knownSessionId?: number,
 ): number {
+  // URL 路径嵌入 /s/<id>/ → 直接使用已知会话 ID
+  if (knownSessionId != null) {
+    const session = getSession(knownSessionId);
+    if (session) {
+      activateSession(knownSessionId);
+      return knownSessionId;
+    }
+    // 会话不存在（异常情况）→ 走正常指纹流程兜底
+    console.warn(`[session] 会话 ${knownSessionId} 不存在，回退到指纹匹配`);
+  }
+
   let seed = extractConversationSeed(body);
   // 无消息体的请求用端点路径区分，避免全部混入同一会话
   if (seed === '_empty_') {

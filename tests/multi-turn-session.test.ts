@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { extractConversationSeed, computeFingerprint, getOrCreateSession } from '../proxy/session.js';
-import { initDb, closeDb, listSessions } from '../proxy/db.js';
+import { initDb, closeDb, listSessions, createPendingSession } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
 const tmp = createTempDb();
@@ -177,5 +177,61 @@ describe('多轮对话会话一致性', () => {
 
     // 归一化后相同文本内容 → 相同种子
     expect(seed1).toBe(seed2);
+  });
+
+  // ── URL 路径嵌入 /s/<id>/  → 按进程区分 ──
+
+  it('★ 同一 knownSessionId 的多轮请求 → 同一会话', () => {
+    const pendingId = createPendingSession('ClaudeCode');
+
+    // 第 1 轮：首条消息
+    const body1 = makeAnthropicBody([
+      { role: 'user', content: '帮我写一段排序代码' },
+    ]);
+    const sid1 = getOrCreateSession('Anthropic', '/anthropic/v1/messages', body1, 'ClaudeCode', pendingId);
+
+    // 第 2 轮：追问（同一 knownSessionId）
+    const body2 = makeAnthropicBody([
+      { role: 'user', content: '帮我写一段排序代码' },
+      { role: 'assistant', content: '好的，这是快速排序的实现...' },
+      { role: 'user', content: '能加个注释吗？' },
+    ]);
+    const sid2 = getOrCreateSession('Anthropic', '/anthropic/v1/messages', body2, 'ClaudeCode', pendingId);
+
+    expect(sid1).toBe(sid2);
+    expect(sid1).toBe(pendingId);
+  });
+
+  it('★ 不同 knownSessionId → 不同会话（即使首条消息相同）', () => {
+    const pid1 = createPendingSession('ClaudeCode');
+    const pid2 = createPendingSession('ClaudeCode');
+
+    const body = makeAnthropicBody([
+      { role: 'user', content: 'hello' },
+    ]);
+
+    const sid1 = getOrCreateSession('Anthropic', '/anthropic/v1/messages', body, 'ClaudeCode', pid1);
+    const sid2 = getOrCreateSession('Anthropic', '/anthropic/v1/messages', body, 'ClaudeCode', pid2);
+
+    // 不同进程 → 不同会话
+    expect(sid1).not.toBe(sid2);
+    expect(sid1).toBe(pid1);
+    expect(sid2).toBe(pid2);
+  });
+
+  it('★ knownSessionId + 无 knownSessionId 混用：内容相同 → 不同会话', () => {
+    const pendingId = createPendingSession('ClaudeCode');
+    const body = makeAnthropicBody([
+      { role: 'user', content: '测试消息' },
+    ]);
+
+    // 有 knownSessionId → 使用 pending 会话
+    const sid1 = getOrCreateSession('Anthropic', '/anthropic/v1/messages', body, 'ClaudeCode', pendingId);
+
+    // 无 knownSessionId → 指纹匹配，首次创建新会话
+    const sid2 = getOrCreateSession('Anthropic', '/anthropic/v1/messages', body, 'ClaudeCode');
+
+    // 两个会话不同（一个来自 URL 前缀，一个来自内容指纹）
+    expect(sid1).not.toBe(sid2);
   });
 });

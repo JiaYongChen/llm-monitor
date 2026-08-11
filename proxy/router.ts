@@ -80,18 +80,26 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
     method: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     url: '/*',
     handler: async (request, reply) => {
-      const rawPath = (request.params as any)['*'] || '';
+      let rawPath = (request.params as any)['*'] || '';
       if (!rawPath || rawPath === '/') {
         return reply.status(404).send('Not found');
       }
+
+      // 检测 URL 路径嵌入 /s/<sessionId>/ 前缀 → 直接使用已知会话
+      let knownSessionId: number | undefined;
+      const sessionPrefixMatch = rawPath.match(/^s\/(\d+)\/(.+)/);
+      if (sessionPrefixMatch) {
+        knownSessionId = parseInt(sessionPrefixMatch[1]);
+        rawPath = sessionPrefixMatch[2]; // 剥离 /s/<id>/ 前缀
+      }
       const hasBody = request.body != null;
+      const remotePort = request.socket.remotePort || 0;
       const bodyModel = hasBody ? (request.body as any)?.model || '?' : null;
       const bodyStream = hasBody ? (request.body as any)?.stream ?? false : null;
-      // bodyless 请求也记录来源，方便调试
       if (hasBody) {
-        console.log(`[proxy] ▶ ${request.url} model=${bodyModel} stream=${bodyStream}`);
+        console.log(`[proxy] ▶ ${request.url} model=${bodyModel} stream=${bodyStream} port=${remotePort}`);
       } else {
-        console.log(`[proxy] ▶ ${request.url} (no body)`);
+        console.log(`[proxy] ▶ ${request.url} (no body) port=${remotePort}`);
       }
 
       const segments = rawPath.split('/').filter(Boolean);
@@ -130,16 +138,17 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
 
       // 提取请求头（用于转发）
       const reqHeaders = cleanHeaders(request.headers as any);
-      const sourcePort = request.socket.remotePort || 0;
       const sourceIp = request.socket.remoteAddress || '127.0.0.1';
       const downstreamUrl = `http://${request.hostname || 'localhost'}:${PORT}${request.url}`;
       let bodyObj = (request.body ?? {}) as Record<string, any>;
 
-      // 基于会话种子（首条消息）的会话识别：
+      // 基于会话种子的会话识别（URL 嵌入 /s/<id>/ 时优先使用已知 ID）
       // 同一聊天 → 相同种子 → 同一会话；不同聊天 → 不同种子 → 不同会话
       // 若有 pending 会话 → 自动升级为 active
-      const fp = computeFingerprint(provider, extractConversationSeed(bodyObj));
-      const sessionId = getOrCreateSession(provider, endpoint, bodyObj, tool);
+      const fp = knownSessionId
+        ? `url-session:${knownSessionId}`
+        : computeFingerprint(provider, extractConversationSeed(bodyObj));
+      const sessionId = getOrCreateSession(provider, endpoint, bodyObj, tool, knownSessionId);
       const reqId = randomUUID().slice(0, 8);
       const t0 = performance.now();
 
@@ -219,7 +228,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
               target_url: targetUrl, downstream_url: downstreamUrl, source_ip: sourceIp,
               status_code: result.status, error_message: result.status >= 400 ? result.text.slice(0, 200) : null,
               duration_ms: result.durationMs, request_body: body?.toString('utf-8') || null, response_body: result.text,
-              fingerprint: fp, source_port: sourcePort, session_id: sessionId,
+              fingerprint: fp, source_port: remotePort, session_id: sessionId,
               prompt_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null, uncached_input: null,
               input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
             });
@@ -240,7 +249,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
             target_url: targetUrl, downstream_url: downstreamUrl, source_ip: sourceIp,
             status_code: result.status, error_message: result.status >= 400 ? result.text.slice(0, 200) : null,
             duration_ms: result.durationMs, request_body: body?.toString('utf-8') || null, response_body: result.text,
-            fingerprint: fp, source_port: sourcePort, session_id: sessionId,
+            fingerprint: fp, source_port: remotePort, session_id: sessionId,
             prompt_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null, uncached_input: null,
             input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
           });

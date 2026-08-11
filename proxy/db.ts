@@ -411,6 +411,11 @@ export function getSession(sessionId: number): Record<string, any> | null {
   return queryOne('SELECT * FROM sessions WHERE id = ?', [sessionId]);
 }
 
+/** 激活已有会话（更新状态和时间） */
+export function activateSession(sessionId: number): void {
+  execute("UPDATE sessions SET status = 'active', last_call_at = ? WHERE id = ?", [Date.now(), sessionId]);
+}
+
 /** 重命名会话 */
 export function updateSessionLabel(sessionId: number, label: string): void {
   execute('UPDATE sessions SET label = ? WHERE id = ?', [label, sessionId]);

@@ -86,4 +86,52 @@ describe('session', () => {
     const fp2 = computeFingerprint('anthropic', 'seed2');
     expect(fp1).not.toBe(fp2);
   });
+
+  // ── URL 路径嵌入 /s/<id>/  → 已知会话 ID 直通 ──
+
+  it('knownSessionId：复用已有 pending 会话并升级为 active', () => {
+    const pendingId = createPendingSession('ClaudeCode');
+    const body = anBody('任意消息');
+
+    // 带 knownSessionId 调用 → 应复用 pending 会话
+    const sid = getOrCreateSession('anthropic', '/v1/messages', body, undefined, pendingId);
+    expect(sid).toBe(pendingId);
+
+    const session = getSession(sid);
+    expect(session!.status).toBe('active');
+  });
+
+  it('knownSessionId：多次调用返回同一会话', () => {
+    const pendingId = createPendingSession('ClaudeCode');
+    const body = anBody('hello');
+
+    const sid1 = getOrCreateSession('anthropic', '/v1/messages', body, undefined, pendingId);
+    const sid2 = getOrCreateSession('anthropic', '/v1/messages', body, undefined, pendingId);
+    expect(sid1).toBe(sid2);
+    expect(sid1).toBe(pendingId);
+  });
+
+  it('knownSessionId 不存在时回退到指纹匹配', () => {
+    // 使用一个不存在的 session ID
+    const body = anBody('测试消息');
+    const sid1 = getOrCreateSession('anthropic', '/v1/messages', body, undefined, 99999);
+
+    // 回退到指纹匹配：相同 body 再次调用应返回同一会话
+    const sid2 = getOrCreateSession('anthropic', '/v1/messages', body);
+    expect(sid1).toBe(sid2);
+  });
+
+  it('knownSessionId 区分不同进程', () => {
+    const pid1 = createPendingSession('ClaudeCode');
+    const pid2 = createPendingSession('ClaudeCode');
+    const body = anBody('hello');
+
+    const sid1 = getOrCreateSession('anthropic', '/v1/messages', body, undefined, pid1);
+    const sid2 = getOrCreateSession('anthropic', '/v1/messages', body, undefined, pid2);
+
+    // 不同 knownSessionId → 不同会话
+    expect(sid1).not.toBe(sid2);
+    expect(sid1).toBe(pid1);
+    expect(sid2).toBe(pid2);
+  });
 });
