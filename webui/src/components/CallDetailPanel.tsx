@@ -67,6 +67,17 @@ export default function CallDetailPanel({ call }: { call: any }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-lg bg-[#fafafc]">
                 <div className="flex items-center gap-2 mb-3">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5e5ce6" strokeWidth="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 01-4 4H4"/></svg>
+                  <span className="text-xs font-semibold text-[#6e6e73]">输出</span>
+                  <span className="text-xs font-mono ml-auto text-[#aeaeb2]">{call.output_tokens?.toLocaleString() || 0} token</span>
+                </div>
+                <div className="flex justify-between mt-3 pt-3 border-t border-[#e5e5ea]">
+                  <span className="text-xs font-medium text-[#6e6e73]">输出费用</span>
+                  <span className="text-sm font-mono font-semibold text-[#e69900]">{formatCost(call.output_cost, currency, rates)}</span>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-[#fafafc]">
+                <div className="flex items-center gap-2 mb-3">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="2"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 014-4h12"/></svg>
                   <span className="text-xs font-semibold text-[#6e6e73]">输入</span>
                   <span className="text-xs font-mono ml-auto text-[#aeaeb2]">{call.prompt_tokens.toLocaleString()} token</span>
@@ -77,17 +88,6 @@ export default function CallDetailPanel({ call }: { call: any }) {
                 <div className="flex justify-between mt-3 pt-3 border-t border-[#e5e5ea]">
                   <span className="text-xs font-medium text-[#6e6e73]">输入费用</span>
                   <span className="text-sm font-mono font-semibold text-[#e69900]">{formatCost(call.input_cost, currency, rates)}</span>
-                </div>
-              </div>
-              <div className="p-4 rounded-lg bg-[#fafafc]">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5e5ce6" strokeWidth="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 01-4 4H4"/></svg>
-                  <span className="text-xs font-semibold text-[#6e6e73]">输出</span>
-                  <span className="text-xs font-mono ml-auto text-[#aeaeb2]">{call.output_tokens?.toLocaleString() || 0} token</span>
-                </div>
-                <div className="flex justify-between mt-3 pt-3 border-t border-[#e5e5ea]">
-                  <span className="text-xs font-medium text-[#6e6e73]">输出费用</span>
-                  <span className="text-sm font-mono font-semibold text-[#e69900]">{formatCost(call.output_cost, currency, rates)}</span>
                 </div>
               </div>
             </div>
