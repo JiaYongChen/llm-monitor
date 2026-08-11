@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   通过 llm-monitor 代理启动 Claude Code / Codex CLI 工具
 
