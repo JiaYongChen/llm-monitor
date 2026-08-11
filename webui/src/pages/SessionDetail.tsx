@@ -89,9 +89,16 @@ export default function SessionDetail() {
               <option key={p.provider} value={p.provider}>{p.provider}{p.base_url ? ` — ${p.base_url}` : ''}</option>
             ))}
           </select>
-          {currentUpstream && (
-            <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}</span>
-          )}
+          {currentUpstream && (() => {
+            const officialUrls: Record<string, string> = { Anthropic: 'https://api.anthropic.com', OpenAI: 'https://api.openai.com' };
+            const up = (providers || []).find((p: any) => p.provider === currentUpstream);
+            const baseUrl = (s.tool === 'ClaudeCode' && up?.base_url_anthropic)
+              ? up.base_url_anthropic
+              : (up?.base_url || officialUrls[currentUpstream] || '');
+            const targetPath = baseUrl.toLowerCase().includes('anthropic') ? '/v1/messages' : '/v1/chat/completions';
+            const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${targetPath}` : '';
+            return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{fullUrl ? ` — ${fullUrl}` : ''}</span>;
+          })()}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">模型</span>
