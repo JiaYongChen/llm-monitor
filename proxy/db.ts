@@ -490,14 +490,16 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
      SUM(total_cost) as total_cost,
      SUM(prompt_tokens) as total_input_tokens,
      SUM(output_tokens) as total_output_tokens,
-     SUM(cache_read_tokens) as total_cache_read_tokens`;
+     SUM(cache_read_tokens) as total_cache_read_tokens,
+     SUM(uncached_input) as total_uncached_input`;
 
   // 带 c. 前缀的版本，用于 JOIN 场景
   const aggsC = `COUNT(*) as count,
      SUM(c.total_cost) as total_cost,
      SUM(c.prompt_tokens) as total_input_tokens,
      SUM(c.output_tokens) as total_output_tokens,
-     SUM(c.cache_read_tokens) as total_cache_read_tokens`;
+     SUM(c.cache_read_tokens) as total_cache_read_tokens,
+     SUM(c.uncached_input) as total_uncached_input`;
 
   if (groupBy === 'tool') {
     let sql = `SELECT s.tool as key, ${aggsC}
@@ -538,6 +540,7 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
         m.total_input_tokens += row.total_input_tokens;
         m.total_output_tokens += row.total_output_tokens;
         m.total_cache_read_tokens += row.total_cache_read_tokens;
+        m.total_uncached_input += row.total_uncached_input;
       } else {
         merged.set(stripped, { ...row, key: stripped });
       }

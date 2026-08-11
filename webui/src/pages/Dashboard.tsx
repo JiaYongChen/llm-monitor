@@ -50,6 +50,7 @@ export default function Dashboard() {
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
   const totalOutput = stats?.reduce((a: number, b: any) => a + (b.total_output_tokens || 0), 0) || 0;
   const totalCacheRead = stats?.reduce((a: number, b: any) => a + (b.total_cache_read_tokens || 0), 0) || 0;
+  const totalUncached = stats?.reduce((a: number, b: any) => a + (b.total_uncached_input || 0), 0) || 0;
   const maxCost = Math.max(...(stats || []).map((s: any) => s.total_cost), 0.0001);
   const bars = ['#6366f1', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316'];
   return (
@@ -152,9 +153,9 @@ export default function Dashboard() {
           { l: '总调用次数', v: totalCalls.toLocaleString(), s: undefined, icon: Activity, c: 'text-violet-500' },
           { l: '累计费用', v: formatCost(totalCost, currency, rates), icon: ({ className }: any) => <span className={className}>{sym}</span>, c: 'text-amber-500' },
           { l: '输出 token', v: totalOutput.toLocaleString(), icon: Zap, c: 'text-sky-500' },
-          { l: '输入 token', v: totalInput.toLocaleString(), icon: Zap, c: 'text-blue-500' },
+          { l: '输入 token', v: totalUncached.toLocaleString(), icon: Zap, c: 'text-blue-500' },
           ...(provider ? [
-            { l: '缓存命中率', v: totalInput > 0 ? `${(Math.min(totalCacheRead / totalInput * 100, 100)).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
+            { l: '缓存命中率', v: totalUncached + totalCacheRead > 0 ? `${(totalCacheRead / (totalUncached + totalCacheRead) * 100).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
           ] : []),
         ].map(k => (
           <Card key={k.l}>
