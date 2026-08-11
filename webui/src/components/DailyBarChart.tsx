@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = {
@@ -19,8 +20,34 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-export default function DailyBarChart({ data }: { data: DailyData[] }) {
-  const hasData = data.some(d =>
+/** 生成最近 N 天的完整日期序列（含今天） */
+function fillDateRange(days: number): string[] {
+  const result: string[] = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    result.push(d.toISOString().slice(0, 10));
+  }
+  return result;
+}
+
+const ZERO_ROW: DailyData = {
+  date: '',
+  total_output_tokens: 0,
+  total_uncached_input: 0,
+  total_cache_read_tokens: 0,
+};
+
+export default function DailyBarChart({ data, days }: { data: DailyData[]; days: number }) {
+  // 填充缺失天数，确保图表显示完整时间范围
+  const filledData = useMemo(() => {
+    const map = new Map<string, DailyData>();
+    for (const d of data) map.set(d.date, d);
+    return fillDateRange(days).map(date => map.get(date) || { ...ZERO_ROW, date });
+  }, [data, days]);
+
+  const hasData = filledData.some(d =>
     d.total_output_tokens > 0 || d.total_uncached_input > 0 || d.total_cache_read_tokens > 0,
   );
 
@@ -30,7 +57,7 @@ export default function DailyBarChart({ data }: { data: DailyData[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <BarChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
         <XAxis
           dataKey="date"

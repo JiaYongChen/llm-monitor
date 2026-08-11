@@ -191,7 +191,7 @@ export default function Dashboard() {
             </select>
           </CardHeader>
           <CardContent>
-            <DailyBarChart data={dailyStats} />
+            <DailyBarChart data={dailyStats} days={dailyDays} />
           </CardContent>
         </Card>
       )}
