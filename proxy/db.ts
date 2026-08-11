@@ -550,19 +550,58 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
   return results;
 }
 
-/** 每日统计：按天（+ 可选模型）聚合 token 和调用次数 */
-export function getDailyStats(days: number, provider?: string, tool?: string, groupByModel?: boolean): Record<string, any>[] {
+/**
+ * 时间统计：按范围 + 粒度聚合。
+ * range: '7d'|'14d'|'30d'|'60d' → 按天，最近 N 天
+ *        'today'|'yesterday'      → 按小时
+ *        'thisMonth'|'lastMonth'  → 按天
+ */
+export function getDailyStats(range: string, provider?: string, tool?: string, groupByModel?: boolean): Record<string, any>[] {
+  const now = new Date();
+  let dateFormat: string;
+  let startMs: number;
+  let endMs: number | null = null;
+
+  switch (range) {
+    case 'today':
+      dateFormat = "%Y-%m-%d %H:00";
+      startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      break;
+    case 'yesterday':
+      dateFormat = "%Y-%m-%d %H:00";
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      startMs = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate()).getTime();
+      endMs = startMs + 24 * 60 * 60 * 1000;
+      break;
+    case 'thisMonth':
+      dateFormat = "%Y-%m-%d";
+      startMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      break;
+    case 'lastMonth':
+      dateFormat = "%Y-%m-%d";
+      const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      startMs = lm.getTime();
+      endMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      break;
+    default: // '7d', '14d', '30d', '60d'
+      dateFormat = "%Y-%m-%d";
+      const days = parseInt(range) || 30;
+      startMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  }
+
   const modelCol = groupByModel ? "c.model as model," : '';
   const aggs = `${modelCol}
-     strftime('%Y-%m-%d', c.created_at / 1000, 'unixepoch') as date,
+     strftime('${dateFormat}', c.created_at / 1000, 'unixepoch') as date,
      COUNT(*) as count,
      SUM(c.total_cost) as total_cost,
      SUM(c.output_tokens) as total_output_tokens,
      SUM(COALESCE(c.uncached_input, 0)) as total_uncached_input,
      SUM(COALESCE(c.cache_read_tokens, 0)) as total_cache_read_tokens`;
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const conditions: string[] = ['c.created_at > ?'];
-  const params: any[] = [cutoff];
+
+  const conditions: string[] = ['c.created_at >= ?'];
+  const params: any[] = [startMs];
+  if (endMs != null) { conditions.push('c.created_at < ?'); params.push(endMs); }
   let sql = `SELECT ${aggs} FROM calls c`;
   if (tool) { sql += ' JOIN sessions s ON c.session_id = s.id'; conditions.push('s.tool = ?'); params.push(tool); }
   if (provider) { conditions.push('c.provider = ?'); params.push(provider); }

@@ -338,7 +338,7 @@ function _registerApiRoutes(app: FastifyInstance): void {
   app.get('/api/stats/daily', async (req) => {
     const q = req.query as any;
     return getDailyStats(
-      q?.days ? parseInt(q.days) : 30,
+      q?.range || '30d',
       q?.provider || undefined,
       q?.tool || undefined,
       q?.group_by_model === '1',

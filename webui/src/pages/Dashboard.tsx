@@ -47,9 +47,12 @@ export default function Dashboard() {
 
   const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
   const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
-  const [dailyDays, setDailyDays] = useState(30);
-  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyDays], queryFn: () => api.getDailyStats(provider, tool, dailyDays), enabled: !!provider, refetchInterval: 60000 });
-  const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyDays], queryFn: () => api.getDailyStats(provider, tool, dailyDays, true), enabled: !!provider, refetchInterval: 60000 });
+  const [dailyRange, setDailyRange] = useState('30d');
+  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange], queryFn: () => api.getDailyStats(provider, tool, dailyRange), enabled: !!provider, refetchInterval: 60000 });
+  const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange], queryFn: () => api.getDailyStats(provider, tool, dailyRange, true), enabled: !!provider, refetchInterval: 60000 });
+  // 判断是否为小时级粒度（today/yesterday）
+  const isHourly = dailyRange === 'today' || dailyRange === 'yesterday';
+  const rangeDays = { today: 1, yesterday: 1, '7d': 7, '14d': 14, '30d': 30, '60d': 60, thisMonth: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate(), lastMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 0).getDate() }[dailyRange] || 30;
   const totalCalls = stats?.reduce((a: number, b: any) => a + b.count, 0) || 0;
   const totalCost = stats?.reduce((a: number, b: any) => a + b.total_cost, 0) || 0;
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
@@ -180,20 +183,24 @@ export default function Dashboard() {
         <>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">每日 Token 用量</CardTitle>
+              <CardTitle className="text-base">Token 用量</CardTitle>
               <select
                 className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                value={dailyDays}
-                onChange={e => setDailyDays(Number(e.target.value))}
+                value={dailyRange}
+                onChange={e => setDailyRange(e.target.value)}
               >
-                <option value={7}>7 天</option>
-                <option value={14}>14 天</option>
-                <option value={30}>30 天</option>
-                <option value={60}>60 天</option>
+                <option value="today">今天</option>
+                <option value="yesterday">昨天</option>
+                <option value="7d">7 天</option>
+                <option value="14d">14 天</option>
+                <option value="30d">30 天</option>
+                <option value="60d">60 天</option>
+                <option value="thisMonth">本月</option>
+                <option value="lastMonth">上月</option>
               </select>
             </CardHeader>
             <CardContent>
-              <DailyBarChart data={dailyStats} days={dailyDays} modelData={dailyModelStats} />
+              <DailyBarChart data={dailyStats} days={rangeDays} isHourly={isHourly} modelData={dailyModelStats} />
             </CardContent>
           </Card>
         </>
