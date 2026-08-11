@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
@@ -46,7 +47,8 @@ export default function Dashboard() {
 
   const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
   const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
-  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool], queryFn: () => api.getDailyStats(provider, tool, 30), enabled: !!provider, refetchInterval: 60000 });
+  const [dailyDays, setDailyDays] = useState(30);
+  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyDays], queryFn: () => api.getDailyStats(provider, tool, dailyDays), enabled: !!provider, refetchInterval: 60000 });
   const totalCalls = stats?.reduce((a: number, b: any) => a + b.count, 0) || 0;
   const totalCost = stats?.reduce((a: number, b: any) => a + b.total_cost, 0) || 0;
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
@@ -175,7 +177,19 @@ export default function Dashboard() {
       {/* 每日调用柱状图（仅供应商筛选视图） */}
       {provider && dailyStats && (
         <Card>
-          <CardHeader><CardTitle className="text-base">每日调用量</CardTitle></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">每日调用量</CardTitle>
+            <select
+              className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+              value={dailyDays}
+              onChange={e => setDailyDays(Number(e.target.value))}
+            >
+              <option value={7}>7 天</option>
+              <option value={14}>14 天</option>
+              <option value={30}>30 天</option>
+              <option value={60}>60 天</option>
+            </select>
+          </CardHeader>
           <CardContent>
             <DailyBarChart data={dailyStats} />
           </CardContent>
