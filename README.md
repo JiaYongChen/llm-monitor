@@ -24,7 +24,7 @@ npx tsx proxy/main.ts --port 9400 --webui-port 9401
 ## 对接 CLI 工具
 
 ```powershell
-# 一键启动（自动设置环境变量）
+# 一键启动（自动预创建会话并锁定，同终端复用同一会话）
 npm link                           # 一次性注册命令
 llm-monitor Claude D:\my-project   # 通过代理启动 ClaudeCode
 llm-monitor codex                  # 通过代理启动 Codex
@@ -33,6 +33,8 @@ llm-monitor codex                  # 通过代理启动 Codex
 $env:ANTHROPIC_BASE_URL = "http://localhost:9400/anthropic"
 $env:OPENAI_BASE_URL = "http://localhost:9400/openai"
 ```
+
+> 脚本使用 `/s/<id>/` URL 前缀将会话 ID 嵌入 `ANTHROPIC_BASE_URL`，确保同一终端内所有请求归属同一会话。
 
 ## 功能
 
@@ -138,10 +140,13 @@ llm-monitor/
 | GET | `/api/config` | 全局配置（含汇率） |
 | GET | `/proxy/health` | 健康检查 |
 
-### 写入
+### 代理端口（9400）
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/sessions/start` | 预创建 pending 会话 |
+| POST | `/proxy/sessions/start` | 预创建 pending 会话 |
+| GET | `/proxy/health` | 健康检查 |
+
+### 写入（面板端口 9401）
 | PUT | `/api/sessions/:id/label` | 更新会话标签 |
 | PUT | `/api/sessions/:id/upstream` | 更新会话上游供应商 |
 | PUT | `/api/sessions/:id/model` | 更新会话上游模型 |

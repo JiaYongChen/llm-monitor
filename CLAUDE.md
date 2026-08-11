@@ -29,7 +29,7 @@ llm-monitor Claude D:\project  # 启动 ClaudeCode 通过代理连接
 llm-monitor codex              # 启动 Codex（当前目录）
 ```
 
-脚本位于 `scripts/start-tool.ps1`，自动设置环境变量 `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` 指向代理。
+脚本位于 `scripts/start-tool.ps1`，预创建会话后将会话 ID 嵌入 URL（`/s/<id>/anthropic`），确保同一终端所有请求归入同一会话。代理端口路由：`/proxy/health`（健康检查）、`/proxy/sessions/start`（会话预创建）、`/*`（转发）。
 
 ## 技术架构
 
@@ -100,8 +100,9 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 ## Token 归一化
 
 - 归一化格式由上游实际响应 URL 决定（`detectFormatFromUrl`），兜底用工具类型（`detectFormatFromTool`）
-- Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`
-- OpenAI（含 Kimi / GLM 等兼容供应商）：`prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`
+- Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`；`uncached_input = max(0, input - cacheWrite)`
+- OpenAI（含 Kimi / GLM 等兼容供应商）：`prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`；`uncached_input = max(0, input - cached)`
+- `uncached_input` 使用 `Math.max(0, ...)` 防御下溢为负
 
 ## 测试
 
