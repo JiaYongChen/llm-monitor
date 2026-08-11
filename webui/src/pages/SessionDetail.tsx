@@ -23,7 +23,7 @@ export default function SessionDetail() {
   if (!s) return <div className="p-8 text-sm text-[#aeaeb2]">加载中...</div>;
 
   const callsList = calls || [];
-  const inputTokens = callsList.reduce((sum: number, c: any) => sum + (c.uncached_input || 0), 0);
+  const inputTokens = callsList.reduce((sum: number, c: any) => sum + (c.uncached_input || 0) + (c.cache_read_tokens || 0), 0);
   const outputTokens = callsList.reduce((sum: number, c: any) => sum + (c.output_tokens || 0), 0);
 
   // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, codex→OpenAI）
