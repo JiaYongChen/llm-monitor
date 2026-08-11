@@ -44,6 +44,16 @@ export async function deleteSession(id: number) {
   return fetchJson(`/sessions/${id}`, { method: 'DELETE' });
 }
 
+// ── Tool Config ──
+
+export async function listToolConfigs() {
+  return fetchJson('/tool-configs');
+}
+
+export async function updateToolConfig(tool: string, upstreamProvider: string | null, upstreamModel: string | null) {
+  return fetchJson(`/tool-configs/${tool}`, { method: 'PUT', body: JSON.stringify({ upstream_provider: upstreamProvider, upstream_model: upstreamModel }) });
+}
+
 // ── Calls ──
 export async function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });

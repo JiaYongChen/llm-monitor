@@ -175,6 +175,15 @@ export async function initDb(dbPath?: string): Promise<void> {
   try { db.run(`ALTER TABLE calls ADD COLUMN source_ip TEXT`); } catch {}
   try { db.run(`ALTER TABLE calls ADD COLUMN downstream_url TEXT`); } catch {}
 
+  // 工具级上游配置（ClaudeCode / codex 等的默认供应商和模型覆盖）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tool_config (
+      tool              TEXT PRIMARY KEY,
+      upstream_provider TEXT,
+      upstream_model    TEXT
+    )
+  `);
+
   saveDb();
 }
 
@@ -432,6 +441,27 @@ export function updateSessionModel(sessionId: number, model: string | null): voi
 export function deleteSession(sessionId: number): void {
   execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
   execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
+}
+
+// ── Tool Config ──
+
+/** 列出所有工具配置 */
+export function listToolConfigs(): Record<string, any>[] {
+  return queryAll('SELECT * FROM tool_config', []);
+}
+
+/** 获取单个工具的配置 */
+export function getToolConfig(tool: string): Record<string, any> | null {
+  return queryOne('SELECT * FROM tool_config WHERE tool = ?', [tool]);
+}
+
+/** 更新工具级上游配置（upsert） */
+export function updateToolConfig(tool: string, upstreamProvider: string | null, upstreamModel: string | null): void {
+  execute(
+    `INSERT INTO tool_config (tool, upstream_provider, upstream_model) VALUES (?, ?, ?)
+     ON CONFLICT(tool) DO UPDATE SET upstream_provider = excluded.upstream_provider, upstream_model = excluded.upstream_model`,
+    [tool, upstreamProvider, upstreamModel],
+  );
 }
 
 // ── Stats ──

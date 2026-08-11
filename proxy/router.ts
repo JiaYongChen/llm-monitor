@@ -8,6 +8,7 @@ import { getOrCreateSession, computeFingerprint, extractConversationSeed } from 
 import { randomUUID } from 'node:crypto';
 import {
   listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
+  listToolConfigs, getToolConfig, updateToolConfig,
   listCalls as dbListCalls, getCall as dbGetCall, getStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
@@ -144,17 +145,27 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       let model = bodyObj?.model || '?';
       const isStream = bodyObj?.stream === true;
 
-      // 会话级上游覆盖：provider + model
+      // 上游覆盖优先级：会话 > 工具 > URL 路径默认
       let upstreamProvider = provider;
       try {
         const session = getSession(sessionId);
         if (session?.upstream_provider) {
           upstreamProvider = session.upstream_provider;
-          // model 覆写仅在指定了上游供应商时才生效
           if (session?.upstream_model && request.body != null) {
             bodyObj.model = session.upstream_model;
             request.body = bodyObj;
             model = session.upstream_model;
+          }
+        } else {
+          // 会话未设 → 回退到工具级配置
+          const tc = getToolConfig(tool);
+          if (tc?.upstream_provider) {
+            upstreamProvider = tc.upstream_provider;
+            if (tc.upstream_model && request.body != null) {
+              bodyObj.model = tc.upstream_model;
+              request.body = bodyObj;
+              model = tc.upstream_model;
+            }
           }
         }
       } catch {}
@@ -247,6 +258,14 @@ function _registerApiRoutes(app: FastifyInstance): void {
   });
   app.delete('/api/sessions/:id', async (req) => {
     deleteSession(parseInt((req.params as any).id));
+    return { ok: true };
+  });
+
+  // Tool Config
+  app.get('/api/tool-configs', async () => listToolConfigs());
+  app.put('/api/tool-configs/:tool', async (req) => {
+    const { upstream_provider, upstream_model } = req.body as any;
+    updateToolConfig((req.params as any).tool, upstream_provider || null, upstream_model || null);
     return { ok: true };
   });
 

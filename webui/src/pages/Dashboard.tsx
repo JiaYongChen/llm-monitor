@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -27,6 +27,13 @@ export default function Dashboard() {
   const [searchParams] = useSearchParams();
   const provider = searchParams.get('provider') || undefined;
   const tool = searchParams.get('tool') || undefined;
+  const qc = useQueryClient();
+
+  // 工具级上游配置
+  const { data: toolConfigs } = useQuery({ queryKey: ['tool-configs'], queryFn: () => api.listToolConfigs() });
+  const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
+  const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: () => api.listPricing() });
+  const toolConfig = (toolConfigs as any[])?.find((t: any) => t.tool === tool);
 
   /** 根据当前筛选状态决定标题文本和颜色 */
   const pageTitle = provider ? (PROVIDER_DISPLAY[provider] || provider) : tool ? (TOOL_DISPLAY[tool] || tool) : '总览';
@@ -56,6 +63,48 @@ export default function Dashboard() {
           </Badge>
         )}
       </div>
+
+      {/* 工具级上游配置（仅在筛选到具体工具时显示） */}
+      {tool && providers && (
+        <div className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider shrink-0">默认上游</span>
+            <select
+              className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[180px]"
+              value={toolConfig?.upstream_provider || ''}
+              onChange={async (e) => {
+                const val = e.target.value || null;
+                await api.updateToolConfig(tool, val, val ? toolConfig?.upstream_model || null : null);
+                qc.invalidateQueries({ queryKey: ['tool-configs'] });
+              }}
+            >
+              <option value="">跟随请求路径</option>
+              {(providers as any[])?.filter((p: any) => p.enabled).map((p: any) => (
+                <option key={p.provider} value={p.provider}>{p.provider}</option>
+              ))}
+            </select>
+            {toolConfig?.upstream_provider && (
+              <>
+                <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider shrink-0">默认模型</span>
+                <select
+                  className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] min-w-[200px]"
+                  value={toolConfig?.upstream_model || ''}
+                  onChange={async (e) => {
+                    const val = e.target.value || null;
+                    await api.updateToolConfig(tool, toolConfig.upstream_provider, val);
+                    qc.invalidateQueries({ queryKey: ['tool-configs'] });
+                  }}
+                >
+                  <option value="">跟随客户端请求</option>
+                  {[...new Set<string>(((pricing as any[]) || []).filter((p: any) => p.provider === toolConfig.upstream_provider).map((p: any) => p.model as string))].map((m: string) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPI 卡片 */}
       <div className={`grid gap-4 ${provider ? 'grid-cols-5' : 'grid-cols-4'}`}>
