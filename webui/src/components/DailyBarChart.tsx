@@ -72,6 +72,9 @@ export default function DailyBarChart({ data, days, modelData }: { data: DailyDa
     d.total_output_tokens > 0 || d.total_uncached_input > 0 || d.total_cache_read_tokens > 0,
   );
 
+  const totalCalls = filledData.reduce((s, d) => s + (d.count || 0), 0);
+  const totalTokens = filledData.reduce((s, d) => s + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens, 0);
+
   if (!hasData) return (
     <p className="text-sm text-gray-500 text-center py-8">暂无每日数据</p>
   );
@@ -81,7 +84,10 @@ export default function DailyBarChart({ data, days, modelData }: { data: DailyDa
       {/* 调用次数趋势 + Token 用量 同行 */}
       <div className="grid grid-cols-2 gap-6">
         <div>
-          <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">调用次数</h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-medium text-[#aeaeb2]">调用次数</h4>
+            <span className="text-xs font-mono text-[#6366f1]">{totalCalls.toLocaleString()} 次</span>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
@@ -93,7 +99,10 @@ export default function DailyBarChart({ data, days, modelData }: { data: DailyDa
           </ResponsiveContainer>
         </div>
         <div>
-          <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">Token 用量</h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-medium text-[#aeaeb2]">Token 用量</h4>
+            <span className="text-xs font-mono text-[#aeaeb2]">{fmtTokens(totalTokens)}</span>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
