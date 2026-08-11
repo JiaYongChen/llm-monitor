@@ -71,7 +71,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS calls (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      id              INTEGER PRIMARY KEY,
       session_id      INTEGER NOT NULL REFERENCES sessions(id),
       provider        TEXT    NOT NULL,
       model           TEXT    NOT NULL,
@@ -99,7 +99,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      id            INTEGER PRIMARY KEY,
       tool          TEXT    NOT NULL,
       label         TEXT,
       fingerprint   TEXT    NOT NULL UNIQUE,
@@ -117,7 +117,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS pricing (
-      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      id                INTEGER PRIMARY KEY,
       provider          TEXT    NOT NULL,
       model             TEXT    NOT NULL,
       input_price       REAL    NOT NULL,
@@ -132,7 +132,7 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS provider_config (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      id         INTEGER PRIMARY KEY,
       provider   TEXT    NOT NULL UNIQUE,
       base_url   TEXT    NOT NULL DEFAULT '',
       base_url_anthropic TEXT NOT NULL DEFAULT '',
@@ -578,7 +578,68 @@ export function deleteAllSessions(): number {
   d.run('DELETE FROM calls');
   const count = d.getRowsModified();
   d.run('DELETE FROM sessions');
-  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions')");
+  // 移除 AUTOINCREMENT 约束以允许 ID 从 1 重新开始
+  try {
+    d.run("DROP TABLE IF EXISTS calls_new");
+    d.run("DROP TABLE IF EXISTS sessions_new");
+    d.run(`CREATE TABLE calls_new (
+      id              INTEGER PRIMARY KEY,
+      session_id      INTEGER,
+      provider        TEXT    NOT NULL,
+      model           TEXT,
+      endpoint        TEXT    NOT NULL,
+      method          TEXT    NOT NULL DEFAULT 'POST',
+      target_url      TEXT,
+      downstream_url  TEXT,
+      source_ip       TEXT,
+      status_code     INTEGER,
+      error_message   TEXT,
+      duration_ms     INTEGER NOT NULL DEFAULT 0,
+      prompt_tokens       INTEGER,
+      output_tokens       INTEGER,
+      cache_read_tokens   INTEGER,
+      cache_write_tokens  INTEGER,
+      uncached_input      REAL,
+      input_cost      REAL    NOT NULL DEFAULT 0,
+      output_cost     REAL    NOT NULL DEFAULT 0,
+      total_cost      REAL    NOT NULL DEFAULT 0,
+      cache_savings   REAL    NOT NULL DEFAULT 0,
+      request_body    TEXT,
+      response_body   TEXT,
+      fingerprint     TEXT    NOT NULL DEFAULT '',
+      source_port     INTEGER,
+      created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )`);
+    d.run(`CREATE TABLE sessions_new (
+      id            INTEGER PRIMARY KEY,
+      tool          TEXT    NOT NULL,
+      label         TEXT,
+      fingerprint   TEXT    NOT NULL UNIQUE,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      total_cost    REAL    NOT NULL DEFAULT 0,
+      total_tokens  INTEGER NOT NULL DEFAULT 0,
+      first_call_at INTEGER,
+      last_call_at  INTEGER,
+      first_endpoint TEXT,
+      status        TEXT    NOT NULL DEFAULT 'active',
+      created_at    INTEGER NOT NULL,
+      upstream_provider TEXT,
+      upstream_model    TEXT
+    )`);
+    // 重建索引
+    d.run('CREATE INDEX IF NOT EXISTS idx_calls_session ON calls_new(session_id)');
+    d.run('CREATE INDEX IF NOT EXISTS idx_calls_created ON calls_new(created_at)');
+    d.run('CREATE INDEX IF NOT EXISTS idx_calls_model ON calls_new(model)');
+    d.run('CREATE INDEX IF NOT EXISTS idx_calls_fingerprint ON calls_new(fingerprint)');
+    d.run('CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions_new(tool)');
+    d.run('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions_new(status)');
+    d.run('DROP TABLE IF EXISTS calls');
+    d.run('DROP TABLE IF EXISTS sessions');
+    d.run('ALTER TABLE calls_new RENAME TO calls');
+    d.run('ALTER TABLE sessions_new RENAME TO sessions');
+  } catch {
+    // 重建失败不影响删除本身，仅无法重置 ID
+  }
   saveDb();
   return count;
 }
