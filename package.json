@@ -2,6 +2,9 @@
   "name": "llm-monitor",
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "llm-monitor": "./scripts/llm-monitor.cmd"
+  },
   "scripts": {
     "dev": "tsx watch --clear-screen=false --ignore webui --ignore node_modules proxy/main.ts --dev",
     "build": "vite build --config webui/vite.config.ts",
