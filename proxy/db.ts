@@ -555,12 +555,10 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
  * range: '7d'|'14d'|'30d'|'60d' → 按天，最近 N 天
  *        'today'|'yesterday'      → 按小时
  *        'thisMonth'|'lastMonth'  → 按天
+ * tzOffset: 时区偏移小时数（默认 8 = UTC+8）
  */
-export function getDailyStats(range: string, provider?: string, tool?: string, groupByModel?: boolean): Record<string, any>[] {
-  const now = new Date();
-  let dateFormat: string;
-  let startMs: number;
-  let endMs: number | null = null;
+export function getDailyStats(range: string, provider?: string, tool?: string, groupByModel?: boolean, tzOffset = 8): Record<string, any>[] {
+  const tzSec = tzOffset * 3600;
 
   switch (range) {
     case 'today':
@@ -592,7 +590,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
 
   const modelCol = groupByModel ? "c.model as model," : '';
   const aggs = `${modelCol}
-     strftime('${dateFormat}', c.created_at / 1000, 'unixepoch', '+8 hours') as date,
+     strftime('${dateFormat}', c.created_at / 1000, 'unixepoch', '+${tzOffset} hours') as date,
      COUNT(*) as count,
      SUM(c.total_cost) as total_cost,
      SUM(c.output_tokens) as total_output_tokens,

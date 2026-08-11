@@ -75,11 +75,12 @@ export async function getStats(groupBy = 'model', provider?: string, tool?: stri
   return fetchJson(`/stats?${params}`);
 }
 
-export async function getDailyStats(provider?: string, tool?: string, range = '30d', groupByModel = false) {
+export async function getDailyStats(provider?: string, tool?: string, range = '30d', groupByModel = false, tz = 8) {
   const params = new URLSearchParams();
   if (provider) params.set('provider', provider);
   if (tool) params.set('tool', tool);
   params.set('range', range);
+  params.set('tz', String(tz));
   if (groupByModel) params.set('group_by_model', '1');
   return fetchJson(`/stats/daily?${params}`);
 }

@@ -24,13 +24,18 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-/** 生成指定范围的完整日期序列 */
-function fillDateRange(range: string): string[] {
+/** 生成指定范围和时区的完整日期序列 */
+function fillDateRange(range: string, tz: number): string[] {
   const now = new Date();
+  // 基于 UTC 时间加上时区偏移得到目标时区的"今天"
+  const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + tz * 3600000);
   const pad = (n: number) => String(n).padStart(2, '0');
 
+  // 辅助：返回目标时区当天的午夜
+  const tzMidnight = (daysOffset = 0) => new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate() + daysOffset);
+
   if (range === 'today') {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = tzMidnight();
     const r: string[] = [];
     for (let h = 0; h < 24; h++) {
       const d = new Date(start.getTime() + h * 60 * 60 * 1000);
@@ -39,7 +44,7 @@ function fillDateRange(range: string): string[] {
     return r;
   }
   if (range === 'yesterday') {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const start = tzMidnight(-1);
     const r: string[] = [];
     for (let h = 0; h < 24; h++) {
       const d = new Date(start.getTime() + h * 60 * 60 * 1000);
@@ -48,8 +53,8 @@ function fillDateRange(range: string): string[] {
     return r;
   }
   if (range === 'thisMonth') {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = now;
+    const start = new Date(utcNow.getFullYear(), utcNow.getMonth(), 1);
+    const end = new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate());
     const r: string[] = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
@@ -57,8 +62,8 @@ function fillDateRange(range: string): string[] {
     return r;
   }
   if (range === 'lastMonth') {
-    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    const start = new Date(utcNow.getFullYear(), utcNow.getMonth() - 1, 1);
+    const end = new Date(utcNow.getFullYear(), utcNow.getMonth(), 0);
     const r: string[] = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
@@ -69,7 +74,7 @@ function fillDateRange(range: string): string[] {
   const days = parseInt(range) || 30;
   const r: string[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
+    const d = new Date(utcNow);
     d.setDate(d.getDate() - i);
     r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
   }
@@ -89,13 +94,13 @@ function fmtXAxis(d: string, hourly?: boolean): string {
   return d.slice(5); // '2024-01-15' → '01-15'
 }
 
-export default function DailyBarChart({ data, range, modelData }: { data: DailyData[]; range: string; modelData?: DailyData[] }) {
+export default function DailyBarChart({ data, range, tz, modelData }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[] }) {
   const isHourly = range === 'today' || range === 'yesterday';
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
     for (const d of data) map.set(d.date, d);
-    return fillDateRange(range).map(date => map.get(date) || { ...ZERO_ROW, date });
-  }, [data, range]);
+    return fillDateRange(range, tz).map(date => map.get(date) || { ...ZERO_ROW, date });
+  }, [data, range, tz]);
 
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;
@@ -107,7 +112,7 @@ export default function DailyBarChart({ data, range, modelData }: { data: DailyD
       if (!row) { row = {}; byDate.set(d.date, row); }
       row[d.model] = (row[d.model] || 0) + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens;
     }
-    return fillDateRange(range).map(date => {
+    return fillDateRange(range, tz).map(date => {
       const row: any = { date };
       const entry = byDate.get(date) || {};
       for (const m of models) row[m] = entry[m] || 0;

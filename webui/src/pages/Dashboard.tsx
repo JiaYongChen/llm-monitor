@@ -48,8 +48,9 @@ export default function Dashboard() {
   const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
   const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
   const [dailyRange, setDailyRange] = useState('30d');
-  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange], queryFn: () => api.getDailyStats(provider, tool, dailyRange), enabled: !!provider, refetchInterval: 60000 });
-  const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange], queryFn: () => api.getDailyStats(provider, tool, dailyRange, true), enabled: !!provider, refetchInterval: 60000 });
+  const [dailyTz, setDailyTz] = useState(8);
+  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, false, dailyTz), enabled: !!provider, refetchInterval: 60000 });
+  const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, true, dailyTz), enabled: !!provider, refetchInterval: 60000 });
   const totalCalls = stats?.reduce((a: number, b: any) => a + b.count, 0) || 0;
   const totalCost = stats?.reduce((a: number, b: any) => a + b.total_cost, 0) || 0;
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
@@ -181,23 +182,38 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Token 用量</CardTitle>
-              <select
-                className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                value={dailyRange}
-                onChange={e => setDailyRange(e.target.value)}
-              >
-                <option value="yesterday">昨天</option>
-                <option value="today">今天</option>
-                <option value="7d">7 天</option>
-                <option value="14d">14 天</option>
-                <option value="30d">30 天</option>
-                <option value="60d">60 天</option>
-                <option value="thisMonth">本月</option>
-                <option value="lastMonth">上月</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+                  value={dailyRange}
+                  onChange={e => setDailyRange(e.target.value)}
+                >
+                  <option value="yesterday">昨天</option>
+                  <option value="today">今天</option>
+                  <option value="7d">7 天</option>
+                  <option value="14d">14 天</option>
+                  <option value="30d">30 天</option>
+                  <option value="60d">60 天</option>
+                  <option value="thisMonth">本月</option>
+                  <option value="lastMonth">上月</option>
+                </select>
+                <select
+                  className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+                  value={dailyTz}
+                  onChange={e => setDailyTz(Number(e.target.value))}
+                >
+                  <option value={-12}>UTC-12</option>
+                  <option value={-8}>UTC-8</option>
+                  <option value={-5}>UTC-5</option>
+                  <option value={0}>UTC+0</option>
+                  <option value={1}>UTC+1</option>
+                  <option value={8}>UTC+8</option>
+                  <option value={9}>UTC+9</option>
+                </select>
+              </div>
             </CardHeader>
             <CardContent>
-              <DailyBarChart data={dailyStats} range={dailyRange} modelData={dailyModelStats} />
+              <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={dailyModelStats} />
             </CardContent>
           </Card>
         </>
