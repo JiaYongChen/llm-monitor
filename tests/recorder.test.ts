@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, closeDb, upsertSession, upsertPricing, listCalls } from '../proxy/db.js';
+import { initDb, closeDb, upsertSession, upsertPricing, listCalls, addProviderConfig } from '../proxy/db.js';
 import { enqueueRecord, startRecorder, stopRecorder } from '../proxy/recorder.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
@@ -9,6 +9,9 @@ const tmp = createTempDb();
 beforeAll(async () => {
   await initDb(tmp.dbPath);
   upsertPricing('anthropic', 'claude-sonnet-5', 3.0, 0.3, 15.0);
+  upsertPricing('DeepSeek', 'deepseek-chat', 1.0, 0, 2.0, 'CNY');
+  // 模拟 UI 添加"DeepSeek"但 api_format 为空（未识别）
+  addProviderConfig('DeepSeek', 'https://api.deepseek.com', '', '', '');
   startRecorder();
 });
 afterAll(() => { stopRecorder(); closeDb(); tmp.cleanup(); });
@@ -39,5 +42,34 @@ describe('recorder', () => {
     expect(calls[0].total_cost).toBeGreaterThan(0);
     expect(calls[0].prompt_tokens).toBe(500);
     expect(calls[0].cache_read_tokens).toBe(200);
+  });
+
+  it('★ api_format 为空时回退到供应商名归一化（防 "custom" 回归）', async () => {
+    const sid = upsertSession('fp_deepseek', 'codex', '/v1/chat/completions');
+    const record: CallRecord = {
+      provider: 'DeepSeek', model: 'deepseek-chat',
+      endpoint: '/v1/chat/completions', method: 'POST',
+      target_url: 'https://api.deepseek.com/v1/chat/completions', downstream_url: 'http://localhost:9400/DeepSeek/v1/chat/completions', source_ip: '127.0.0.1',
+      status_code: 200, error_message: null, duration_ms: 800,
+      request_body: null,
+      response_body: JSON.stringify({
+        model: 'deepseek-chat',
+        usage: { prompt_tokens: 200, completion_tokens: 100, prompt_cache_hit_tokens: 50, prompt_cache_miss_tokens: 150 },
+      }),
+      fingerprint: 'fp_deepseek', source_port: 54322, session_id: sid,
+      prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
+      cache_write_tokens: null, uncached_input: null,
+      input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+    };
+    enqueueRecord(record);
+    await new Promise(r => setTimeout(r, 300));
+
+    const calls = listCalls(sid);
+    expect(calls.length).toBe(1);
+    // api_format 为空 → 回落用 "DeepSeek" 名 → normalizer 命中 deepseek 分支
+    expect(calls[0].prompt_tokens).toBe(200);
+    expect(calls[0].output_tokens).toBe(100);
+    expect(calls[0].cache_read_tokens).toBe(50);
+    expect(calls[0].total_cost).toBeGreaterThan(0);
   });
 });

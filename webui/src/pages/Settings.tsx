@@ -23,7 +23,8 @@ export default function Settings() {
     mutationFn: (d: any) => api.addProvider(d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['providers'] });
-      setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' });
+      setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' });
+      setApiFormatDirty(false);
       setShowAdd(false);
     },
     onError: (err) => alert('添加失败: ' + (err as Error).message),
@@ -37,11 +38,32 @@ export default function Settings() {
   const providerPrices = (prov: string) => (pricing as any[])?.filter((p: any) => p.provider === prov) || [];
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newProv, setNewProv] = useState({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' });
+  const [newProv, setNewProv] = useState({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' });
+  const [apiFormatDirty, setApiFormatDirty] = useState(false); // 用户手动选择后不再自动覆盖
+
+  /** 根据供应商名称和 URL 自动推断 API 格式。
+   *  DeepSeek/Qwen 的 URL 虽是 OpenAI 兼容格式，但 usage 结构不同，名称必须优先于 URL。 */
+  const detectApiFormat = (name: string, urlOA: string, urlAnth: string): string => {
+    const lower = name.toLowerCase();
+    // DeepSeek/Qwen 名称优先——它们的 URL 长得很像 OpenAI 但 usage 字段不同
+    if (lower.includes('deepseek')) return 'deepseek';
+    if (lower.includes('qwen') || lower.includes('tongyi')) return 'qwen';
+    // URL 信号用于无法从名称推断的通用供应商
+    if (urlOA) return 'openai';
+    if (urlAnth) return 'anthropic';
+    if (lower.includes('anthropic') || lower.includes('claude')) return 'anthropic';
+    if (lower.includes('openai') || lower.includes('gpt')) return 'openai';
+    return '';
+  };
 
   const handleAddProvider = () => {
     if (!newProv.name) return;
-    addMut.mutate({ provider: newProv.name, base_url: newProv.urlOpenAI, base_url_anthropic: newProv.urlAnthropic, api_key: newProv.key, api_format: 'custom' });
+    const fmt = apiFormatDirty ? newProv.apiFormat : detectApiFormat(newProv.name, newProv.urlOpenAI, newProv.urlAnthropic);
+    addMut.mutate({
+      provider: newProv.name, base_url: newProv.urlOpenAI, base_url_anthropic: newProv.urlAnthropic,
+      api_key: newProv.key,
+      api_format: fmt,
+    });
   };
 
   return (
@@ -85,7 +107,7 @@ export default function Settings() {
       </Card>
 
       {/* 添加弹窗 */}
-      <Dialog open={showAdd} onClose={() => setShowAdd(false)}>
+      <Dialog open={showAdd} onClose={() => { setShowAdd(false); setApiFormatDirty(false); }}>
         <DialogHeader>
           <DialogTitle>添加供应商</DialogTitle>
           <DialogDescription>配置 Base URL 和 API Key。模型定价在供应商卡片中单独添加。</DialogDescription>
@@ -99,9 +121,28 @@ export default function Settings() {
             <div className="flex-1"><label className="text-xs text-gray-700 font-medium">Base URL (OpenAI)</label><Input value={newProv.urlOpenAI} onChange={e => setNewProv({ ...newProv, urlOpenAI: e.target.value })} placeholder="https://api.openai.com" /></div>
             <div className="flex-1"><label className="text-xs text-gray-700 font-medium">Base URL (Anthropic)</label><Input value={newProv.urlAnthropic} onChange={e => setNewProv({ ...newProv, urlAnthropic: e.target.value })} placeholder="https://api.anthropic.com" /></div>
           </div>
+          <div className="flex items-end gap-3">
+            <div className="w-48">
+              <label className="text-xs text-gray-700 font-medium">API 格式</label>
+              <select
+                className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white w-full"
+                value={newProv.apiFormat}
+                onChange={e => { setNewProv({ ...newProv, apiFormat: e.target.value }); setApiFormatDirty(e.target.value !== ''); }}
+              >
+                <option value="">自动检测</option>
+                <option value="anthropic">Anthropic Messages</option>
+                <option value="openai">OpenAI Chat Completions</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="qwen">Qwen</option>
+              </select>
+            </div>
+            <span className="text-[11px] text-[#aeaeb2] pb-1.5">
+              {newProv.apiFormat ? '手动指定' : `自动: ${detectApiFormat(newProv.name, newProv.urlOpenAI, newProv.urlAnthropic) || '未识别'}`}
+            </span>
+          </div>
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddProvider} size="sm"><Plus className="h-4 w-4 mr-1" />确认添加</Button>
-            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>取消</Button>
+            <Button variant="outline" size="sm" onClick={() => { setShowAdd(false); setApiFormatDirty(false); }}>取消</Button>
           </div>
         </div>
       </Dialog>
@@ -157,111 +198,113 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
   });
 
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="flex items-center gap-3 py-5 px-4">
-        <button onClick={() => setExpanded(!expanded)} className={`text-gray-500 hover:text-foreground ${!enabled ? 'opacity-40' : ''}`}>
-          {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-        </button>
-        <div className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: enabled ? color : '#b0b0b5' }}>
-          {provider[0].toUpperCase()}
-        </div>
-        <div className={`flex-1 min-w-0 ${!enabled ? 'opacity-40' : ''}`}>
-          <div className="flex items-center gap-2">
-            <div className="w-[140px] flex-shrink-0 flex items-center gap-2">
-              <span className="text-sm font-semibold truncate">{provider}</span>
-              <Badge variant="secondary" className="text-[10px] font-mono flex-shrink-0">{prices.length} 个定价</Badge>
-            </div>
-            <div className="text-xs text-[#6e6e73] leading-normal min-w-0 space-y-1.5">
-              {fmt === 'anthropic' ? (
-                <div className="flex items-center gap-2">
-                  <span className="flex-shrink-0 text-[#aeaeb2]">Base URL:</span>
-                  <span className="text-xs font-mono text-[#6e6e73]">{baseUrl || 'https://api.anthropic.com'}</span>
-                </div>
-              ) : fmt === 'openai' ? (
-                <div className="flex items-center gap-2">
-                  <span className="flex-shrink-0 text-[#aeaeb2]">Base URL:</span>
-                  <span className="text-xs font-mono text-[#6e6e73]">{baseUrl || 'https://api.openai.com'}</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="flex-shrink-0">OpenAI:</span>
+    <div>
+      <div className={`rounded-lg border bg-card ${expanded ? 'rounded-b-none' : ''}`}>
+        <div className="flex items-center gap-3 py-5 px-4">
+          <button onClick={() => setExpanded(!expanded)} className={`text-gray-500 hover:text-foreground ${!enabled ? 'opacity-40' : ''}`}>
+            {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+          </button>
+          <div className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: enabled ? color : '#b0b0b5' }}>
+            {provider[0].toUpperCase()}
+          </div>
+          <div className={`flex-1 min-w-0 ${!enabled ? 'opacity-40' : ''}`}>
+            <div className="flex items-center gap-2">
+              <div className="w-[140px] flex-shrink-0 flex items-center gap-2">
+                <span className="text-sm font-semibold truncate">{provider}</span>
+                <Badge variant="secondary" className="text-[10px] font-mono flex-shrink-0">{prices.length} 个定价</Badge>
+              </div>
+              <div className="text-xs text-[#6e6e73] leading-normal min-w-0 space-y-1.5">
+                {fmt === 'anthropic' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="flex-shrink-0 text-[#aeaeb2]">Base URL:</span>
+                    <span className="text-xs font-mono text-[#6e6e73]">{baseUrl || 'https://api.anthropic.com'}</span>
+                  </div>
+                ) : fmt === 'openai' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="flex-shrink-0 text-[#aeaeb2]">Base URL:</span>
+                    <span className="text-xs font-mono text-[#6e6e73]">{baseUrl || 'https://api.openai.com'}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="flex-shrink-0">OpenAI:</span>
+                    <Input
+                      value={urlOpenAI}
+                      onChange={e => setUrlOpenAI(e.target.value)}
+                      onBlur={() => { if (urlOpenAI !== baseUrl) onUpdate({ base_url: urlOpenAI }); }}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      placeholder="https://api.openai.com"
+                      className="h-6 text-xs font-mono flex-1"
+                    />
+                    <span className="flex-shrink-0">Anthropic:</span>
+                    <Input
+                      value={urlAnthropic}
+                      onChange={e => setUrlAnthropic(e.target.value)}
+                      onBlur={() => { if (urlAnthropic !== baseUrlAnthropic) onUpdate({ base_url_anthropic: urlAnthropic }); }}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      placeholder="https://api.anthropic.com"
+                      className="h-6 text-xs font-mono flex-1"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-1">
+                  <span className="flex-shrink-0">APIKey:</span>
                   <Input
-                    value={urlOpenAI}
-                    onChange={e => setUrlOpenAI(e.target.value)}
-                    onBlur={() => { if (urlOpenAI !== baseUrl) onUpdate({ base_url: urlOpenAI }); }}
+                    type="password"
+                    value={keyValue}
+                    onChange={e => setKeyValue(e.target.value)}
+                    onBlur={() => { if (keyValue !== apiKey) onUpdate({ api_key: keyValue }); }}
                     onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                    placeholder="https://api.openai.com"
+                    placeholder="sk-xxx"
                     className="h-6 text-xs font-mono flex-1"
                   />
-                  <span className="flex-shrink-0">Anthropic:</span>
-                  <Input
-                    value={urlAnthropic}
-                    onChange={e => setUrlAnthropic(e.target.value)}
-                    onBlur={() => { if (urlAnthropic !== baseUrlAnthropic) onUpdate({ base_url_anthropic: urlAnthropic }); }}
-                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                    placeholder="https://api.anthropic.com"
-                    className="h-6 text-xs font-mono flex-1"
-                  />
+                  <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => navigator.clipboard.writeText(keyValue)} title="复制">
+                    <Copy className="h-[10px] w-[10px]" />
+                  </Button>
                 </div>
-              )}
-              <div className="flex items-center gap-1">
-                <span className="flex-shrink-0">APIKey:</span>
-                <Input
-                  type="password"
-                  value={keyValue}
-                  onChange={e => setKeyValue(e.target.value)}
-                  onBlur={() => { if (keyValue !== apiKey) onUpdate({ api_key: keyValue }); }}
-                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                  placeholder="sk-xxx"
-                  className="h-6 text-xs font-mono flex-1"
-                />
-                <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => navigator.clipboard.writeText(keyValue)} title="复制">
-                  <Copy className="h-[10px] w-[10px]" />
-                </Button>
               </div>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {!isBuiltin && <Switch checked={enabled} onCheckedChange={onToggle} />}
-          {!isBuiltin && (
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:text-destructive" onClick={onDelete}><Trash2 className="h-3 w-3" /></Button>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!isBuiltin && <Switch checked={enabled} onCheckedChange={onToggle} />}
+            {!isBuiltin && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:text-destructive" onClick={onDelete}><Trash2 className="h-3 w-3" /></Button>
+            )}
+          </div>
         </div>
       </div>
 
       {expanded && (
-        <div className="border-t px-3 py-2 bg-muted/30">
+        <div className="border border-t-0 rounded-b-lg bg-muted/30 overflow-x-auto">
           {/* 表头 */}
-          <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 px-2 py-1">
-            <span className="flex-1">模型</span>
-            <span className="w-16 text-center">输出</span>
-            <span className="w-16 text-center">输入(未命中)</span>
-            <span className="w-16 text-center">输入(命中)</span>
-            <span className="w-6" />
+          <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 px-4 py-1 min-w-fit">
+            <span className="flex-1 min-w-0">模型</span>
+            <span className="w-16 text-center shrink-0">输出</span>
+            <span className="w-16 text-center shrink-0">输入(未命中)</span>
+            <span className="w-16 text-center shrink-0">输入(命中)</span>
+            <span className="w-6 shrink-0" />
           </div>
 
           {/* 已有定价 */}
           {prices.map((p: any) => (
-            <div key={p.id} className="flex items-center gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/50">
-              <span className="flex-1 font-mono text-gray-500">{p.model}</span>
-              <span className="w-16 text-center font-mono">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.output_price.toFixed(2)}</span>
-              <span className="w-16 text-center font-mono">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.input_price.toFixed(3)}</span>
-              <span className="w-16 text-center font-mono">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.cache_input_price.toFixed(3)}</span>
-              {p.is_default ? <span className="w-6" /> : <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deletePriceMut.mutate(p.id)}><Trash2 className="h-3 w-3" /></Button>}
+            <div key={p.id} className="flex items-center gap-2 text-xs py-1.5 px-4 rounded hover:bg-muted/50 min-w-fit">
+              <span className="flex-1 min-w-0 font-mono text-gray-500 truncate">{p.model}</span>
+              <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.output_price.toFixed(2)}</span>
+              <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.input_price.toFixed(3)}</span>
+              <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.cache_input_price.toFixed(3)}</span>
+              {p.is_default ? <span className="w-6 shrink-0" /> : <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => deletePriceMut.mutate(p.id)}><Trash2 className="h-3 w-3" /></Button>}
             </div>
           ))}
 
           {/* 添加模型定价按钮 */}
           <button
-            className="w-full text-xs text-gray-500 hover:text-gray-700 py-1.5 px-2 rounded flex items-center gap-1 hover:bg-muted/50"
+            className="w-full text-xs text-gray-500 hover:text-gray-700 py-1.5 px-4 rounded flex items-center gap-1 hover:bg-muted/50"
             onClick={() => setShowAddPrice(true)}
           >
             <Plus className="h-3 w-3" /> 添加模型定价
           </button>
 
           {prices.length === 0 && (
-            <p className="text-xs text-gray-400 py-1 px-2">暂无模型定价</p>
+            <p className="text-xs text-gray-400 py-1 px-4">暂无模型定价</p>
           )}
 
           {/* 添加定价弹窗 */}

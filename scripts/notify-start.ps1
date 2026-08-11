@@ -16,9 +16,10 @@ param(
   $Remaining
 )
 
+$webuiPort = if ($env:LLM_MONITOR_WEBUI_PORT) { $env:LLM_MONITOR_WEBUI_PORT } else { 9401 }
 $body = @{ tool = $Tool } | ConvertTo-Json -Compress
 try {
-  Invoke-RestMethod -Uri "http://localhost:9401/api/sessions/start" `
+  Invoke-RestMethod -Uri "http://localhost:$webuiPort/api/sessions/start" `
     -Method POST -Body $body -ContentType "application/json" 2>$null | Out-Null
 } catch {
   # 代理未运行也继续启动（静默忽略）

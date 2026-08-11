@@ -63,7 +63,7 @@ function detectFromPath(path: string): { tool: string; upstream: string } | null
     return { tool: 'ClaudeCode', upstream: anthropic?.provider || 'Anthropic' };
   }
   if (path === 'v1/chat/completions' || path.startsWith('v1/chat/completions/')) {
-    // 优先匹配内置 OpenAI，其次匹配 api_format 为 openai 的供应商
+    // 内置 OpenAI 恒存在且不可停用/删除 → 直接用它；第三方供应商通过 URL 前缀匹配
     const match = configs.find(c => c.provider === 'OpenAI')
       || configs.find(c => (c.api_format || c.provider.toLowerCase()) === 'openai');
     const p = match?.provider || 'OpenAI';
@@ -101,9 +101,13 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send('Not found');
       }
       const hasBody = request.body != null;
+      const bodyModel = hasBody ? (request.body as any)?.model || '?' : null;
+      const bodyStream = hasBody ? (request.body as any)?.stream ?? false : null;
+      // bodyless 请求也记录来源，方便调试
       if (hasBody) {
-        const model = (request.body as any)?.model || '?';
-        console.log(`[proxy] ▶ ${request.url} model=${model} stream=${(request.body as any)?.stream ?? false}`);
+        console.log(`[proxy] ▶ ${request.url} model=${bodyModel} stream=${bodyStream}`);
+      } else {
+        console.log(`[proxy] ▶ ${request.url} (no body)`);
       }
 
       const segments = rawPath.split('/').filter(Boolean);
@@ -111,6 +115,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       let remaining = '';
       let tool = 'unknown';
       let providerConfig: ReturnType<typeof getProviderConfig>;
+      let hasProviderPrefix = false;
 
       // 非 API 路径 → 尝试识别 provider
       if (!provider || provider === 'api') {
@@ -120,6 +125,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       providerConfig = getProviderConfig(provider);
       if (providerConfig) {
         // 策略 1：首段是已知供应商，剥离首段后转发
+        hasProviderPrefix = true;
         provider = providerConfig.provider; // 规范化为配置名 e.g. 'anthropic'→'Anthropic'
         remaining = segments.slice(1).join('/') || '';
         const fmt = providerConfig.api_format || provider.toLowerCase();
@@ -147,7 +153,6 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
 
       // 标准化端点路径：策略1 时 rawPath 首段是已知供应商（路径已含前缀），
       // 策略2 时 rawPath 首段不是供应商（如 v1/messages），需补上前缀
-      const hasProviderPrefix = getProviderConfig(segments[0]) != null;
       const endpoint = hasProviderPrefix ? `/${rawPath}` : `/${provider}/${rawPath}`;
 
       // 提取请求头（用于转发）

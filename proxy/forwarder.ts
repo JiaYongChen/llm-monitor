@@ -34,7 +34,7 @@ export async function forwardStream(
   body?: Buffer,
 ): Promise<{
   stream: ReadableStream;
-  collectResult: () => Promise<{ status: number; json: any; text: string; durationMs: number }>;
+  collectResult: () => Promise<{ status: number; json: null; text: string; durationMs: number }>;
 }> {
   const cleanHeaders: Record<string, string> = {};
   const skip = new Set(['host', 'transfer-encoding', 'connection', 'content-length']);
@@ -88,54 +88,11 @@ export async function forwardStream(
       await streamDone;
       const durationMs = Math.round(performance.now() - start);
       const raw = Buffer.concat(chunks).toString('utf-8');
-      let json: any = null;
-      try { json = extractUsageFromSSE(raw); } catch {}
-      // 将原始 SSE 文本转换为干净的结构化 JSON，便于前端展示和 recorder 解析
-      const cleanText = buildCleanResponseBody(raw) ?? raw;
-      return { status, json, text: cleanText, durationMs };
+      // buildCleanResponseBody 一次解析完成 content + usage 提取，recorder 后续直接读 text
+      const text = buildCleanResponseBody(raw) ?? raw;
+      return { status, json: null, text, durationMs };
     },
   };
-}
-
-/** 从 SSE 文本中提取 usage JSON */
-function extractUsageFromSSE(raw: string): any {
-  const normalized = raw.replace(/\r\n/g, '\n');
-  const lines = normalized.split('\n');
-  let usage: any = null;
-
-  // OpenAI/DeepSeek/Qwen 格式：最后一条 data: 含 usage
-  for (const line of lines) {
-    if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-      try {
-        const obj = JSON.parse(line.slice(6));
-        if (obj.usage) usage = obj.usage;
-      } catch {}
-    }
-  }
-
-  // Anthropic 格式：usage 分散在 message_start（input）和 message_delta（output）中
-  if (!usage) {
-    let inputUsage: any = null;
-    let outputUsage: any = null;
-    const events = normalized.split(/\n\n/);
-    for (const event of events) {
-      for (const line of event.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const obj = JSON.parse(line.slice(6));
-          if (obj.type === 'message_start' && obj.message?.usage) {
-            inputUsage = obj.message.usage;
-          } else if (obj.type === 'message_delta' && obj.usage) {
-            outputUsage = obj.usage;
-          }
-        } catch {}
-      }
-    }
-    const merged = { ...(inputUsage || {}), ...(outputUsage || {}) };
-    if (Object.keys(merged).length > 0) usage = merged;
-  }
-
-  return usage;
 }
 
 /**
@@ -167,8 +124,11 @@ export function buildCleanResponseBody(raw: string): string | null {
           // content_block 初始文本：流式传输时为空，短响应时可能直接携带完整文本
           if (obj.content_block?.type === 'text' && obj.content_block.text) {
             anthropicText.push(obj.content_block.text);
-          } else if (obj.content_block?.type === 'tool_use') {
+          } else if (obj.content_block?.type === 'tool_use' && obj.content_block.name) {
             anthropicText.push(`[调用工具: ${obj.content_block.name}]`);
+          } else if (obj.content_block?.type === 'thinking' && obj.content_block.thinking) {
+            // 思考块的初始文本（短思考响应可能无后续 delta）
+            anthropicText.push(obj.content_block.thinking);
           }
         } else if (obj.type === 'content_block_delta') {
           // 文本增量（text_delta）、工具调用增量（input_json_delta）、思考增量（thinking_delta）
@@ -186,15 +146,26 @@ export function buildCleanResponseBody(raw: string): string | null {
       } catch {}
     }
   }
-  // 合并两个事件中的 usage：input 侧来自 message_start，output 侧来自 message_delta
-  const anthropicUsage = { ...(anthropicInputUsage || {}), ...(anthropicOutputUsage || {}) };
-  const hasAnthropicUsage = Object.keys(anthropicUsage).length > 0;
-  // 有文本内容或 token 数据时均返回结构化 JSON，避免无文本响应（如纯 tool_use）丢失 usage
+  // 合并 usage：input 侧键来自 message_start，output_tokens 来自 message_delta（权威）
+  // 兼容网关可能任一侧回显另一侧的键，显式指定来源避免覆盖
+  const anthropicUsage: any = { ...(anthropicInputUsage || {}) };
+  if (anthropicOutputUsage) {
+    // output_tokens 始终以 message_delta 为准（仅在该键实际存在时才覆盖）
+    if (anthropicOutputUsage.output_tokens != null) {
+      anthropicUsage.output_tokens = anthropicOutputUsage.output_tokens;
+    }
+    // message_delta 其他非 output_tokens 键，仅在 input 侧不存在时纳入
+    for (const k of Object.keys(anthropicOutputUsage)) {
+      if (!(k in anthropicUsage) && anthropicOutputUsage[k] != null) anthropicUsage[k] = anthropicOutputUsage[k];
+    }
+  }
+  // 至少有一侧 usage 即可（不要求双侧，避免被取消/中断的流丢失全部 token）
+  const hasAnthropicUsage = anthropicInputUsage != null || anthropicOutputUsage != null;
   if (anthropicText.length > 0 || hasAnthropicUsage) {
     return JSON.stringify({
       model: anthropicModel,
-      content: anthropicText.join('') || '(非文本响应)',
-      usage: hasAnthropicUsage ? anthropicUsage : undefined,
+      content: anthropicText.join(''),
+      usage: Object.keys(anthropicUsage).length > 0 ? anthropicUsage : null,
     });
   }
 
@@ -214,24 +185,27 @@ export function buildCleanResponseBody(raw: string): string | null {
         if (delta) {
           if (delta.role) openaiRole = delta.role;
           if (delta.content) openaiText.push(delta.content);
-          // 工具调用增量（tool_calls）
+          // 推理内容（DeepSeek-R1 / Qwen-reasoner / o 系列）
+          if (delta.reasoning_content) openaiText.push(delta.reasoning_content);
+          // 工具调用增量（先标记名再参数，避免顺序颠倒）
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
-              if (tc.function?.arguments) openaiText.push(tc.function.arguments);
               if (tc.function?.name) openaiText.push(`[调用工具: ${tc.function.name}]`);
+              if (tc.function?.arguments) openaiText.push(tc.function.arguments);
             }
           }
         }
       } catch {}
     }
   }
-  // 有文本内容或有 token 数据时均返回结构化 JSON
-  if (openaiText.length > 0 || openaiUsage) {
+  // 有文本内容或有非空 token 数据时均返回结构化 JSON（空对象 {} 不计为有效 usage）
+  const hasOpenaiUsage = openaiUsage && Object.keys(openaiUsage).length > 0;
+  if (openaiText.length > 0 || hasOpenaiUsage) {
     return JSON.stringify({
       model: openaiModel,
       role: openaiRole,
-      content: openaiText.join('') || '(非文本响应)',
-      usage: openaiUsage,
+      content: openaiText.join(''),
+      usage: hasOpenaiUsage ? openaiUsage : null,
     });
   }
 

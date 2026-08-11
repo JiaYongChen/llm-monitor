@@ -5,6 +5,9 @@ import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing, getProviderConfig } from './db.js';
 import { getRates } from './rates.js';
 
+// ── 已知 API 格式（与 normalizer.ts switch 同步维护，大小写不敏感） ──
+const KNOWN_FORMATS = new Set(['anthropic', 'openai', 'deepseek', 'qwen']);
+
 // ── 队列 ──
 const queue: CallRecord[] = [];
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -43,39 +46,47 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
-  // 1. 归一化 — 使用供应商的 api_format 决定解析策略（第三方供应商名可能不被 normalizer 识别）
+  // 1. 归一化 — 供应商名优先，api_format 仅作为已知格式的旁路
   if (record.response_body && record.prompt_tokens == null) {
     try {
       const respBody = JSON.parse(record.response_body);
       const config = getProviderConfig(record.provider);
-      const format = config?.api_format || record.provider;
+      const fmt = config?.api_format?.toLowerCase();
+      // api_format 仅在确认为已知格式时旁路供应商名（大小写不敏感）
+      const format = (fmt && KNOWN_FORMATS.has(fmt)) ? fmt : record.provider;
       const tokens = normalizeTokens(format, respBody);
       record.prompt_tokens = tokens.prompt_tokens ?? null;
       record.output_tokens = tokens.output_tokens ?? null;
       record.cache_read_tokens = tokens.cache_read_tokens ?? null;
       record.cache_write_tokens = tokens.cache_write_tokens ?? null;
       record.uncached_input = tokens.uncached_input ?? null;
-    } catch {}
+    } catch {
+      // 响应体非 JSON（如原始 SSE 整流失败），token 保持 null，静默容忍
+    }
   }
 
-  // 2. 定价匹配 + 费用计算
+  // 2. 定价匹配 + 费用计算（缺汇率时抛错不阻塞入库，容忍 cost=0）
   if (record.prompt_tokens != null || record.output_tokens != null) {
-    const allPricing = listPricing() as Pricing[];
-    const pricing = matchPricing(record.provider, record.model, allPricing);
-    if (pricing) {
-      const tokens: NormalizedTokens = {
-        prompt_tokens: record.prompt_tokens,
-        output_tokens: record.output_tokens,
-        cache_read_tokens: record.cache_read_tokens,
-        cache_write_tokens: record.cache_write_tokens,
-        uncached_input: record.uncached_input,
-      };
-      const rates = getRates();
-      const costs = calculateCost(tokens, pricing, rates);
-      record.input_cost = costs.input_cost;
-      record.output_cost = costs.output_cost;
-      record.total_cost = costs.total_cost;
-      record.cache_savings = costs.cache_savings;
+    try {
+      const allPricing = listPricing() as Pricing[];
+      const pricing = matchPricing(record.provider, record.model, allPricing);
+      if (pricing) {
+        const tokens: NormalizedTokens = {
+          prompt_tokens: record.prompt_tokens,
+          output_tokens: record.output_tokens,
+          cache_read_tokens: record.cache_read_tokens,
+          cache_write_tokens: record.cache_write_tokens,
+          uncached_input: record.uncached_input,
+        };
+        const rates = getRates();
+        const costs = calculateCost(tokens, pricing, rates);
+        record.input_cost = costs.input_cost;
+        record.output_cost = costs.output_cost;
+        record.total_cost = costs.total_cost;
+        record.cache_savings = costs.cache_savings;
+      }
+    } catch (err) {
+      console.error('计费计算失败，以 cost=0 入库:', err);
     }
   }
 
