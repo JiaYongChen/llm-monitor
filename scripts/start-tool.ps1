@@ -34,23 +34,29 @@ Write-Host "  项目: $Project" -ForegroundColor Gray
 Write-Host "  代理: http://localhost:$Port" -ForegroundColor Gray
 
 # 预创建 pending 会话
+$sessionId = $null
 try {
   $body = @{ tool = $Tool } | ConvertTo-Json
   $result = Invoke-RestMethod -Uri "http://localhost:$Port/proxy/sessions/start" -Method Post -Body $body -ContentType 'application/json' -ErrorAction SilentlyContinue
   if ($result) {
-    Write-Host "  会话: #$($result.id) ($($result.status))" -ForegroundColor Green
+    $sessionId = $result.id
+    Write-Host "  会话: #$sessionId ($($result.status))" -ForegroundColor Green
   }
 } catch {
   Write-Host "  会话预创建失败（代理可能未启动）" -ForegroundColor Yellow
 }
 
-# 设置代理环境变量并启动工具
+# 设置代理环境变量并启动工具（会话 ID 嵌入 URL 确保同终端复用）
 $env:LLM_MONITOR_PORT = $Port.ToString()
 $env:LLM_MONITOR_TOOL = $Tool
 
 switch ($Tool) {
   'ClaudeCode' {
-    $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/anthropic"
+    if ($sessionId) {
+      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/s/$sessionId/anthropic"
+    } else {
+      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/anthropic"
+    }
     Write-Host "  启动 Claude Code..." -ForegroundColor Gray
     Push-Location $Project
     try {
@@ -60,7 +66,11 @@ switch ($Tool) {
     }
   }
   'codex' {
-    $env:OPENAI_BASE_URL = "http://localhost:$Port/openai"
+    if ($sessionId) {
+      $env:OPENAI_BASE_URL = "http://localhost:$Port/s/$sessionId/openai"
+    } else {
+      $env:OPENAI_BASE_URL = "http://localhost:$Port/openai"
+    }
     Write-Host "  启动 Codex..." -ForegroundColor Gray
     Push-Location $Project
     try {
