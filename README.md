@@ -23,30 +23,37 @@ npx tsx proxy/main.ts --port 9400 --webui-port 9401
 
 ## 对接 CLI 工具
 
-代理通过 URL 首段识别供应商并转发至上游，设置对应环境变量即可接入：
-
 ```powershell
-# Claude Code CLI（PowerShell）
+# 一键启动（自动设置环境变量）
+npm link                           # 一次性注册命令
+llm-monitor Claude D:\my-project   # 通过代理启动 ClaudeCode
+llm-monitor codex                  # 通过代理启动 Codex
+
+# 手动设置环境变量
 $env:ANTHROPIC_BASE_URL = "http://localhost:9400/anthropic"
-
-# Codex CLI（PowerShell）
-$env:OPENAI_BASE_URL = "http://localhost:9400/openai/v1"
+$env:OPENAI_BASE_URL = "http://localhost:9400/openai"
 ```
-
-> **工具自动识别**：代理根据请求头中的 `User-Agent` 自动检测连接工具（ClaudeCode / Codex），并在 Web 面板侧边栏按工具分组展示会话。未匹配到已知 UA 时，回退为供应商默认映射（`anthropic` → ClaudeCode，`openai` → codex）。
 
 ## 功能
 
 ### 调用拦截与记录
 - 透明代理转发（含 SSE 流式），无侵入
-- 自动解析请求/响应中的 Token 用量（支持 Anthropic / OpenAI / DeepSeek 格式）
+- **格式转换**：自动检测工具格式与上游供应商格式，不匹配时双向转换（Anthropic ↔ OpenAI）
+- 自动解析请求/响应中的 Token 用量（Anthropic / OpenAI 两种格式）
 - 缓存读写拆分：未缓存输入、缓存写入、缓存命中分别统计
 
 ### 会话管理
 - **指纹识别**：SHA256(provider + 首条消息种子) → 同一聊天自动归属同一会话
-- **工具标识**：URL 前缀 + API 端点反推工具类型（`/anthropic` → ClaudeCode，`/openai` → codex）
-- 自动会话聚合，支持手动合并 / 标签编辑
-- 会话级上游供应商 + 模型覆盖
+- **自动标签**：新建会话自动提取首条用户消息作为标签
+- **工具标识**：URL 前缀反推工具类型（`/anthropic/*` → ClaudeCode，`/openai/*` → codex）
+- 工具级上游配置：Dashboard 可设置每个工具的默认上游供应商和模型，新会话自动继承
+- 会话级上游覆盖：会话详情页可单独覆盖供应商和模型
+
+### 上游供应商管理
+- 上游覆盖优先级：会话 > 工具 > URL 路径默认
+- 会话级和工具级均支持独立选择供应商和模型
+- 转发地址显示完整 URL（含端点路径）
+- 格式转换在上游与工具格式不匹配时自动触发
 
 ### 费用计算
 - 可编辑的多币种模型定价表（CNY / USD / EUR / JPY / GBP）
@@ -60,9 +67,10 @@ $env:OPENAI_BASE_URL = "http://localhost:9400/openai/v1"
 - 支持手动刷新
 
 ### Web 面板
-- **总览**：KPI 卡片 + 费用分布图（按工具 / 供应商 / 模型分组筛选）
-- **会话详情**：调用时间线 + 费用汇总
-- **调用详情**：请求/响应体查看 + 费用明细
+- **总览**：KPI 卡片（原始数值显示）+ 费用分布图（按工具 / 供应商 / 模型分组筛选）
+- **工具页**：筛选到具体工具时显示上游供应商和模型配置
+- **会话详情**：调用时间线 + 上游配置 + 费用汇总
+- **调用详情**：请求/响应体查看 + Token 与费用明细
 - **设置**：供应商管理（URL / Key / 启停）、定价表管理、币种切换、数据清空
 
 ## 技术栈
@@ -70,7 +78,7 @@ $env:OPENAI_BASE_URL = "http://localhost:9400/openai/v1"
 | 层 | 选择 |
 |----|------|
 | 代理 | Fastify + TypeScript |
-| 数据库 | sql.js (SQLite WASM, 浏览器内存) |
+| 数据库 | sql.js (SQLite WASM) |
 | HTTP | 原生 fetch (undici) |
 | 前端 | React 18 + Vite + Tailwind CSS |
 | 查询 | TanStack Query |
@@ -80,35 +88,38 @@ $env:OPENAI_BASE_URL = "http://localhost:9400/openai/v1"
 
 ```
 llm-monitor/
-├── proxy/                      # Node.js 代理层
-│   ├── main.ts                 # Fastify 入口，集成 Vite 中间件
-│   ├── config.ts               # 端口等配置
-│   ├── db.ts                   # SQLite CRUD + 建表 + 迁移
-│   ├── router.ts               # 代理路由（/*）+ /api/* 查询 API
-│   ├── forwarder.ts            # HTTP 转发（含 SSE 流式透传）
-│   ├── session.ts              # 会话指纹计算 + CRUD
-│   ├── normalizer.ts           # 响应体 Token 归一化
-│   ├── pricing.ts              # 定价匹配 + 费用计算
-│   ├── rates.ts                # 汇率获取 / 缓存 / 定时刷新
-│   ├── recorder.ts             # 后台消费者（队列 → 计费 → 写库）
+├── proxy/                       # Node.js 代理层
+│   ├── main.ts                  # Fastify 入口，双端口 server
+│   ├── config.ts                # CLI 参数解析 + 常量
+│   ├── db.ts                    # SQLite CRUD + 建表 + 迁移
+│   ├── router.ts                # 代理路由（/*）+ /api/* 查询 API
+│   ├── forwarder.ts             # HTTP 转发（含 SSE 流式透传）
+│   ├── converter.ts             # Anthropic ↔ OpenAI 格式双向转换
+│   ├── session.ts               # 会话指纹 + 标签生成 + CRUD
+│   ├── normalizer.ts            # Token 归一化（anthropic / openai）
+│   ├── pricing.ts               # 定价匹配 + 费用计算
+│   ├── rates.ts                 # 汇率获取 / 缓存 / 定时刷新
+│   ├── recorder.ts              # 后台消费者（队列 → 计费 → 写库）
 │   └── data/
 │       └── default-pricing.json # 预置模型定价
-├── webui/                      # React 前端
+├── webui/                       # React 前端
 │   ├── index.html
 │   ├── vite.config.ts
 │   └── src/
-│       ├── pages/              # Dashboard / SessionDetail / Settings
-│       ├── components/         # Sidebar / KpiCards / CallTimeline / ui/
-│       ├── lib/                # currency（货币工具 + 上下文） / utils
-│       └── api/                # API 客户端
-├── shared/                     # 前后端共享类型定义
-├── tests/                      # Vitest 测试 + Mock LLM Server
-├── dist/                       # 构建输出
-│   ├── proxy/                  # 后端编译产物
-│   └── web/                    # 前端静态文件
-├── tsconfig.json               # 跨项目 TypeScript 配置
-├── vitest.config.ts
-└── package.json
+│       ├── pages/               # Dashboard / SessionDetail / Settings
+│       ├── components/          # Sidebar / KpiCards / CallTimeline / ui/
+│       ├── lib/                 # currency / utils
+│       └── api/                 # API 客户端
+├── shared/                      # 前后端共享类型定义
+├── scripts/                     # 辅助脚本
+│   ├── start-tool.ps1           # CLI 工具代理启动脚本
+│   └── llm-monitor.cmd          # npm bin 全局命令包装
+├── tests/                       # Vitest 测试
+├── dist/                        # 构建输出（已 gitignore）
+│   └── web/                     # 前端静态文件
+├── tsconfig.json
+├── package.json
+└── CLAUDE.md
 ```
 
 ## API 端点
@@ -123,25 +134,34 @@ llm-monitor/
 | GET | `/api/sessions/:id` | 会话详情 |
 | GET | `/api/pricing` | 定价列表 |
 | GET | `/api/providers` | 供应商列表 |
+| GET | `/api/tool-configs` | 工具级上游配置 |
 | GET | `/api/config` | 全局配置（含汇率） |
 
 ### 写入
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| POST | `/api/sessions/start` | 预创建 pending 会话 |
+| PUT | `/api/sessions/:id/label` | 更新会话标签 |
+| PUT | `/api/sessions/:id/upstream` | 更新会话上游供应商 |
+| PUT | `/api/sessions/:id/model` | 更新会话上游模型 |
+| POST | `/api/sessions/merge` | 合并会话 |
+| DELETE | `/api/sessions/:id` | 删除会话 |
+| PUT | `/api/tool-configs/:tool` | 更新工具上游配置 |
 | POST | `/api/pricing` | 添加/更新定价 |
 | POST | `/api/pricing/default` | 重置默认定价 |
-| DELETE | `/api/pricing/:id` | 删除定价（默认不可删） |
+| DELETE | `/api/pricing/:id` | 删除定价 |
 | PUT | `/api/providers/:provider` | 更新供应商配置 |
 | POST | `/api/providers` | 添加供应商 |
 | DELETE | `/api/providers/:provider` | 删除供应商 |
-| PUT | `/api/sessions/:id` | 更新会话标签/上游 |
-| POST | `/api/config` | 更新全局配置 |
+| PUT | `/api/config` | 更新全局配置 |
 | POST | `/api/rates/refresh` | 手动刷新汇率 |
-| POST | `/api/data/clear` | 清空全部数据（保留供应商配置） |
+| POST | `/api/data/clear` | 清空全部数据 |
+| POST | `/api/data/clear-providers` | 清空第三方供应商 |
+| POST | `/api/data/clear-sessions` | 清空全部会话 |
 
 ## 测试
 
 ```bash
-npm test                  # 运行全部 69 个测试
-npx vitest --watch        # watch 模式
+npm test                # 运行全部 113 个测试
+npx vitest --watch      # watch 模式
 ```

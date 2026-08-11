@@ -21,10 +21,20 @@ npx tsx proxy/main.ts    # 生产模式启动（需先 build，可加 --port --w
 - 始终使用 **Debug 构建**概念验证（本项目构建即 `vite build`，无 Debug/Release 区分）
 - 数据存储在 `~/.llm-monitor/calls.db`（sql.js 自动持久化到磁盘）
 
+## CLI 快捷启动
+
+```powershell
+npm link                       # 一次性注册全局命令
+llm-monitor Claude D:\project  # 启动 ClaudeCode 通过代理连接
+llm-monitor codex              # 启动 Codex（当前目录）
+```
+
+脚本位于 `scripts/start-tool.ps1`，自动设置环境变量 `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` 指向代理。
+
 ## 技术架构
 
 ```
-CLI 工具 ─→ :9400/proxy 路由 ─→ 上游 API
+CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上游 API
                 │
                 ▼
           后台消费者（recorder）
@@ -46,19 +56,20 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 上游 API
 | `proxy/main.ts` | Fastify 入口：初始化数据库、注册路由、挂载 Vite（dev）或静态文件（prod） |
 | `proxy/router.ts` | 核心路由：`/*` 通配代理转发（按 URL 第一段识别 provider）+ `/api/*` 查询/写入 API |
 | `proxy/forwarder.ts` | HTTP 转发：非流式（forwardRequest）+ SSE 流式透传（forwardStream），从 SSE 中提取 usage JSON |
-| `proxy/session.ts` | 会话识别：provider + 源端口 + API Key 前缀 → SHA256 指纹 → 自动创建/复用会话 |
-| `proxy/normalizer.ts` | Token 归一化：四家 provider 各自 usage 格式 → 统一的 NormalizedTokens |
+| `proxy/converter.ts` | 格式转换：Anthropic ↔ OpenAI 请求/响应双向转换（请求体 + 非流式 + SSE 流式），仅源格式 ≠ 目标格式时启用 |
+| `proxy/session.ts` | 会话识别：provider + 会话种子 → SHA256 指纹 → 自动创建/复用会话，自动生成标签（首条用户消息） |
+| `proxy/normalizer.ts` | Token 归一化：两种格式（anthropic / openai）usage → 统一的 NormalizedTokens，格式由下游工具决定 |
 | `proxy/pricing.ts` | 定价匹配（最长模型前缀匹配）+ 费用计算（非 CNY 币种自动汇率换算为 CNY 存储） |
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
 | `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + updateSessionStats |
-| `proxy/db.ts` | sql.js 数据库全部操作：建表、CRUD、统计聚合、Settings、Provider Config |
+| `proxy/db.ts` | sql.js 数据库全部操作：建表、CRUD、统计聚合、Settings、Provider Config、Tool Config |
 | `proxy/config.ts` | CLI 参数解析（--port / --webui-port）+ 目录常量（DATA_DIR=~/.llm-monitor） |
 
 ## 数据流
 
-1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别 provider（如 `/anthropic/v1/messages`）→ `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
-2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body）入队 — 此处不阻塞响应
-3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `updateSessionStats` 更新会话聚合
+1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别 provider（如 `/anthropic/v1/messages`）→ 检测格式差异 → 如需转换调用 `converter.ts` → `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
+2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body + tool）入队 — 此处不阻塞响应
+3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据 `tool` 字段选择归一化方式 → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `updateSessionStats` 更新会话聚合
 4. **展示阶段**：Web 面板通过 `/api/*` 端点查询统计数据和明细
 
 ## Provider 支持
@@ -68,7 +79,29 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 上游 API
 - **Anthropic**：`/anthropic/v1/messages` → `api.anthropic.com`
 - **OpenAI**：`/openai/v1/chat/completions` → `api.openai.com`
 - 支持自定义 provider（含 `base_url_anthropic` 独立 URL）
-- 支持会话级上游供应商覆盖（`upstream_provider`）
+- 上游覆盖优先级：会话 > 工具 > URL 路径默认
+
+## 格式转换
+
+当工具格式与上游供应商格式不匹配时自动转换（`proxy/converter.ts`）：
+
+| 方向 | 请求 | 非流式响应 | SSE 流式 |
+|------|:---:|:---:|:---:|
+| Anthropic → OpenAI | ✅ | ✅ | ✅ |
+| OpenAI → Anthropic | ✅ | ✅ | ✅ |
+
+- 源格式由工具决定：ClaudeCode → anthropic，其余 → openai
+- 目标格式由上游供应商 base_url 决定（含 anthropic → anthropic 格式）
+
+## 工具级配置
+
+`tool_config` 表存储每个工具（ClaudeCode / codex）的默认上游供应商和模型。新建会话时自动继承工具级配置，会话详情页可单独覆盖。
+
+## Token 归一化
+
+- 下游工具决定归一化格式：ClaudeCode → anthropic，其余 → openai
+- Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`
+- OpenAI（含 Kimi / GLM 等兼容供应商）：`prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`
 
 ## 测试
 
@@ -90,3 +123,4 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 上游 API
 - 开发模式使用 Vite 中间件模式（`middlewareMode: true`），HMR 复用 Fastify 的 HTTP server
 - `router.ts` 中 API 路由先于通配路由注册，确保 `/api/*` 不被代理拦截
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
+- 会话表使用 `AUTOINCREMENT`，删除全部会话后 ID 不会重置
