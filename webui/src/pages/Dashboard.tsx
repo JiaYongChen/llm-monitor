@@ -4,6 +4,7 @@ import * as api from '../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Activity, Zap, Layers } from 'lucide-react';
+import DailyBarChart from '../components/DailyBarChart';
 import { useCurrency, formatCost, CURRENCIES, PROVIDER_COLORS } from '../lib/currency';
 
 /** 工具侧边栏图标颜色映射 */
@@ -45,6 +46,7 @@ export default function Dashboard() {
 
   const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
   const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
+  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool], queryFn: () => api.getDailyStats(provider, tool, 30), enabled: !!provider, refetchInterval: 60000 });
   const totalCalls = stats?.reduce((a: number, b: any) => a + b.count, 0) || 0;
   const totalCost = stats?.reduce((a: number, b: any) => a + b.total_cost, 0) || 0;
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
@@ -169,6 +171,16 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* 每日调用柱状图（仅供应商筛选视图） */}
+      {provider && dailyStats && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">每日调用量</CardTitle></CardHeader>
+          <CardContent>
+            <DailyBarChart data={dailyStats} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* 费用分布 */}
       <Card>

@@ -550,6 +550,25 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
   return results;
 }
 
+/** 每日统计：按天聚合 token 和费用 */
+export function getDailyStats(days: number, provider?: string, tool?: string): Record<string, any>[] {
+  const aggs = `strftime('%Y-%m-%d', c.created_at / 1000, 'unixepoch') as date,
+     COUNT(*) as count,
+     SUM(c.total_cost) as total_cost,
+     SUM(c.output_tokens) as total_output_tokens,
+     SUM(COALESCE(c.uncached_input, 0)) as total_uncached_input,
+     SUM(COALESCE(c.cache_read_tokens, 0)) as total_cache_read_tokens`;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const conditions: string[] = ['c.created_at > ?'];
+  const params: any[] = [cutoff];
+  let sql = `SELECT ${aggs} FROM calls c`;
+  if (tool) { sql += ' JOIN sessions s ON c.session_id = s.id'; conditions.push('s.tool = ?'); params.push(tool); }
+  if (provider) { conditions.push('c.provider = ?'); params.push(provider); }
+  sql += ' WHERE ' + conditions.join(' AND ');
+  sql += ' GROUP BY date ORDER BY date ASC';
+  return queryAll(sql, params);
+}
+
 // ── Data Management ──
 
 /** 清理旧数据（days 天前的调用记录） */

@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import {
   listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
   listToolConfigs, getToolConfig, updateToolConfig,
-  listCalls as dbListCalls, getCall as dbGetCall, getStats,
+  listCalls as dbListCalls, getCall as dbGetCall, getStats, getDailyStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
   deleteAllThirdPartyProviders, deleteAllSessions,
@@ -333,6 +333,15 @@ function _registerApiRoutes(app: FastifyInstance): void {
   app.get('/api/stats', async (req) => {
     const q = req.query as any;
     return getStats(q?.group_by || 'provider', q?.provider || undefined, q?.tool || undefined);
+  });
+
+  app.get('/api/stats/daily', async (req) => {
+    const q = req.query as any;
+    return getDailyStats(
+      q?.days ? parseInt(q.days) : 30,
+      q?.provider || undefined,
+      q?.tool || undefined,
+    );
   });
 
   // Pricing

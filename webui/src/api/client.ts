@@ -75,6 +75,14 @@ export async function getStats(groupBy = 'model', provider?: string, tool?: stri
   return fetchJson(`/stats?${params}`);
 }
 
+export async function getDailyStats(provider?: string, tool?: string, days = 30) {
+  const params = new URLSearchParams();
+  if (provider) params.set('provider', provider);
+  if (tool) params.set('tool', tool);
+  params.set('days', String(days));
+  return fetchJson(`/stats/daily?${params}`);
+}
+
 // ── Pricing ──
 export async function listPricing() {
   return fetchJson('/pricing');

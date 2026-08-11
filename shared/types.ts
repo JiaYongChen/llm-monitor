@@ -72,6 +72,16 @@ export interface StatItem {
   total_tokens: number;
 }
 
+/** 每日统计项 */
+export interface DailyStatItem {
+  date: string;
+  count: number;
+  total_cost: number;
+  total_output_tokens: number;
+  total_uncached_input: number;
+  total_cache_read_tokens: number;
+}
+
 /** 归一化后的 Token */
 export interface NormalizedTokens {
   prompt_tokens: number | null;
