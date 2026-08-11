@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { useCurrency, formatCost } from '../lib/currency';
@@ -10,6 +10,7 @@ export default function SessionDetail() {
   const sessionId = Number(id);
   const { currency, rates } = useCurrency();
   const qc = useQueryClient();
+  const nav = useNavigate();
   const { data: s } = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.getSession(sessionId), enabled: !!sessionId });
   const { data: calls } = useQuery({ queryKey: ['calls', sessionId], queryFn: () => api.listCalls(sessionId, undefined, undefined, 10000, 0), enabled: !!sessionId });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
@@ -49,7 +50,10 @@ export default function SessionDetail() {
           </div>
           <div className="text-xs text-[#aeaeb2] mt-1 space-x-4"><span className="capitalize">{s.tool}</span><span>{formatTime(s.first_call_at)}</span><span>  </span><span>{formatTime(s.last_call_at)}</span></div>
         </div>
-        <button onClick={async () => { const l = window.prompt('名称:', s.label || ''); if (l) { await api.renameSession(s.id, l); qc.invalidateQueries({ queryKey: ['session', sessionId] }); qc.invalidateQueries({ queryKey: ['sessions'] }); } }} className="btn btn-ghost">重命名</button>
+        <div className="flex items-center gap-2">
+          <button onClick={async () => { const l = window.prompt('名称:', s.label || ''); if (l) { await api.renameSession(s.id, l); qc.invalidateQueries({ queryKey: ['session', sessionId] }); qc.invalidateQueries({ queryKey: ['sessions'] }); } }} className="btn btn-ghost">重命名</button>
+          <button onClick={async () => { if (window.confirm(`确认删除会话 #${s.id}？其下所有调用记录也将被删除。`)) { await api.deleteSession(s.id); qc.invalidateQueries({ queryKey: ['sessions'] }); nav('/'); } }} className="btn btn-ghost text-[#e03a3a] hover:text-[#e03a3a]">删除</button>
+        </div>
       </div>
 
       {/* 上游选择器 */}

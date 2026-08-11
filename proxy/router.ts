@@ -7,7 +7,7 @@ import { forwardRequest, forwardStream } from './forwarder.js';
 import { getOrCreateSession, computeFingerprint, extractConversationSeed } from './session.js';
 import { randomUUID } from 'node:crypto';
 import {
-  listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession,
+  listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
   listCalls as dbListCalls, getCall as dbGetCall, getStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
@@ -242,6 +242,10 @@ function _registerApiRoutes(app: FastifyInstance): void {
   app.post('/api/sessions/merge', async (req) => {
     const { source_id, target_id } = req.body as any;
     mergeSessions(source_id, target_id);
+    return { ok: true };
+  });
+  app.delete('/api/sessions/:id', async (req) => {
+    deleteSession(parseInt((req.params as any).id));
     return { ok: true };
   });
 

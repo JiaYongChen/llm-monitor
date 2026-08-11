@@ -428,6 +428,12 @@ export function updateSessionModel(sessionId: number, model: string | null): voi
   execute('UPDATE sessions SET upstream_model = ? WHERE id = ?', [model, sessionId]);
 }
 
+/** 删除会话及其所有关联调用 */
+export function deleteSession(sessionId: number): void {
+  execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
+  execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
+}
+
 // ── Stats ──
 
 /** 格式化模型显示名：去日期后缀 + 版本号用点分隔（如 -4-6 → -4.6） */

@@ -40,6 +40,10 @@ export async function updateSessionModel(id: number, model: string | null) {
   return fetchJson(`/sessions/${id}/model`, { method: 'PUT', body: JSON.stringify({ model }) });
 }
 
+export async function deleteSession(id: number) {
+  return fetchJson(`/sessions/${id}`, { method: 'DELETE' });
+}
+
 // ── Calls ──
 export async function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
