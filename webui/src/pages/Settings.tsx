@@ -200,7 +200,7 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center gap-3 py-5 px-4">
-          <button onClick={() => setExpanded(!expanded)} className={`text-gray-500 hover:text-foreground ${!enabled ? 'opacity-40' : ''}`}>
+          <button onClick={() => setExpanded(!expanded)} className={`w-5 h-5 flex items-center justify-center shrink-0 text-gray-500 hover:text-foreground ${!enabled ? 'opacity-40' : ''}`}>
             {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
           </button>
           <div className="w-8 h-8 rounded flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: enabled ? color : '#b0b0b5' }}>
