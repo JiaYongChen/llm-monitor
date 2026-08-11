@@ -29,7 +29,7 @@ function normalizeAnthropic(u: any): NormalizedTokens {
     prompt_tokens: input, output_tokens: output,
     cache_read_tokens: cacheRead > 0 ? cacheRead : null,
     cache_write_tokens: cacheWrite > 0 ? cacheWrite : null,
-    uncached_input: input != null ? input - cacheRead - cacheWrite : null,
+    uncached_input: input != null ? input - cacheWrite : null,
   };
 }
 
