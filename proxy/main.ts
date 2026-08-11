@@ -55,7 +55,7 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
 
   // ── 代理服务器（PORT）：只走代理转发，不提供面板 ──
   const proxy = Fastify({ logger: false });
-  proxy.get('/api/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
+  proxy.get('/proxy/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
   await registerProxyRoutes(proxy);
 
   // ── 面板服务器（WEBUI_PORT）：API 查询 + 前端 ──

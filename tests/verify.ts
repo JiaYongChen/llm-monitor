@@ -2,7 +2,7 @@
 async function main() {
   const BASE = 'http://localhost:9400';
 
-  const health = await fetch(`${BASE}/api/health`);
+  const health = await fetch(`${BASE}/proxy/health`);
   console.log('Health:', (await health.json()).status);
 
   const providers = await fetch(`${BASE}/api/providers`);

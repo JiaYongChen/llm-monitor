@@ -5,7 +5,7 @@ async function main() {
 
   // 1. 健康检查
   try {
-    const res = await fetch(`${BASE}/api/health`);
+    const res = await fetch(`${BASE}/proxy/health`);
     const health = await res.json();
     console.log('HEALTH:', JSON.stringify(health));
   } catch (e) {

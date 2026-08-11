@@ -136,7 +136,7 @@ llm-monitor/
 | GET | `/api/providers` | 供应商列表 |
 | GET | `/api/tool-configs` | 工具级上游配置 |
 | GET | `/api/config` | 全局配置（含汇率） |
-| GET | `/api/health` | 健康检查 |
+| GET | `/proxy/health` | 健康检查 |
 
 ### 写入
 | 方法 | 路径 | 说明 |

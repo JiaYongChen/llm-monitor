@@ -69,7 +69,7 @@ export async function registerProxyRoutes(app: FastifyInstance): Promise<void> {
 /** 注册 API 查询路由（供面板端口单独挂载） */
 export function registerApiRoutes(app: FastifyInstance): void {
   _registerApiRoutes(app);
-  app.get('/api/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
+  app.get('/proxy/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
 }
 
 async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {

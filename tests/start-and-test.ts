@@ -29,7 +29,7 @@ async function main() {
 
   try {
     // 3. 健康检查
-    const h = await fetch(`${BASE}/api/health`);
+    const h = await fetch(`${BASE}/proxy/health`);
     console.log('\n[健康检查]', (await h.json()).status);
 
     // 4. 预置定价
