@@ -136,15 +136,9 @@ function openAIRequestToAnthropic(body: Record<string, any>): { body: Record<str
       // 普通消息
       const role = msg.role === 'assistant' ? 'assistant' : 'user';
       let content: any[];
-      if (msg.content == null && msg.tool_calls) {
-        // 纯工具调用消息
-        content = msg.tool_calls.map((tc: any) => ({
-          type: 'tool_use',
-          id: tc.id || `call_${Date.now()}`,
-          name: tc.function?.name || '',
-          input: safeJsonParse(tc.function?.arguments) || {},
-        }));
-      } else if (typeof msg.content === 'string') {
+
+      // 文本内容
+      if (typeof msg.content === 'string' && msg.content) {
         content = [{ type: 'text', text: msg.content }];
       } else if (Array.isArray(msg.content)) {
         content = msg.content.map((p: any) => {
@@ -158,10 +152,24 @@ function openAIRequestToAnthropic(body: Record<string, any>): { body: Record<str
           }
           return p; // text 块直接保留
         });
+      } else if (msg.content != null) {
+        content = [{ type: 'text', text: String(msg.content) }];
       } else {
-        content = [{ type: 'text', text: String(msg.content || '') }];
+        content = [];
       }
-      messages.push({ role, content });
+
+      // 工具调用（OpenAI 允许 content 和 tool_calls 共存）
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          content.push({
+            type: 'tool_use',
+            id: tc.id || `call_${Date.now()}`,
+            name: tc.function?.name || '',
+            input: safeJsonParse(tc.function?.arguments) || {},
+          });
+        }
+      }
+      messages.push({ role, content: content.length > 0 ? content : null });
     }
   }
   if (sysMessages.length > 0) {
@@ -366,8 +374,8 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
         if (output) controller.enqueue(this.encoder.encode(output));
       }
     }
-    // 确保有一个 text 内容块
-    if (this.state.blockType === 'text') {
+    // 关闭当前 content block（text 或 tool_use）
+    if (this.state.blockType) {
       controller.enqueue(this.encoder.encode(formatAnthropicSSE('content_block_stop', { type: 'content_block_stop', index: this.state.blockIndex })));
     }
     // 发送 message_delta + message_stop
@@ -417,26 +425,23 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
       for (const tc of delta.tool_calls) {
         if (tc.function?.name) {
           // 关闭前一个 block，开启新 tool_use block
-          if (this.state.blockType === 'text') {
-            // ... we need to send content_block_stop first
-          }
-          if (this.state.blockType === 'tool_use') {
-            // close previous tool_use
+          let out = '';
+          if (this.state.blockType) {
+            out += formatAnthropicSSE('content_block_stop', {
+              type: 'content_block_stop',
+              index: this.state.blockIndex,
+            });
           }
           this.state.blockType = 'tool_use';
           this.state.toolName = tc.function.name;
           this.state.toolArgs = '';
           this.state.blockIndex++;
-          let out = '';
-          if (this.state.blockIndex > 0) {
-            // Close previous text block if exists
-            // Actually let me simplify this...
-          }
-          return formatAnthropicSSE('content_block_start', {
+          out += formatAnthropicSSE('content_block_start', {
             type: 'content_block_start',
             index: this.state.blockIndex,
             content_block: { type: 'tool_use', id: tc.id || `toolu_${Date.now()}`, name: tc.function.name, input: {} },
           });
+          return out;
         }
         if (tc.function?.arguments) {
           this.state.toolArgs += tc.function.arguments;
@@ -453,9 +458,17 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
     // 文本增量
     if (delta?.content) {
       if (this.state.blockType !== 'text') {
+        // 从其他 block 切换过来 → 先关闭前一个 block
+        let out = '';
+        if (this.state.blockType) {
+          out += formatAnthropicSSE('content_block_stop', {
+            type: 'content_block_stop',
+            index: this.state.blockIndex,
+          });
+        }
         this.state.blockType = 'text';
-        this.state.blockIndex = 0;
-        return formatAnthropicSSE('content_block_start', {
+        this.state.blockIndex++;
+        out += formatAnthropicSSE('content_block_start', {
           type: 'content_block_start',
           index: this.state.blockIndex,
           content_block: { type: 'text', text: '' },
@@ -464,6 +477,7 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
           index: this.state.blockIndex,
           delta: { type: 'text_delta', text: delta.content },
         });
+        return out;
       }
       return formatAnthropicSSE('content_block_delta', {
         type: 'content_block_delta',
@@ -556,6 +570,17 @@ class AnthropicStreamToOpenAITransformer implements Transformer<Uint8Array, Uint
             created: this.created,
             model: this.state.model,
             choices: [{ index: 0, delta: { tool_calls: [{ index: obj.index || 0, id: obj.content_block.id, type: 'function', function: { name: obj.content_block.name, arguments: '' } }] }, finish_reason: null }],
+          };
+          return formatOpenAISSE(chunk);
+        }
+        // text block 可能直接携带初始文本（短响应场景）
+        if (this.state.blockType === 'text' && obj.content_block?.text) {
+          const chunk: any = {
+            id: this.state.msgId,
+            object: 'chat.completion.chunk',
+            created: this.created,
+            model: this.state.model,
+            choices: [{ index: 0, delta: { content: obj.content_block.text }, finish_reason: null }],
           };
           return formatOpenAISSE(chunk);
         }

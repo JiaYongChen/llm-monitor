@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardRequest, forwardStream } from './forwarder.js';
 import { needsConversion, convertRequest, convertResponse, createResponseTransform } from './converter.js';
-import { detectFormatFromUrl } from './normalizer.js';
+import { detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { getOrCreateSession, computeFingerprint, extractConversationSeed } from './session.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -188,7 +188,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       let upstream = config.base_url;
 
       // 格式转换检测：源格式由工具推断，目标格式由上游 base_url 推断
-      const sourceFormat = tool === 'ClaudeCode' ? 'anthropic' : tool === 'codex' ? 'openai' : 'openai';
+      const sourceFormat = detectFormatFromTool(tool);
       const targetFormat = detectFormatFromUrl(upstream);
       const convert = needsConversion(sourceFormat, targetFormat);
 

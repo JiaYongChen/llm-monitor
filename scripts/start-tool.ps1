@@ -2,30 +2,25 @@
 .SYNOPSIS
   通过 llm-monitor 代理启动 Claude Code / Codex CLI 工具
 
-.PARAMETER Tool
-  工具名称：ClaudeCode 或 codex
-
-.PARAMETER Project
-  项目目录路径（可选，不指定则使用当前目录）
-
-.PARAMETER Port
-  代理端口（默认 9400）
-
 .EXAMPLE
-  .\scripts\start-tool.ps1 -Tool ClaudeCode -Project D:\my-project
-  .\scripts\start-tool.ps1 -Tool codex
+  llm-monitor Claude D:\my-project
+  llm-monitor codex
 #>
 param(
-  [Parameter(Mandatory = $true)]
-  [ValidateSet('ClaudeCode', 'codex')]
+  [Parameter(Position = 0, Mandatory = $true)]
+  [ValidateSet('Claude', 'ClaudeCode', 'codex')]
   [string]$Tool,
 
+  [Parameter(Position = 1)]
   [string]$Project,
 
   [int]$Port = 9400
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 标准化工具名
+$Tool = if ($Tool -eq 'Claude') { 'ClaudeCode' } else { $Tool }
 
 # 项目目录
 if (-not $Project) {

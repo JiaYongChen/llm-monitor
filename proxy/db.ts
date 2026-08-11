@@ -137,7 +137,6 @@ export async function initDb(dbPath?: string): Promise<void> {
       base_url   TEXT    NOT NULL DEFAULT '',
       base_url_anthropic TEXT NOT NULL DEFAULT '',
       api_key    TEXT    NOT NULL DEFAULT '',
-      api_format TEXT    NOT NULL DEFAULT '',
       enabled    INTEGER NOT NULL DEFAULT 1
     )
   `);
@@ -171,6 +170,8 @@ export async function initDb(dbPath?: string): Promise<void> {
   // 兼容已有库：添加 target_url、source_ip 列
   try { db.run(`ALTER TABLE calls ADD COLUMN target_url TEXT`); } catch {}
   try { db.run(`ALTER TABLE calls ADD COLUMN source_ip TEXT`); } catch {}
+  // 兼容已有库：添加 tool 列
+  try { db.run(`ALTER TABLE calls ADD COLUMN tool TEXT`); } catch {}
   try { db.run(`ALTER TABLE calls ADD COLUMN downstream_url TEXT`); } catch {}
 
   // 工具级上游配置（ClaudeCode / codex 等的默认供应商和模型覆盖）
@@ -604,7 +605,7 @@ export function deleteAllSessions(): number {
       output_tokens       INTEGER,
       cache_read_tokens   INTEGER,
       cache_write_tokens  INTEGER,
-      uncached_input      REAL,
+      uncached_input      INTEGER,
       input_cost      REAL    NOT NULL DEFAULT 0,
       output_cost     REAL    NOT NULL DEFAULT 0,
       total_cost      REAL    NOT NULL DEFAULT 0,
