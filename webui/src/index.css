@@ -10,6 +10,8 @@ body {
   -webkit-font-smoothing: antialiased;
   font-size: 14px;
   line-height: 1.5;
+  /* 始终预留滚动条空间，避免内容增减导致页面横向抖动 */
+  scrollbar-gutter: stable;
 }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
