@@ -153,7 +153,7 @@ export default function Dashboard() {
           { l: '总调用次数', v: totalCalls.toLocaleString(), s: undefined, icon: Activity, c: 'text-violet-500' },
           { l: '累计费用', v: formatCost(totalCost, currency, rates), icon: ({ className }: any) => <span className={className}>{sym}</span>, c: 'text-amber-500' },
           { l: '输出 tokens', v: totalOutput.toLocaleString(), icon: Zap, c: 'text-sky-500' },
-          { l: '输入 tokens', v: (totalUncached + totalCacheRead).toLocaleString(), s: `未命中 ${totalUncached.toLocaleString()}  /  命中 ${totalCacheRead.toLocaleString()}`, icon: Zap, c: 'text-blue-500' },
+          { l: '输入 tokens', v: (totalUncached + totalCacheRead).toLocaleString(), s: provider ? `未命中 ${totalUncached.toLocaleString()}  /  命中 ${totalCacheRead.toLocaleString()}` : undefined, icon: Zap, c: 'text-blue-500' },
           ...(provider ? [
             { l: '缓存命中率', v: totalUncached + totalCacheRead > 0 ? `${(totalCacheRead / (totalUncached + totalCacheRead) * 100).toFixed(1)}%` : '--', s: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: Layers, c: 'text-emerald-500' },
           ] : []),
