@@ -101,7 +101,7 @@ export default function DailyBarChart({ data, days, modelData }: { data: DailyDa
         <div>
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-xs font-medium text-[#aeaeb2]">Token 用量</h4>
-            <span className="text-xs font-mono text-[#aeaeb2]">{fmtTokens(totalTokens)}</span>
+            <span className="text-xs font-mono text-[#aeaeb2]">{totalTokens.toLocaleString()}</span>
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
