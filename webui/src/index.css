@@ -4,14 +4,17 @@
 
 * { box-sizing: border-box; }
 
+html {
+  /* 始终预留滚动条空间，避免页面内容增减时滚动条出现/消失导致横向抖动 */
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   font-size: 14px;
   line-height: 1.5;
-  /* 始终预留滚动条空间，避免内容增减导致页面横向抖动 */
-  scrollbar-gutter: stable;
 }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
