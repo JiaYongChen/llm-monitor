@@ -24,9 +24,17 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-function fillDateRange(days: number): string[] {
+function fillDateRange(days: number, hourly?: boolean): string[] {
   const result: string[] = [];
   const now = new Date();
+  if (hourly) {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    for (let h = 0; h < 24; h++) {
+      const d = new Date(start.getTime() + h * 60 * 60 * 1000);
+      result.push(d.toISOString().slice(0, 13) + ':00');
+    }
+    return result;
+  }
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
@@ -52,8 +60,8 @@ export default function DailyBarChart({ data, days, isHourly, modelData }: { dat
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
     for (const d of data) map.set(d.date, d);
-    return fillDateRange(days).map(date => map.get(date) || { ...ZERO_ROW, date });
-  }, [data, days]);
+    return fillDateRange(days, isHourly).map(date => map.get(date) || { ...ZERO_ROW, date });
+  }, [data, days, isHourly]);
 
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;
@@ -65,13 +73,13 @@ export default function DailyBarChart({ data, days, isHourly, modelData }: { dat
       if (!row) { row = {}; byDate.set(d.date, row); }
       row[d.model] = (row[d.model] || 0) + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens;
     }
-    return fillDateRange(days).map(date => {
+    return fillDateRange(days, isHourly).map(date => {
       const row: any = { date };
       const entry = byDate.get(date) || {};
       for (const m of models) row[m] = entry[m] || 0;
       return row;
     });
-  }, [modelData, days]);
+  }, [modelData, days, isHourly]);
 
   const hasData = filledData.some(d =>
     d.total_output_tokens > 0 || d.total_uncached_input > 0 || d.total_cache_read_tokens > 0,
