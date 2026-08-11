@@ -558,6 +558,10 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
  * tzOffset: 时区偏移小时数（默认 8 = UTC+8）
  */
 export function getDailyStats(range: string, provider?: string, tool?: string, groupByModel?: boolean, tzOffset = 8): Record<string, any>[] {
+  const now = new Date();
+  let dateFormat: string;
+  let startMs: number;
+  let endMs: number | null = null;
   const tzMod = tzOffset >= 0 ? `+${tzOffset}` : `${tzOffset}`;
 
   switch (range) {
