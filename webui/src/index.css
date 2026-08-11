@@ -5,8 +5,8 @@
 * { box-sizing: border-box; }
 
 html {
-  /* 始终预留滚动条空间，避免页面内容增减时滚动条出现/消失导致横向抖动 */
-  scrollbar-gutter: stable;
+  /* 永久隐藏滚动条，保留滚动功能 */
+  scrollbar-width: none;
 }
 
 body {
@@ -17,9 +17,8 @@ body {
   line-height: 1.5;
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+/* Chrome/Safari/Edge 隐藏滚动条 */
+::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .animate-in { animation: fadeIn 0.25s ease-out; }
