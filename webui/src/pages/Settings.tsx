@@ -107,7 +107,7 @@ export default function Settings() {
       </Card>
 
       {/* 添加弹窗 */}
-      <Dialog open={showAdd} onClose={() => { setShowAdd(false); setApiFormatDirty(false); }}>
+      <Dialog open={showAdd} onClose={() => { setShowAdd(false); setApiFormatDirty(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' }); }}>
         <DialogHeader>
           <DialogTitle>添加供应商</DialogTitle>
           <DialogDescription>配置 Base URL 和 API Key。模型定价在供应商卡片中单独添加。</DialogDescription>
@@ -142,7 +142,7 @@ export default function Settings() {
           </div>
           <div className="flex gap-2 pt-2">
             <Button onClick={handleAddProvider} size="sm"><Plus className="h-4 w-4 mr-1" />确认添加</Button>
-            <Button variant="outline" size="sm" onClick={() => { setShowAdd(false); setApiFormatDirty(false); }}>取消</Button>
+            <Button variant="outline" size="sm" onClick={() => { setShowAdd(false); setApiFormatDirty(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '', apiFormat: '' }); }}>取消</Button>
           </div>
         </div>
       </Dialog>

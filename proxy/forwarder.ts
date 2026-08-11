@@ -159,8 +159,9 @@ export function buildCleanResponseBody(raw: string): string | null {
       if (!(k in anthropicUsage) && anthropicOutputUsage[k] != null) anthropicUsage[k] = anthropicOutputUsage[k];
     }
   }
-  // 至少有一侧 usage 即可（不要求双侧，避免被取消/中断的流丢失全部 token）
-  const hasAnthropicUsage = anthropicInputUsage != null || anthropicOutputUsage != null;
+  // 至少有一侧非空 usage 即可（排除网关回显的 usage:{} 空对象）
+  const hasAnthropicUsage = (anthropicInputUsage != null && Object.keys(anthropicInputUsage).length > 0)
+    || (anthropicOutputUsage != null && Object.keys(anthropicOutputUsage).length > 0);
   if (anthropicText.length > 0 || hasAnthropicUsage) {
     return JSON.stringify({
       model: anthropicModel,
@@ -184,9 +185,9 @@ export function buildCleanResponseBody(raw: string): string | null {
         const delta = obj.choices?.[0]?.delta;
         if (delta) {
           if (delta.role) openaiRole = delta.role;
-          if (delta.content) openaiText.push(delta.content);
-          // 推理内容（DeepSeek-R1 / Qwen-reasoner / o 系列）
+          // 推理内容在前，确保思考→答案的阅读顺序（DeepSeek-R1 / Qwen-reasoner / o 系列）
           if (delta.reasoning_content) openaiText.push(delta.reasoning_content);
+          if (delta.content) openaiText.push(delta.content);
           // 工具调用增量（先标记名再参数，避免顺序颠倒）
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {

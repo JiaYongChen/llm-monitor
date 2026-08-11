@@ -59,13 +59,13 @@ function detectFromPath(path: string): { tool: string; upstream: string } | null
   if (path === 'v1/messages' || path.startsWith('v1/messages/')) {
     // 优先匹配内置 Anthropic，其次匹配 api_format 为 anthropic 的供应商
     const anthropic = configs.find(c => c.provider === 'Anthropic')
-      || configs.find(c => (c.api_format || c.provider.toLowerCase()) === 'anthropic');
+      || configs.find(c => (c.api_format?.toLowerCase() || c.provider.toLowerCase()) === 'anthropic');
     return { tool: 'ClaudeCode', upstream: anthropic?.provider || 'Anthropic' };
   }
   if (path === 'v1/chat/completions' || path.startsWith('v1/chat/completions/')) {
     // 内置 OpenAI 恒存在且不可停用/删除 → 直接用它；第三方供应商通过 URL 前缀匹配
     const match = configs.find(c => c.provider === 'OpenAI')
-      || configs.find(c => (c.api_format || c.provider.toLowerCase()) === 'openai');
+      || configs.find(c => (c.api_format?.toLowerCase() || c.provider.toLowerCase()) === 'openai');
     const p = match?.provider || 'OpenAI';
     return { tool: p === 'OpenAI' ? 'codex' : p, upstream: p };
   }
@@ -128,7 +128,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         hasProviderPrefix = true;
         provider = providerConfig.provider; // 规范化为配置名 e.g. 'anthropic'→'Anthropic'
         remaining = segments.slice(1).join('/') || '';
-        const fmt = providerConfig.api_format || provider.toLowerCase();
+        const fmt = providerConfig.api_format?.toLowerCase() || provider.toLowerCase();
         tool = fmt === 'anthropic' ? 'ClaudeCode' : fmt === 'openai' ? 'codex' : provider;
       } else {
         // 策略 2：首段不是已知供应商，从端点反推下游工具类型 → 使用默认上游

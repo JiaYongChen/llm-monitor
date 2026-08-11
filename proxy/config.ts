@@ -7,21 +7,26 @@ const DB_PATH = join(DATA_DIR, 'calls.db');
 
 /** 从 CLI 参数解析端口：--port 8400 --webui-port 8401（也支持 --port=8400），未指定则用默认值 */
 function resolvePort(flag: string, fallback: number): number {
-  // 支持 --port=8400 和 --port 8400 两种写法
   for (let i = 0; i < process.argv.length; i++) {
     const arg = process.argv[i];
-    // --port=8400 形式
+    // --port=8400 形式：严格校验整个值段为纯数字
     if (arg.startsWith(flag + '=')) {
-      const v = parseInt(arg.slice(flag.length + 1), 10);
-      if (!isNaN(v) && v > 0 && v <= 65535) return v;
+      const raw = arg.slice(flag.length + 1);
+      if (/^\d+$/.test(raw)) {
+        const v = parseInt(raw, 10);
+        if (v >= 1 && v <= 65535) return v;
+      }
+      console.warn(`非法端口值 "${raw}"（应为 1-65535 纯数字），使用默认 ${fallback}`);
     }
     // --port 8400 形式
     if (arg === flag && i + 1 < process.argv.length) {
       const next = process.argv[i + 1];
-      // 下一个参数不能是另一个 flag
       if (next.startsWith('--')) continue;
-      const v = parseInt(next, 10);
-      if (!isNaN(v) && v > 0 && v <= 65535) return v;
+      if (/^\d+$/.test(next)) {
+        const v = parseInt(next, 10);
+        if (v >= 1 && v <= 65535) return v;
+      }
+      console.warn(`非法端口值 "${next}"（应为 1-65535 纯数字），使用默认 ${fallback}`);
     }
   }
   return fallback;
