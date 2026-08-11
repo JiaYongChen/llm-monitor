@@ -592,7 +592,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
 
   const modelCol = groupByModel ? "c.model as model," : '';
   const aggs = `${modelCol}
-     strftime('${dateFormat}', c.created_at / 1000, 'unixepoch') as date,
+     strftime('${dateFormat}', c.created_at / 1000, 'unixepoch', '+8 hours') as date,
      COUNT(*) as count,
      SUM(c.total_cost) as total_cost,
      SUM(c.output_tokens) as total_output_tokens,
