@@ -2,7 +2,7 @@
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
-import { insertCall, updateSessionStats, listPricing } from './db.js';
+import { insertCall, updateSessionStats, listPricing, upsertDailyStat } from './db.js';
 import { getRates } from './rates.js';
 
 // ── 队列 ──
@@ -91,5 +91,17 @@ function processRecord(record: CallRecord): void {
   const totalTokens = (record.prompt_tokens || 0) + (record.output_tokens || 0);
   if (record.session_id) {
     updateSessionStats(record.session_id, record.total_cost, totalTokens);
+  }
+
+  // 5. 累加每日统计（独立于 calls 表，删除操作不影响）
+  if (record.output_tokens != null || record.prompt_tokens != null) {
+    const now = Date.now();
+    const d = new Date(now);
+    const dateText = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    upsertDailyStat(
+      dateText, record.provider, record.model, record.tool,
+      record.total_cost, record.prompt_tokens || 0, record.output_tokens || 0,
+      record.uncached_input || 0, record.cache_read_tokens || 0,
+    );
   }
 }
