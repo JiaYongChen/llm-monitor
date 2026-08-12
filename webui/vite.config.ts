@@ -13,5 +13,13 @@ export default defineConfig({
   build: {
     outDir: '../dist/web',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react-query': ['@tanstack/react-query'],
+          'vendor-react-router': ['react-router-dom'],
+        },
+      },
+    },
   },
 });
