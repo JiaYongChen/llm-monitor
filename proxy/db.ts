@@ -220,7 +220,7 @@ export async function initDb(dbPath?: string): Promise<void> {
     db.run(`
       INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
       SELECT
-        strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') as date,
+        strftime('%Y-%m-%d', (created_at + 28800000) / 1000, 'unixepoch') as date,  -- UTC+8 与 recorder 一致
         provider, model, COALESCE(tool, 'unknown') as tool,
         COUNT(*) as call_count,
         SUM(total_cost) as total_cost,
@@ -615,7 +615,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
     case '14d':
     case '30d':
     case '60d':
-      startMs = tzMidnightMs(-parseInt(range));
+      startMs = tzMidnightMs(-(parseInt(range) - 1));  // 与前端 fillDateRange 标签数对齐：7d → today-6
       break;
     case 'thisMonth':
       startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
@@ -658,7 +658,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
 }
 
 /** 累加每日统计（upsert），独立于 calls 表，删除操作不影响。
- *  直接操作 db 不调 execute，避免与 insertCall 的 saveDb 双重刷盘。 */
+ *  insertCall 已 saveDb，此处追加 saveDb 保证两条记录在同一次进程生命周期内都落盘。 */
 export function upsertDailyStat(
   dateText: string, provider: string, model: string, tool: string | null,
   cost: number, promptTokens: number, outputTokens: number,
@@ -677,6 +677,7 @@ export function upsertDailyStat(
        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens`,
     [dateText, provider, model, tool || 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens],
   );
+  saveDb();
 }
 
 // ── Data Management ──
