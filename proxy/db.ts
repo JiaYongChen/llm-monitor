@@ -625,7 +625,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
       endMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
       break;
     default:
-      startMs = tzMidnightMs(-7);
+      startMs = tzMidnightMs(-30);  // 与前端 fillDateRange 的 fallback 30d 一致
   }
 
   const aggs = `SUM(call_count) as count,
@@ -657,13 +657,15 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
   return queryAll(sql, params);
 }
 
-/** 累加每日统计（upsert），独立于 calls 表，删除操作不影响 */
+/** 累加每日统计（upsert），独立于 calls 表，删除操作不影响。
+ *  直接操作 db 不调 execute，避免与 insertCall 的 saveDb 双重刷盘。 */
 export function upsertDailyStat(
-  dateText: string, provider: string, model: string, tool: string,
+  dateText: string, provider: string, model: string, tool: string | null,
   cost: number, promptTokens: number, outputTokens: number,
   uncachedInput: number, cacheReadTokens: number,
 ): void {
-  execute(
+  const d = getDb();
+  d.run(
     `INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
      VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
      ON CONFLICT(date, provider, model, tool) DO UPDATE SET
@@ -673,7 +675,7 @@ export function upsertDailyStat(
        output_tokens = output_tokens + excluded.output_tokens,
        uncached_input = uncached_input + excluded.uncached_input,
        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens`,
-    [dateText, provider, model, tool, cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens],
+    [dateText, provider, model, tool || 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens],
   );
 }
 

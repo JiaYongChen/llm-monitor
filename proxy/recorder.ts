@@ -94,12 +94,13 @@ function processRecord(record: CallRecord): void {
   }
 
   // 5. 累加每日统计（独立于 calls 表，删除操作不影响）
+  // 日期按 UTC+8 归属，与 getDailyStats 默认 tzOffset=8 一致
   if (record.output_tokens != null || record.prompt_tokens != null) {
     const now = Date.now();
-    const d = new Date(now);
-    const dateText = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const tzDate = new Date(now + 8 * 3600000);
+    const dateText = `${tzDate.getUTCFullYear()}-${String(tzDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tzDate.getUTCDate()).padStart(2, '0')}`;
     upsertDailyStat(
-      dateText, record.provider, record.model, record.tool,
+      dateText, record.provider, record.model, record.tool || 'unknown',
       record.total_cost, record.prompt_tokens || 0, record.output_tokens || 0,
       record.uncached_input || 0, record.cache_read_tokens || 0,
     );
