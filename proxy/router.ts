@@ -133,8 +133,11 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         // 工具映射由下游 URL 端点决定：/anthropic/* → ClaudeCode，/openai/* → codex
         tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'codex' : provider;
       } else {
-        // 无 provider 前缀的请求一律拒绝，强制通过 URL 前缀显式指定供应商
-        return reply.callNotFound();
+        // 策略 2：首段不是已知供应商 → 兜底按 OpenAI 格式转发（Codex 新版本直接打 /responses 等路径）
+        provider = 'OpenAI';
+        providerConfig = getProviderConfig('OpenAI')!;
+        remaining = rawPath;
+        tool = 'codex';
       }
       // provider 已统一规范化为配置名，后续指纹、会话、CallRecord 均使用统一名称
 
