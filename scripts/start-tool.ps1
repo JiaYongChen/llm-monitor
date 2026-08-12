@@ -57,6 +57,7 @@ switch ($Tool) {
     } else {
       $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/anthropic"
     }
+    $env:ANTHROPIC_AUTH_TOKEN = 'llm-monitor'  # Claude Code CLI
     Write-Host "  启动 Claude Code..." -ForegroundColor Gray
     Push-Location $Project
     try {
@@ -71,6 +72,7 @@ switch ($Tool) {
     } else {
       $env:OPENAI_BASE_URL = "http://localhost:$Port/openai"
     }
+    $env:OPENAI_API_KEY = 'llm-monitor'  # Codex CLI
     Write-Host "  启动 Codex..." -ForegroundColor Gray
     Push-Location $Project
     try {

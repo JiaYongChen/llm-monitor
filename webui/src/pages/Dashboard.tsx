@@ -202,13 +202,8 @@ export default function Dashboard() {
                   value={dailyTz}
                   onChange={e => setDailyTz(Number(e.target.value))}
                 >
-                  <option value={-12}>UTC-12</option>
-                  <option value={-8}>UTC-8</option>
-                  <option value={-5}>UTC-5</option>
                   <option value={0}>UTC+0</option>
-                  <option value={1}>UTC+1</option>
                   <option value={8}>UTC+8</option>
-                  <option value={9}>UTC+9</option>
                 </select>
               </div>
             </CardHeader>
