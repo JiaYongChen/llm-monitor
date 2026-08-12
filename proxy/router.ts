@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardRequest, forwardStream } from './forwarder.js';
 import { needsConversion, convertRequest, convertResponse, createResponseTransform } from './converter.js';
+import { extractThinking } from '../shared/extractThinking.js';
+import { formatThinkingPreview } from './thinking-preview.js';
 import { detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { getOrCreateSession, computeFingerprint, extractConversationSeed } from './session.js';
 import { randomUUID } from 'node:crypto';
@@ -242,6 +244,9 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
               input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
             });
           }
+          // 终端实时输出思考过程（result.text 为干净结构 JSON，含 thinking 字段）
+          const thinking = extractThinking(result.text);
+          if (thinking) console.log(formatThinkingPreview(thinking));
         });
         console.log(`[proxy] ◀ stream 已建立 | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
         if (convert) {
@@ -263,6 +268,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
             input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
           });
         }
+        const thinking = extractThinking(result.text);
+        if (thinking) console.log(formatThinkingPreview(thinking));
         console.log(`[proxy] ◀ status=${result.status} | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
         return reply.status(result.status).header('content-type', 'application/json').send(responseText);
       }
