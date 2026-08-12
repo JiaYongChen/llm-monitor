@@ -71,11 +71,37 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
   const totalCalls = filledData.reduce((s, d) => s + (d.count || 0), 0);
   const totalTokens = filledData.reduce((s, d) => s + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens, 0);
 
-  // 模型列表（去重）
-  const modelNames = useMemo(
-    () => [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))],
-    [modelData],
-  );
+  // Token 类型按总量升序排列（小值在柱状底部）
+  const tokenTypes = useMemo(() => {
+    const out = filledData.reduce((s, d) => s + d.total_output_tokens, 0);
+    const uncached = filledData.reduce((s, d) => s + d.total_uncached_input, 0);
+    const cached = filledData.reduce((s, d) => s + d.total_cache_read_tokens, 0);
+    const list = [
+      { key: 'total_output_tokens', name: '↑ 输出', color: COLORS.output },
+      { key: 'total_uncached_input', name: '↓ 输入', color: COLORS.uncached },
+      { key: 'total_cache_read_tokens', name: '↓ 缓存命中', color: COLORS.cached },
+    ];
+    list.sort((a, b) => {
+      const va = a.key === 'total_output_tokens' ? out : a.key === 'total_uncached_input' ? uncached : cached;
+      const vb = b.key === 'total_output_tokens' ? out : b.key === 'total_uncached_input' ? uncached : cached;
+      return va - vb;
+    });
+    return list;
+  }, [filledData]);
+
+  // 模型列表（去重），按总量升序排列（小值在柱状底部）
+  const modelNames = useMemo(() => {
+    const names = [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))];
+    // 计算每个模型的总 token 量用于排序
+    const totals = new Map<string, number>();
+    for (const d of modelData || []) {
+      const cat = d.category || d.model || '';
+      if (!cat) continue;
+      totals.set(cat, (totals.get(cat) || 0) + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens);
+    }
+    names.sort((a, b) => (totals.get(a) || 0) - (totals.get(b) || 0));
+    return names;
+  }, [modelData]);
 
   // 单个模型的按日数据（用于每模型趋势图）
   const perModelData = (model: string): DailyData[] => {
@@ -145,9 +171,9 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                       <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                       <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
-                      <Bar dataKey="total_output_tokens" name="输出" stackId="a" fill={COLORS.output} />
-                      <Bar dataKey="total_uncached_input" name="输入(未命中)" stackId="a" fill={COLORS.uncached} />
-                      <Bar dataKey="total_cache_read_tokens" name="输入(命中)" stackId="a" fill={COLORS.cached} />
+                      {tokenTypes.map(tt => (
+                        <Bar key={tt.key} dataKey={tt.key} name={tt.name} stackId="a" fill={tt.color} stroke="#fff" strokeWidth={1} />
+                      ))}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -185,9 +211,9 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                   <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
-                  <Bar dataKey="total_output_tokens" name="输出" stackId="a" fill={COLORS.output} />
-                  <Bar dataKey="total_uncached_input" name="输入(未命中)" stackId="a" fill={COLORS.uncached} />
-                  <Bar dataKey="total_cache_read_tokens" name="输入(命中)" stackId="a" fill={COLORS.cached} />
+                  {tokenTypes.map(tt => (
+                    <Bar key={tt.key} dataKey={tt.key} name={tt.name} stackId="a" fill={tt.color} stroke="#fff" strokeWidth={1} />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>

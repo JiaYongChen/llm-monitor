@@ -26,6 +26,13 @@ export default function DailyCostBarChart({ data, range, tz }: { data: DailyCost
       if (!row) { row = {}; byDate.set(d.date, row); }
       row[d.category] = (row[d.category] || 0) + d.total_cost;
     }
+    // 按总费用升序排列（小值在柱状底部）
+    const catTotals = new Map<string, number>();
+    for (const d of data) {
+      if (!d.category) continue;
+      catTotals.set(d.category, (catTotals.get(d.category) || 0) + d.total_cost);
+    }
+    categories.sort((a, b) => (catTotals.get(a) || 0) - (catTotals.get(b) || 0));
     const dates = fillDateRange(range, tz);
     return {
       categories,
