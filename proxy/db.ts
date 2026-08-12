@@ -198,25 +198,25 @@ export async function initDb(dbPath?: string): Promise<void> {
     )
   `);
 
-  // v2 → v3：新增 daily_stats 统计表，支持物理删除后统计不变（须在 calls 表就绪后执行回填）
-  if (storedVersion < 3) {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS daily_stats (
-        date              TEXT    NOT NULL,
-        provider          TEXT    NOT NULL,
-        model             TEXT    NOT NULL,
-        tool              TEXT    NOT NULL,
-        call_count        INTEGER NOT NULL DEFAULT 0,
-        total_cost        REAL    NOT NULL DEFAULT 0,
-        prompt_tokens     INTEGER NOT NULL DEFAULT 0,
-        output_tokens     INTEGER NOT NULL DEFAULT 0,
-        uncached_input    INTEGER NOT NULL DEFAULT 0,
-        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (date, provider, model, tool)
-      )
-    `);
+  // daily_stats 统计表 — 独立于迁移版本，无条件建表，防止 schema 版本异常时缺失
+  db.run(`
+    CREATE TABLE IF NOT EXISTS daily_stats (
+      date              TEXT    NOT NULL,
+      provider          TEXT    NOT NULL,
+      model             TEXT    NOT NULL,
+      tool              TEXT    NOT NULL,
+      call_count        INTEGER NOT NULL DEFAULT 0,
+      total_cost        REAL    NOT NULL DEFAULT 0,
+      prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+      output_tokens     INTEGER NOT NULL DEFAULT 0,
+      uncached_input    INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (date, provider, model, tool)
+    )
+  `);
 
-    // 从 calls 表回填已有数据到 daily_stats
+  // v2 → v3：从 calls 表回填已有数据到 daily_stats（仅首次升级执行）
+  if (storedVersion < 3) {
     db.run(`
       INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
       SELECT
