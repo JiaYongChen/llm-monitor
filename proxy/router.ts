@@ -221,7 +221,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
 
       console.log(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
 
-      if (config.api_key && config.api_key.startsWith('sk-')) {
+      // 覆盖 CLI 工具的伪 token：只要面板配置了 key（不限于 sk- 前缀，兼容智谱 GLM 等格式）就注入
+      if (config.api_key) {
         reqHeaders['authorization'] = `Bearer ${config.api_key}`;
       }
 
@@ -335,13 +336,18 @@ function _registerApiRoutes(app: FastifyInstance): void {
     return getStats(q?.group_by || 'provider', q?.provider || undefined, q?.tool || undefined);
   });
 
-  app.get('/api/stats/daily', async (req) => {
+  app.get('/api/stats/daily', async (req, reply) => {
     const q = req.query as any;
+    // 向后兼容旧参数 group_by_model=1 → group_by=model
+    const groupBy = q?.group_by || (q?.group_by_model === '1' ? 'model' : undefined);
+    if (groupBy && !['tool', 'provider', 'model'].includes(groupBy)) {
+      return reply.status(400).send({ error: `非法 group_by: ${groupBy}（可选 tool / provider / model）` });
+    }
     return getDailyStats(
       q?.range || '30d',
       q?.provider || undefined,
       q?.tool || undefined,
-      q?.group_by_model === '1',
+      groupBy,
       q?.tz ? parseInt(q.tz) : 8,
     );
   });

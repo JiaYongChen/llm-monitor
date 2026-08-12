@@ -557,43 +557,50 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
  *        'thisMonth'|'lastMonth'  → 按天
  * tzOffset: 时区偏移小时数（默认 8 = UTC+8）
  */
-export function getDailyStats(range: string, provider?: string, tool?: string, groupByModel?: boolean, tzOffset = 8): Record<string, any>[] {
+export function getDailyStats(range: string, provider?: string, tool?: string, groupBy?: string, tzOffset = 8): Record<string, any>[] {
   const now = new Date();
   let dateFormat: string;
   let startMs: number;
   let endMs: number | null = null;
   const tzMod = tzOffset >= 0 ? `+${tzOffset}` : `${tzOffset}`;
+  // 基于 UTC 时间加上时区偏移得到目标时区的"今天"（与前端 fillDateRange 同法），
+  // 确保窗口边界与 SQL 分组标签（tz 偏移）一致，避免跨时区时丢数据
+  const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + tzOffset * 3600000);
+  const tzMidnightMs = (daysOffset = 0) => Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate() + daysOffset);
 
   switch (range) {
     case 'today':
       dateFormat = "%Y-%m-%d %H:00";
-      startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      startMs = tzMidnightMs();
       break;
     case 'yesterday':
       dateFormat = "%Y-%m-%d %H:00";
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      startMs = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate()).getTime();
-      endMs = startMs + 24 * 60 * 60 * 1000;
+      startMs = tzMidnightMs(-1);
+      endMs = tzMidnightMs();
       break;
     case 'thisMonth':
       dateFormat = "%Y-%m-%d";
-      startMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
       break;
     case 'lastMonth':
       dateFormat = "%Y-%m-%d";
-      const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      startMs = lm.getTime();
-      endMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth() - 1, 1);
+      endMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
       break;
     default: // '7d', '14d', '30d', '60d'
       dateFormat = "%Y-%m-%d";
       const days = parseInt(range) || 30;
-      startMs = Date.now() - days * 24 * 60 * 60 * 1000;
+      // 从目标时区"今天"午夜往前推 N 个日历日，与前端补零的日期序列一致
+      startMs = tzMidnightMs(-days);
   }
 
-  const modelCol = groupByModel ? "c.model as model," : '';
-  const aggs = `${modelCol}
+  // 分组列：支持 tool / provider / model 三种维度
+  let groupCol = '';
+  if (groupBy === 'tool') groupCol = 's.tool as category,';
+  else if (groupBy === 'provider') groupCol = 'c.provider as category,';
+  else if (groupBy === 'model') groupCol = 'c.model as category,';
+
+  const aggs = `${groupCol}
      strftime('${dateFormat}', c.created_at / 1000, 'unixepoch', '${tzMod} hours') as date,
      COUNT(*) as count,
      SUM(c.total_cost) as total_cost,
@@ -605,10 +612,15 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
   const params: any[] = [startMs];
   if (endMs != null) { conditions.push('c.created_at < ?'); params.push(endMs); }
   let sql = `SELECT ${aggs} FROM calls c`;
-  if (tool) { sql += ' JOIN sessions s ON c.session_id = s.id'; conditions.push('s.tool = ?'); params.push(tool); }
+  // tool 分组或 tool 筛选时需要 JOIN sessions
+  if (groupBy === 'tool' || tool) { sql += ' JOIN sessions s ON c.session_id = s.id'; }
+  if (tool) { conditions.push('s.tool = ?'); params.push(tool); }
   if (provider) { conditions.push('c.provider = ?'); params.push(provider); }
   sql += ' WHERE ' + conditions.join(' AND ');
-  sql += ' GROUP BY date' + (groupByModel ? ', c.model' : '');
+  // GROUP BY
+  const groupParts = ['date'];
+  if (groupBy === 'tool' || groupBy === 'provider' || groupBy === 'model') groupParts.push('category');
+  sql += ' GROUP BY ' + groupParts.join(', ');
   sql += ' ORDER BY date ASC';
   return queryAll(sql, params);
 }

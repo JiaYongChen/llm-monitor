@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Activity, Zap, Layers } from 'lucide-react';
 import DailyBarChart from '../components/DailyBarChart';
+import DailyCostBarChart from '../components/DailyCostBarChart';
 import { useCurrency, formatCost, CURRENCIES, PROVIDER_COLORS } from '../lib/currency';
 
 /** 工具侧边栏图标颜色映射 */
@@ -49,16 +50,25 @@ export default function Dashboard() {
   const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
   const [dailyRange, setDailyRange] = useState('30d');
   const [dailyTz, setDailyTz] = useState(8);
-  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, false, dailyTz), enabled: !!provider, refetchInterval: 60000 });
-  const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, true, dailyTz), enabled: !!provider, refetchInterval: 60000 });
+  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, undefined, dailyTz), enabled: !!provider, refetchInterval: 60000 });
+  const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, 'model', dailyTz), enabled: !!provider, refetchInterval: 60000 });
+  // 费用分布：与 Token 用量共用同一时间筛选（dailyRange/dailyTz）
+  const costGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
+  // provider 视图下与模型分布查询 URL 完全一致 → 直接复用 dailyModelStats，避免重复请求
+  const { data: costDailyStats } = useQuery({
+    queryKey: ['dailyCostStats', provider, tool, costGroupBy, dailyRange, dailyTz],
+    queryFn: () => api.getDailyStats(provider, tool, dailyRange, costGroupBy, dailyTz),
+    enabled: !(provider && costGroupBy === 'model'),
+    refetchInterval: 60000,
+  });
+  const costDailyData = provider ? dailyModelStats : costDailyStats;
+
   const totalCalls = stats?.reduce((a: number, b: any) => a + b.count, 0) || 0;
   const totalCost = stats?.reduce((a: number, b: any) => a + b.total_cost, 0) || 0;
   const totalInput = stats?.reduce((a: number, b: any) => a + (b.total_input_tokens || 0), 0) || 0;
   const totalOutput = stats?.reduce((a: number, b: any) => a + (b.total_output_tokens || 0), 0) || 0;
   const totalCacheRead = stats?.reduce((a: number, b: any) => a + (b.total_cache_read_tokens || 0), 0) || 0;
   const totalUncached = stats?.reduce((a: number, b: any) => a + (b.total_uncached_input || 0), 0) || 0;
-  const maxCost = Math.max(...(stats || []).map((s: any) => s.total_cost), 0.0001);
-  const bars = ['#6366f1', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316'];
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-6 animate-in">
       <div className="relative flex items-center justify-center">
@@ -176,68 +186,51 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* 每日调用量和调用次数趋势（仅供应商筛选视图） */}
-      {provider && dailyStats && (
-        <>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Token 用量</CardTitle>
-              <div className="flex items-center gap-2">
-                <select
-                  className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                  value={dailyRange}
-                  onChange={e => setDailyRange(e.target.value)}
-                >
-                  <option value="yesterday">昨天</option>
-                  <option value="today">今天</option>
-                  <option value="7d">7 天</option>
-                  <option value="14d">14 天</option>
-                  <option value="30d">30 天</option>
-                  <option value="60d">60 天</option>
-                  <option value="thisMonth">本月</option>
-                  <option value="lastMonth">上月</option>
-                </select>
-                <select
-                  className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                  value={dailyTz}
-                  onChange={e => setDailyTz(Number(e.target.value))}
-                >
-                  <option value={0}>UTC+0</option>
-                  <option value={8}>UTC+8</option>
-                </select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={dailyModelStats} />
-            </CardContent>
-          </Card>
-        </>
-      )}
-
-      {/* 费用分布 */}
+      {/* 费用分布（时间筛选与 Token 用量共用） */}
       <Card>
-        <CardHeader><CardTitle className="text-base">费用分布</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">费用分布</CardTitle>
+          <div className="flex items-center gap-2">
+            <select
+              className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+              value={dailyRange}
+              onChange={e => setDailyRange(e.target.value)}
+            >
+              <option value="yesterday">昨天</option>
+              <option value="today">今天</option>
+              <option value="7d">7 天</option>
+              <option value="14d">14 天</option>
+              <option value="30d">30 天</option>
+              <option value="60d">60 天</option>
+              <option value="thisMonth">本月</option>
+              <option value="lastMonth">上月</option>
+            </select>
+            <select
+              className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+              value={dailyTz}
+              onChange={e => setDailyTz(Number(e.target.value))}
+            >
+              <option value={0}>UTC+0</option>
+              <option value={8}>UTC+8</option>
+            </select>
+          </div>
+        </CardHeader>
         <CardContent>
-          {stats?.some((s: any) => s.total_cost > 0) ? (
-            <div className="space-y-4">
-              {stats.filter((s: any) => s.total_cost > 0).sort((a: any, b: any) => b.total_cost - a.total_cost).map((s: any, i: number) => {
-                  const displayKey = Object.keys(PROVIDER_COLORS).find(k => k.toLowerCase() === s.key?.toLowerCase()) || PROVIDER_DISPLAY[s.key] || s.key;
-                  return (
-                <div key={s.key}>
-                  <div className="flex items-center justify-between mb-1.5 text-sm">
-                    <span className="font-medium">{displayKey}</span>
-                    <span className="font-mono text-gray-500">{formatCost(s.total_cost, currency, rates)}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max((s.total_cost / maxCost) * 100, 2)}%`, background: bars[i % bars.length] }} />
-                  </div>
-                </div>
-                  );
-                })}
-            </div>
-          ) : <p className="text-sm text-gray-500 text-center py-8">暂无数据 — 启动 CLI 工具后自动统计</p>}
+          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} />
         </CardContent>
       </Card>
+
+      {/* 每日调用量和调用次数趋势（仅供应商筛选视图，时间筛选与费用分布共用） */}
+      {provider && dailyStats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Token 用量</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={dailyModelStats} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
