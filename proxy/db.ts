@@ -537,47 +537,24 @@ function formatModelName(model: string): string {
     .replace(/-(\d+)-(\d+)$/, '-$1.$2');
 }
 
-/** 聚合统计 */
+/** 聚合统计（从 daily_stats 表查询，不受删除操作影响） */
 export function getStats(groupBy: string, provider?: string, tool?: string): Record<string, any>[] {
-  const aggs = `COUNT(*) as count,
+  const aggs = `SUM(call_count) as count,
      SUM(total_cost) as total_cost,
      SUM(prompt_tokens) as total_input_tokens,
      SUM(output_tokens) as total_output_tokens,
      SUM(cache_read_tokens) as total_cache_read_tokens,
      SUM(uncached_input) as total_uncached_input`;
 
-  // 带 c. 前缀的版本，用于 JOIN 场景
-  const aggsC = `COUNT(*) as count,
-     SUM(c.total_cost) as total_cost,
-     SUM(c.prompt_tokens) as total_input_tokens,
-     SUM(c.output_tokens) as total_output_tokens,
-     SUM(c.cache_read_tokens) as total_cache_read_tokens,
-     SUM(c.uncached_input) as total_uncached_input`;
-
-  if (groupBy === 'tool') {
-    let sql = `SELECT s.tool as key, ${aggsC}
-       FROM calls c JOIN sessions s ON c.session_id = s.id`;
-    const conditions: string[] = [];
-    const params: any[] = [];
-    if (provider) { conditions.push('c.provider = ?'); params.push(provider); }
-    if (tool) { conditions.push('s.tool = ?'); params.push(tool); }
-    if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
-    sql += ' GROUP BY s.tool ORDER BY total_cost DESC';
-    return queryAll(sql, params);
-  }
-  const validCols: Record<string, string> = { provider: 'provider', model: 'model' };
+  // daily_stats 自带 tool 列，无需 JOIN sessions
+  const validCols: Record<string, string> = { provider: 'provider', model: 'model', tool: 'tool' };
   const col = validCols[groupBy] || 'provider';
   let sql = `SELECT ${col} as key, ${aggs}
-     FROM calls`;
+     FROM daily_stats`;
   const conditions: string[] = [];
   const params: any[] = [];
   if (provider) { conditions.push('provider = ?'); params.push(provider); }
-  if (tool) {
-    sql = `SELECT c.${col} as key, ${aggsC}
-     FROM calls c JOIN sessions s ON c.session_id = s.id`;
-    conditions.push('s.tool = ?');
-    params.push(tool);
-  }
+  if (tool) { conditions.push('tool = ?'); params.push(tool); }
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ` GROUP BY ${col} ORDER BY total_cost DESC`;
   const results = queryAll(sql, params);
@@ -603,72 +580,74 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
   return results;
 }
 
+/** 将 UTC 毫秒时间戳转为 YYYY-MM-DD 日期文本（时间戳为 UTC 午夜，直接用 UTC 分量避免本地时区偏移） */
+function msToDateText(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
 /**
- * 时间统计：按范围 + 粒度聚合。
+ * 时间统计：按范围 + 粒度聚合（从 daily_stats 表查询，不受删除操作影响）。
  * range: '7d'|'14d'|'30d'|'60d' → 按天，最近 N 天
- *        'today'|'yesterday'      → 按小时
+ *        'today'|'yesterday'      → 按天（daily_stats 为天级粒度，暂无小时数据）
  *        'thisMonth'|'lastMonth'  → 按天
  * tzOffset: 时区偏移小时数（默认 8 = UTC+8）
+ * 返回格式与原来一致：date 为日期文本，分组时附带 category 列
  */
 export function getDailyStats(range: string, provider?: string, tool?: string, groupBy?: string, tzOffset = 8): Record<string, any>[] {
   const now = new Date();
-  let dateFormat: string;
   let startMs: number;
   let endMs: number | null = null;
-  const tzMod = tzOffset >= 0 ? `+${tzOffset}` : `${tzOffset}`;
   // 基于 UTC 时间加上时区偏移得到目标时区的"今天"（与前端 fillDateRange 同法），
-  // 确保窗口边界与 SQL 分组标签（tz 偏移）一致，避免跨时区时丢数据
+  // 确保窗口边界与 daily_stats.date（目标时区日期）一致，避免跨时区时丢数据
   const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + tzOffset * 3600000);
   const tzMidnightMs = (daysOffset = 0) => Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate() + daysOffset);
 
   switch (range) {
     case 'today':
-      dateFormat = "%Y-%m-%d %H:00";
       startMs = tzMidnightMs();
       break;
     case 'yesterday':
-      dateFormat = "%Y-%m-%d %H:00";
       startMs = tzMidnightMs(-1);
       endMs = tzMidnightMs();
       break;
+    case '7d':
+    case '14d':
+    case '30d':
+    case '60d':
+      startMs = tzMidnightMs(-parseInt(range));
+      break;
     case 'thisMonth':
-      dateFormat = "%Y-%m-%d";
       startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
       break;
     case 'lastMonth':
-      dateFormat = "%Y-%m-%d";
       startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth() - 1, 1);
       endMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
       break;
-    default: // '7d', '14d', '30d', '60d'
-      dateFormat = "%Y-%m-%d";
-      const days = parseInt(range) || 30;
-      // 从目标时区"今天"午夜往前推 N 个日历日，与前端补零的日期序列一致
-      startMs = tzMidnightMs(-days);
+    default:
+      startMs = tzMidnightMs(-7);
   }
 
-  // 分组列：支持 tool / provider / model 三种维度
+  const aggs = `SUM(call_count) as count,
+     SUM(total_cost) as total_cost,
+     SUM(output_tokens) as total_output_tokens,
+     SUM(uncached_input) as total_uncached_input,
+     SUM(cache_read_tokens) as total_cache_read_tokens`;
+
+  // 分组列：支持 tool / provider / model 三种维度（daily_stats 自带 tool 列，无需 JOIN）
   let groupCol = '';
-  if (groupBy === 'tool') groupCol = 's.tool as category,';
-  else if (groupBy === 'provider') groupCol = 'c.provider as category,';
-  else if (groupBy === 'model') groupCol = 'c.model as category,';
+  if (groupBy === 'tool') groupCol = 'tool as category,';
+  else if (groupBy === 'provider') groupCol = 'provider as category,';
+  else if (groupBy === 'model') groupCol = 'model as category,';
 
-  const aggs = `${groupCol}
-     strftime('${dateFormat}', c.created_at / 1000, 'unixepoch', '${tzMod} hours') as date,
-     COUNT(*) as count,
-     SUM(c.total_cost) as total_cost,
-     SUM(c.output_tokens) as total_output_tokens,
-     SUM(COALESCE(c.uncached_input, 0)) as total_uncached_input,
-     SUM(COALESCE(c.cache_read_tokens, 0)) as total_cache_read_tokens`;
-
-  const conditions: string[] = ['c.created_at >= ?'];
-  const params: any[] = [startMs];
-  if (endMs != null) { conditions.push('c.created_at < ?'); params.push(endMs); }
-  let sql = `SELECT ${aggs} FROM calls c`;
-  // tool 分组或 tool 筛选时需要 JOIN sessions
-  if (groupBy === 'tool' || tool) { sql += ' JOIN sessions s ON c.session_id = s.id'; }
-  if (tool) { conditions.push('s.tool = ?'); params.push(tool); }
-  if (provider) { conditions.push('c.provider = ?'); params.push(provider); }
+  // daily_stats.date 已是 YYYY-MM-DD 文本，直接把时间范围边界转为日期文本后与 date 列比较
+  let sql = `SELECT ${groupCol} date, ${aggs}
+     FROM daily_stats`;
+  const conditions: string[] = ['date >= ?'];
+  const params: any[] = [msToDateText(startMs)];
+  if (endMs != null) { conditions.push('date < ?'); params.push(msToDateText(endMs)); }
+  if (provider) { conditions.push('provider = ?'); params.push(provider); }
+  if (tool) { conditions.push('tool = ?'); params.push(tool); }
   sql += ' WHERE ' + conditions.join(' AND ');
   // GROUP BY
   const groupParts = ['date'];

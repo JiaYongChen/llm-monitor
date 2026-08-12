@@ -1,8 +1,7 @@
 /** 数据库 CRUD 测试 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, insertCall, upsertSession, listCalls, getCall, listSessions, getSession, updateSessionStats, getStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll } from '../proxy/db.js';
+import { initDb, insertCall, upsertSession, listCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll, upsertDailyStat } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
-import { upsertDailyStat } from '../proxy/db.js';
 import type { CallRecord } from '../shared/types.js';
 
 const tmp = createTempDb();
@@ -85,23 +84,32 @@ describe('db', () => {
     expect(session!.total_tokens).toBe(350);
   });
 
-  it('getStats 聚合统计', () => {
-    const sid = upsertSession('fp_aggr', 'ClaudeCode', '/v1/messages');
-    const rec: CallRecord = {
-      provider: 'anthropic', model: 'claude-sonnet-5', tool: 'ClaudeCode', endpoint: '/v1/messages',
-      method: 'POST', target_url: 'https://api.anthropic.com/v1/messages', downstream_url: 'http://localhost:9400/anthropic/v1/messages', source_ip: '127.0.0.1',
-      status_code: 200, error_message: null, duration_ms: 100,
-      prompt_tokens: 100, output_tokens: 50, cache_read_tokens: null,
-      cache_write_tokens: null, uncached_input: 100,
-      input_cost: 0.01, output_cost: 0.02, total_cost: 0.03, cache_savings: 0,
-      request_body: null, response_body: null,
-      fingerprint: 'fp_aggr', source_port: 2222, session_id: sid,
-    };
-    insertCall(rec);
+  it('getStats 聚合统计（从 daily_stats 读取）', () => {
+    // stats 已改为从 daily_stats 表聚合，需先通过 upsertDailyStat 写入数据
+    upsertDailyStat('2026-08-12', 'anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.03, 100, 50, 100, 0);
     const stats = getStats('provider');
     const anthropic = stats.find((s: any) => s.key === 'anthropic');
     expect(anthropic).toBeDefined();
     expect(anthropic!.count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('getDailyStats 按天聚合（today 范围，日期动态计算避免依赖具体日期）', () => {
+    // 与后端窗口边界同法计算目标时区（UTC+8）的"今天"日期文本
+    const now = new Date();
+    const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayText = `${utcNow.getFullYear()}-${pad(utcNow.getMonth() + 1)}-${pad(utcNow.getDate())}`;
+    upsertDailyStat(todayText, 'OpenAI', 'gpt-4o-daily', 'codex', 0.05, 100, 50, 80, 20);
+    const rows = getDailyStats('today', 'OpenAI');
+    const row = rows.find((r: any) => r.date === todayText);
+    expect(row).toBeDefined();
+    expect(row!.count).toBe(1);
+    expect(row!.total_cost).toBeCloseTo(0.05);
+    // 分组查询：返回 category 列（与旧返回格式一致，前端零改动）
+    const grouped = getDailyStats('today', 'OpenAI', undefined, 'model');
+    const gRow = grouped.find((r: any) => r.date === todayText && r.category === 'gpt-4o-daily');
+    expect(gRow).toBeDefined();
+    expect(gRow!.count).toBe(1);
   });
 
   it('mergeSessions 合并', () => {
@@ -136,7 +144,8 @@ describe('db', () => {
 
   it('upsertDailyStat 新增记录', () => {
     upsertDailyStat('2026-08-12', 'OpenAI', 'gpt-4o', 'codex', 0.05, 100, 50, 80, 20);
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12'");
+    // 按完整主键查询，避免同日期其他用例（getStats/getDailyStats 写入）干扰行数断言
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(1);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
@@ -150,7 +159,7 @@ describe('db', () => {
   it('upsertDailyStat 重复键累加', () => {
     upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.03, 50, 30, 40, 10);
     upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.02, 30, 20, 20, 5);
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13'");
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(2);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
