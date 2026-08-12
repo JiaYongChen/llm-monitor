@@ -279,4 +279,23 @@ describe('buildCleanResponseBody', () => {
     expect(obj.thinking).toBe('只有思考');
     expect(obj.content).toBeUndefined();
   });
+
+  it('★ OpenAI reasoning_content 与 content 分离', () => {
+    const lines = [
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'deepseek-r1', choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: '分析中' } }] })}`,
+      '',
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'deepseek-r1', choices: [{ index: 0, delta: { reasoning_content: '，继续推导' } }] })}`,
+      '',
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'deepseek-r1', choices: [{ index: 0, delta: { content: '最终回答' } }] })}`,
+      '',
+      `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'deepseek-r1', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}`,
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    const obj = JSON.parse(buildCleanResponseBody(lines)!);
+    expect(obj.thinking).toBe('分析中，继续推导');
+    expect(obj.content).toBe('最终回答');
+    expect(obj.model).toBe('deepseek-r1');
+  });
 });

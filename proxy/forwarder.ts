@@ -175,6 +175,7 @@ export function buildCleanResponseBody(raw: string): string | null {
 
   // ── 尝试 OpenAI 格式（含 DeepSeek/Qwen 等兼容格式） ──
   const openaiText: string[] = [];
+  const openaiThinking: string[] = [];
   let openaiModel = '';
   let openaiUsage: any = null;
   let openaiRole = '';
@@ -188,8 +189,8 @@ export function buildCleanResponseBody(raw: string): string | null {
         const delta = obj.choices?.[0]?.delta;
         if (delta) {
           if (delta.role) openaiRole = delta.role;
-          // 推理内容在前，确保思考→答案的阅读顺序（DeepSeek-R1 / Qwen-reasoner / o 系列）
-          if (delta.reasoning_content) openaiText.push(delta.reasoning_content);
+          // 推理内容（DeepSeek-R1 / Qwen-reasoner / o 系列）→ 独立收集，与正文分离
+          if (delta.reasoning_content) openaiThinking.push(delta.reasoning_content);
           if (delta.content) openaiText.push(delta.content);
           // 工具调用增量（先标记名再参数，避免顺序颠倒）
           if (delta.tool_calls) {
@@ -204,11 +205,13 @@ export function buildCleanResponseBody(raw: string): string | null {
   }
   // 有文本内容或有非空 token 数据时均返回结构化 JSON（空对象 {} 不计为有效 usage）
   const hasOpenaiUsage = openaiUsage && Object.keys(openaiUsage).length > 0;
-  if (openaiText.length > 0 || hasOpenaiUsage) {
+  if (openaiText.length > 0 || openaiThinking.length > 0 || hasOpenaiUsage) {
     return JSON.stringify({
       model: openaiModel,
       role: openaiRole,
-      content: openaiText.join(''),
+      // 正文非空时才输出 content 字段（纯思考响应无正文，不输出该键）
+      ...(openaiText.length > 0 ? { content: openaiText.join('') } : {}),
+      ...(openaiThinking.length > 0 ? { thinking: openaiThinking.join('') } : {}),
       usage: hasOpenaiUsage ? openaiUsage : null,
     });
   }
