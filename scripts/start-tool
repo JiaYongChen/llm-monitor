@@ -6,16 +6,29 @@ set -euo pipefail
 
 # ── 参数解析 ──
 TOOL="${1:-}"
-PROJECT="${2:-$(pwd)}"
 PORT=9400
+PROJECT="$(pwd)"
 
-# 解析 --port 参数
-for arg in "$@"; do
-  if [[ "$arg" == --port=* ]]; then
-    PORT="${arg#--port=}"
-  elif [[ "$arg" == --port ]] && [[ -n "${3:-}" ]]; then
-    PORT="$3"
-  fi
+[[ $# -gt 0 ]] && shift  # 跳过 TOOL（无参时不 shift，让后续校验报错）
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --port=*)
+      PORT="${1#--port=}"
+      shift
+      ;;
+    --port)
+      PORT="${2:-9400}"
+      [[ $# -ge 2 ]] && shift 2 || { echo "用法: llm-monitor <ClaudeCode|codex> [项目目录] [--port 9400]"; exit 1; }
+      ;;
+    -*)
+      echo "未知选项: $1"
+      exit 1
+      ;;
+    *)
+      PROJECT="$1"
+      shift
+      ;;
+  esac
 done
 
 # 标准化工具名

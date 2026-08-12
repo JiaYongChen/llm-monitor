@@ -24,32 +24,46 @@ function normalizeContent(content: any): string {
   return String(content ?? '');
 }
 
-/** 从 system 字段提取文本（兼容字符串和内容块数组两种格式）。
- *  归一化后确保同一 system prompt 产生相同种子，无论 API 调用中使用哪种格式。 */
+/** 从 system/instructions 字段提取文本（兼容字符串和内容块数组两种格式） */
 function normalizeSystem(system: any): string {
   if (typeof system === 'string') return system;
   if (Array.isArray(system)) {
-    // 内容块数组格式：[{type: "text", text: "..."}, ...]
     return system.map((b: any) => b?.text ?? '').join('\n');
   }
   return JSON.stringify(system ?? '');
 }
 
-/** 从请求 body 中提取会话标签（首条用户消息前 40 字） */
+/** 从消息数组中找第一条匹配角色（system/developer/user）的消息文本（已归一化） */
+function findFirstMessageText(msgs: any[], roles: string[]): string | null {
+  if (!Array.isArray(msgs)) return null;
+  const msg = msgs.find((m: any) => roles.includes(m?.role));
+  if (msg?.content == null) return null;
+  return normalizeContent(msg.content);
+}
+
+/** 提取用户消息文本（用于标签）— 单行、去空白、前 40 字 */
+function extractUserText(msgs: any[]): string | null {
+  const text = findFirstMessageText(msgs, ['user']);
+  if (!text) return null;
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  return cleaned.slice(0, 40) || null;
+}
+
+/** 获取消息数组（Chat Completions 用 messages，Responses API 用 input） */
+function getMessageArrays(body: any): any[] {
+  const sources: any[] = [];
+  if (Array.isArray(body?.messages)) sources.push(body.messages);
+  if (Array.isArray(body?.input)) sources.push(body.input);
+  return sources;
+}
+
+/** 从请求 body 中提取会话标签（首条用户消息前 40 字）。
+ *  兼容 Chat Completions API（messages 数组）和 Responses API（input 数组）。 */
 function extractSessionLabel(body: any): string {
   try {
-    const msgs = body?.messages;
-    if (Array.isArray(msgs)) {
-      const userMsg = msgs.find((m: any) => m?.role === 'user');
-      if (userMsg?.content != null) {
-        const text = typeof userMsg.content === 'string'
-          ? userMsg.content
-          : Array.isArray(userMsg.content)
-            ? userMsg.content.map((b: any) => b?.text ?? '').join(' ').trim()
-            : '';
-        const cleaned = text.replace(/\s+/g, ' ').trim();
-        return cleaned.slice(0, 40) || null;
-      }
+    for (const msgs of getMessageArrays(body)) {
+      const text = extractUserText(msgs);
+      if (text) return text;
     }
     return null;
   } catch {
@@ -58,30 +72,24 @@ function extractSessionLabel(body: any): string {
 }
 
 /** 从请求 body 中提取会话特征种子。
+ *  兼容 Chat Completions API（messages + system）和 Responses API（input + instructions）。
  *  同一聊天的多轮请求共享相同的 system prompt + 第一条用户消息 → 相同种子；
  *  不同聊天的第一条用户消息不同 → 不同种子。 */
 export function extractConversationSeed(body: any): string {
   try {
     const parts: string[] = [];
 
-    // system 字段：统一归一化（字符串 / 内容块数组 → 相同文本）
-    if (body?.system != null) {
-      parts.push(normalizeSystem(body.system).slice(0, 300));
-    }
+    // 顶层 system / instructions 字段
+    if (body?.system != null) parts.push(normalizeSystem(body.system).slice(0, 300));
+    if (body?.instructions != null) parts.push(normalizeSystem(body.instructions).slice(0, 300));
 
-    const messages = body?.messages;
-    if (Array.isArray(messages)) {
-      // OpenAI：messages 数组中的第一条 system 消息
-      const sysMsg = messages.find((m: any) => m?.role === 'system');
-      if (sysMsg?.content != null) {
-        parts.push(normalizeContent(sysMsg.content).slice(0, 300));
-      }
+    // 消息数组中的 system/developer + 用户消息（两类 API 共用一个循环）
+    for (const msgs of getMessageArrays(body)) {
+      const sysText = findFirstMessageText(msgs, ['system', 'developer']);
+      if (sysText) parts.push(sysText.slice(0, 300));
 
-      // 第一条用户消息（多轮对话中也始终是同一个）
-      const userMsg = messages.find((m: any) => m?.role === 'user');
-      if (userMsg?.content != null) {
-        parts.push(normalizeContent(userMsg.content).slice(0, 300));
-      }
+      const userText = findFirstMessageText(msgs, ['user']);
+      if (userText) parts.push(userText.slice(0, 300));
     }
 
     return parts.join('||') || '_empty_';

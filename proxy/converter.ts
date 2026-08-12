@@ -13,55 +13,85 @@ function anthropicRequestToOpenAI(body: Record<string, any>): { body: Record<str
     if (body[k] !== undefined) out[k] = body[k];
   }
 
-  // messages: content 数组扁平化为字符串，image 块转 image_url
+  // messages: content 数组扁平化为字符串，image 块转 image_url，
+  // tool_use/tool_result 全部收集后统一构造（不再提前 return，修复并行工具调用丢失）
   if (body.messages) {
     out.messages = body.messages.map((msg: any) => {
       const role = msg.role;
-      let content: string | any[];
       if (typeof msg.content === 'string') {
-        content = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        const textParts: string[] = [];
-        const imageParts: any[] = [];
-        for (const block of msg.content) {
-          if (block.type === 'text') {
-            textParts.push(block.text);
-          } else if (block.type === 'image') {
-            // Anthropic image → OpenAI image_url（仅支持 base64）
-            if (block.source?.type === 'base64' && block.source?.data && block.source?.media_type) {
-              imageParts.push({
-                type: 'image_url',
-                image_url: { url: `data:${block.source.media_type};base64,${block.source.data}` },
-              });
-            }
-          } else if (block.type === 'tool_use') {
-            // assistant 消息历史中的 tool_use → tool_calls
-            if (role === 'assistant') return {
-              role,
-              content: null,
-              tool_calls: [{
-                id: block.id || `toolu_${Date.now()}`,
-                type: 'function',
-                function: { name: block.name || '', arguments: JSON.stringify(block.input || {}) },
-              }],
-            };
-          } else if (block.type === 'tool_result') {
-            // tool_result → role: "tool" 消息（跳过合并，由外层还原时处理）
-            return { role: 'tool', tool_call_id: block.tool_use_id || '', content: block.content || '' };
-          }
-        }
-        if (imageParts.length > 0 && textParts.length === 0) {
-          content = imageParts;
-        } else if (imageParts.length > 0) {
-          content = [{ type: 'text', text: textParts.join('') }, ...imageParts];
-        } else {
-          content = textParts.join('');
-        }
-      } else {
-        content = String(msg.content || '');
+        return { role, content: msg.content };
       }
+      if (!Array.isArray(msg.content)) {
+        return { role, content: String(msg.content || '') };
+      }
+
+      const textParts: string[] = [];
+      const imageParts: any[] = [];
+      const toolCalls: any[] = [];
+      const toolResults: any[] = [];
+
+      for (const block of msg.content) {
+        if (block.type === 'text') {
+          textParts.push(block.text);
+        } else if (block.type === 'image') {
+          // Anthropic image → OpenAI image_url（仅支持 base64）
+          if (block.source?.type === 'base64' && block.source?.data && block.source?.media_type) {
+            imageParts.push({
+              type: 'image_url',
+              image_url: { url: `data:${block.source.media_type};base64,${block.source.data}` },
+            });
+          }
+        } else if (block.type === 'tool_use' && role === 'assistant') {
+          // assistant 消息历史中的 tool_use → tool_calls（收集全部，不提前 return）
+          toolCalls.push({
+            id: block.id || `toolu_${Date.now()}`,
+            type: 'function',
+            function: { name: block.name || '', arguments: JSON.stringify(block.input || {}) },
+          });
+        } else if (block.type === 'tool_result') {
+          // tool_result → role: "tool" 消息（收集全部后展开为独立消息）
+          // Anthropic 允许 content 为内容块数组，OpenAI tool 角色必须是字符串 → 扁平化
+          const tc = block.content;
+          const flatContent = typeof tc === 'string' ? tc
+            : Array.isArray(tc) ? tc.map((b: any) => b?.text ?? JSON.stringify(b)).join('\n')
+            : String(tc || '');
+          toolResults.push({ role: 'tool', tool_call_id: block.tool_use_id || '', content: flatContent });
+        }
+      }
+
+      // 如果有 tool_result，展开为多条独立消息；
+      // 同消息中的文本/图片不丢弃（改为后续用户消息）
+      if (toolResults.length > 0) {
+        const results = [...toolResults];
+        if (textParts.length > 0 || imageParts.length > 0) {
+          let extraContent: string;
+          if (imageParts.length > 0) {
+            extraContent = textParts.join('') + (textParts.length > 0 ? ' ' : '');
+          } else {
+            extraContent = textParts.join('') || '';
+          }
+          if (extraContent) results.push({ role, content: extraContent });
+        }
+        return results;
+      }
+
+      // 构建 content（文本 + 图片，不含工具调用）
+      let content: string | any[] | null;
+      if (imageParts.length > 0 && textParts.length === 0) {
+        content = imageParts;
+      } else if (imageParts.length > 0) {
+        content = [{ type: 'text', text: textParts.join('') }, ...imageParts];
+      } else {
+        content = textParts.join('') || null;
+      }
+
+      // assistant 消息带有 tool_calls
+      if (toolCalls.length > 0) {
+        return { role, content, tool_calls: toolCalls };
+      }
+
       return { role, content };
-    }).filter(Boolean);
+    }).flat().filter(Boolean);
   }
 
   // system prompt → messages 头部
@@ -107,7 +137,8 @@ function anthropicRequestToOpenAI(body: Record<string, any>): { body: Record<str
   return { body: out, path: '/v1/chat/completions' };
 }
 
-/** OpenAI 请求体 → Anthropic 请求体 */
+/** OpenAI 请求体 → Anthropic 请求体。
+ *  兼容 Chat Completions（messages + system）和 Responses API（input + instructions）。 */
 function openAIRequestToAnthropic(body: Record<string, any>): { body: Record<string, any>; path: string } {
   const out: Record<string, any> = {};
 
@@ -119,9 +150,17 @@ function openAIRequestToAnthropic(body: Record<string, any>): { body: Record<str
   // 提取 system 消息
   const messages: any[] = [];
   const sysMessages: string[] = [];
-  if (body.messages) {
-    for (const msg of body.messages) {
-      if (msg.role === 'system') {
+
+  // Responses API: instructions → system prompt
+  if (body.instructions != null) {
+    sysMessages.push(typeof body.instructions === 'string' ? body.instructions : String(body.instructions));
+  }
+
+  // 统一消息来源：Chat Completions 用 messages，Responses API 用 input
+  const sourceMsgs = body.messages || body.input;
+  if (sourceMsgs) {
+    for (const msg of sourceMsgs) {
+      if (msg.role === 'system' || msg.role === 'developer') {
         sysMessages.push(typeof msg.content === 'string' ? msg.content : String(msg.content || ''));
         continue;
       }
@@ -300,15 +339,19 @@ interface StreamState {
   model: string;
   inputTokens: number;
   outputTokens: number;
-  blockIndex: number;
-  blockType: string | null;       // 'text' | 'tool_use'
-  toolName: string;
-  toolArgs: string;
-  contentEmitted: boolean;        // 是否已发送首个 chunk（含 role）
+  nextBlockIndex: number;       // 下一个可用的 Anthropic block index
+  currentBlockType: string | null;  // 'text' | 'tool_use' — 当前活跃的 block 类型
+  // 每个 OpenAI tool_call index → Anthropic block 映射（解决并行工具增量串位）
+  toolSlots: { anthropicIdx: number; name: string; args: string }[];
+  contentEmitted: boolean;
 }
 
 function freshState(): StreamState {
-  return { msgId: '', model: '', inputTokens: 0, outputTokens: 0, blockIndex: 0, blockType: null, toolName: '', toolArgs: '', contentEmitted: false };
+  return {
+    msgId: '', model: '', inputTokens: 0, outputTokens: 0,
+    nextBlockIndex: 0, currentBlockType: null,
+    toolSlots: [], contentEmitted: false,
+  };
 }
 
 /** 将一段 SSE 文本解析为事件对象数组 */
@@ -374,9 +417,21 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
         if (output) controller.enqueue(this.encoder.encode(output));
       }
     }
-    // 关闭当前 content block（text 或 tool_use）
-    if (this.state.blockType) {
-      controller.enqueue(this.encoder.encode(formatAnthropicSSE('content_block_stop', { type: 'content_block_stop', index: this.state.blockIndex })));
+    // 关闭所有仍活跃的 content block（text 最后一个 + 所有 tool_use slot）
+    if (this.state.currentBlockType) {
+      controller.enqueue(this.encoder.encode(formatAnthropicSSE('content_block_stop', {
+        type: 'content_block_stop',
+        index: this.state.nextBlockIndex - 1,
+      })));
+    }
+    // 并行工具块的 content_block_stop：每个已启动的 tool slot 发一条 stop
+    for (const slot of this.state.toolSlots) {
+      if (slot.anthropicIdx >= 0 && slot.anthropicIdx !== this.state.nextBlockIndex - 1) {
+        controller.enqueue(this.encoder.encode(formatAnthropicSSE('content_block_stop', {
+          type: 'content_block_stop',
+          index: slot.anthropicIdx,
+        })));
+      }
     }
     // 发送 message_delta + message_stop
     controller.enqueue(this.encoder.encode(formatAnthropicSSE('message_delta', {
@@ -399,12 +454,12 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
     if (evt.usage?.prompt_tokens) this.state.inputTokens = evt.usage.prompt_tokens;
     if (evt.usage?.completion_tokens) this.state.outputTokens = evt.usage.completion_tokens;
 
-    // 首个有内容的 chunk → 发送 message_start
+    let output = '';
+
+    // 首个有内容的 chunk → 先发送 message_start + ping，然后继续处理 delta（修复 #2：不再 return 丢弃当前事件数据）
     if (!this.state.contentEmitted) {
       this.state.contentEmitted = true;
-      const msgs: string[] = [];
-      // message_start
-      msgs.push(formatAnthropicSSE('message_start', {
+      output += formatAnthropicSSE('message_start', {
         type: 'message_start',
         message: {
           id: this.state.msgId,
@@ -414,80 +469,88 @@ class OpenAIStreamToAnthropicTransformer implements Transformer<Uint8Array, Uint
           content: [],
           usage: this.state.inputTokens > 0 ? { input_tokens: this.state.inputTokens } : undefined,
         },
-      }));
-      // ping（某些客户端需要）
-      msgs.push(formatAnthropicSSE('ping', { type: 'ping' }));
-      return msgs.join('');
+      });
+      output += formatAnthropicSSE('ping', { type: 'ping' });
     }
 
-    // 工具调用增量
+    // 工具调用增量 — 按 tc.index 分槽跟踪
     if (delta?.tool_calls) {
       for (const tc of delta.tool_calls) {
+        const slotIdx = tc.index ?? 0;
+        // 确保 slot 存在
+        while (this.state.toolSlots.length <= slotIdx) {
+          this.state.toolSlots.push({ anthropicIdx: -1, name: '', args: '' });
+        }
+        const slot = this.state.toolSlots[slotIdx];
+
         if (tc.function?.name) {
-          // 关闭前一个 block，开启新 tool_use block
-          let out = '';
-          if (this.state.blockType) {
-            out += formatAnthropicSSE('content_block_stop', {
+          // 只在从 text 切换到 tool_use 时关闭 text block，tool_use→tool_use 不关闭（并行工具各有独立 block）
+          if (this.state.currentBlockType === 'text') {
+            output += formatAnthropicSSE('content_block_stop', {
               type: 'content_block_stop',
-              index: this.state.blockIndex,
+              index: this.state.nextBlockIndex - 1,
             });
           }
-          this.state.blockType = 'tool_use';
-          this.state.toolName = tc.function.name;
-          this.state.toolArgs = '';
-          this.state.blockIndex++;
-          out += formatAnthropicSSE('content_block_start', {
+          // 为这个工具调用分配新的 Anthropic block index
+          slot.anthropicIdx = this.state.nextBlockIndex++;
+          slot.name = tc.function.name;
+          slot.args = '';
+          this.state.currentBlockType = 'tool_use';
+          output += formatAnthropicSSE('content_block_start', {
             type: 'content_block_start',
-            index: this.state.blockIndex,
-            content_block: { type: 'tool_use', id: tc.id || `toolu_${Date.now()}`, name: tc.function.name, input: {} },
+            index: slot.anthropicIdx,
+            content_block: {
+              type: 'tool_use',
+              id: tc.id || `toolu_${Date.now()}`,
+              name: tc.function.name,
+              input: {},
+            },
           });
-          return out;
-        }
-        if (tc.function?.arguments) {
-          this.state.toolArgs += tc.function.arguments;
-          return formatAnthropicSSE('content_block_delta', {
+        } else if (tc.function?.arguments !== undefined) {
+          // 按 index 追加到正确的 slot
+          slot.args += tc.function.arguments;
+          output += formatAnthropicSSE('content_block_delta', {
             type: 'content_block_delta',
-            index: this.state.blockIndex,
+            index: slot.anthropicIdx >= 0 ? slot.anthropicIdx : this.state.nextBlockIndex - 1,
             delta: { type: 'input_json_delta', partial_json: tc.function.arguments },
           });
         }
       }
-      return null;
+      return output || null;
     }
 
     // 文本增量
     if (delta?.content) {
-      if (this.state.blockType !== 'text') {
-        // 从其他 block 切换过来 → 先关闭前一个 block
-        let out = '';
-        if (this.state.blockType) {
-          out += formatAnthropicSSE('content_block_stop', {
+      if (this.state.currentBlockType !== 'text') {
+        // 从 tool_use 切换到 text → 关闭当前 block（但不关并行工具的其他 block，flush 会收尾）
+        if (this.state.currentBlockType === 'tool_use') {
+          output += formatAnthropicSSE('content_block_stop', {
             type: 'content_block_stop',
-            index: this.state.blockIndex,
+            index: this.state.nextBlockIndex - 1,
           });
         }
-        this.state.blockType = 'text';
-        this.state.blockIndex++;
-        out += formatAnthropicSSE('content_block_start', {
+        this.state.currentBlockType = 'text';
+        const textBlockIdx = this.state.nextBlockIndex++;
+        output += formatAnthropicSSE('content_block_start', {
           type: 'content_block_start',
-          index: this.state.blockIndex,
+          index: textBlockIdx,
           content_block: { type: 'text', text: '' },
         }) + formatAnthropicSSE('content_block_delta', {
           type: 'content_block_delta',
-          index: this.state.blockIndex,
+          index: textBlockIdx,
           delta: { type: 'text_delta', text: delta.content },
         });
-        return out;
+        return output;
       }
-      return formatAnthropicSSE('content_block_delta', {
+      return output + formatAnthropicSSE('content_block_delta', {
         type: 'content_block_delta',
-        index: this.state.blockIndex,
+        index: this.state.nextBlockIndex - 1,
         delta: { type: 'text_delta', text: delta.content },
       });
     }
 
     // finish_reason（非流式 chunk）→ 不在这里发，flush 统一处理
-    return null;
+    return output || null;
   }
 }
 
@@ -561,9 +624,8 @@ class AnthropicStreamToOpenAITransformer implements Transformer<Uint8Array, Uint
       }
 
       case 'content_block_start': {
-        this.state.blockType = obj.content_block?.type || null;
-        if (obj.content_block?.name) this.state.toolName = obj.content_block.name;
-        if (this.state.blockType === 'tool_use') {
+        this.state.currentBlockType = obj.content_block?.type || null;
+        if (this.state.currentBlockType === 'tool_use') {
           const chunk: any = {
             id: this.state.msgId,
             object: 'chat.completion.chunk',
@@ -574,7 +636,7 @@ class AnthropicStreamToOpenAITransformer implements Transformer<Uint8Array, Uint
           return formatOpenAISSE(chunk);
         }
         // text block 可能直接携带初始文本（短响应场景）
-        if (this.state.blockType === 'text' && obj.content_block?.text) {
+        if (this.state.currentBlockType === 'text' && obj.content_block?.text) {
           const chunk: any = {
             id: this.state.msgId,
             object: 'chat.completion.chunk',

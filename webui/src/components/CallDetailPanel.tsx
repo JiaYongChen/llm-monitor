@@ -80,7 +80,7 @@ export default function CallDetailPanel({ call }: { call: any }) {
                 <div className="flex items-center gap-2 mb-3">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="2"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 014-4h12"/></svg>
                   <span className="text-xs font-semibold text-[#6e6e73]">输入</span>
-                  <span className="text-xs font-mono ml-auto text-[#aeaeb2]">{call.prompt_tokens.toLocaleString()} token</span>
+                  <span className="text-xs font-mono ml-auto text-[#aeaeb2]">{call.prompt_tokens?.toLocaleString() ?? '0'} token</span>
                 </div>
                 <Line l="未缓存" n={call.uncached_input > 0 ? call.uncached_input : 0} c="#6e6e73" />
                 {call.cache_write_tokens > 0 && <Line l="写入缓存" n={call.cache_write_tokens} c="#e69900" />}

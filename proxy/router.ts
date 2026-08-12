@@ -209,7 +209,9 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const reqHeaders = cleanHeaders(request.headers as any);
       const sourceIp = request.socket.remoteAddress || '127.0.0.1';
       const downstreamUrl = `http://${request.hostname || 'localhost'}:${PORT}${request.url}`;
-      let bodyObj = (request.body ?? {}) as Record<string, any>;
+      const bodyObjRaw = request.body ?? {};
+      // Fastify 在 application/json 时自动解析，非 JSON content-type 时 body 可能已是字符串
+      let bodyObj = (typeof bodyObjRaw === 'object' && bodyObjRaw !== null ? bodyObjRaw : {}) as Record<string, any>;
 
       // 基于会话种子的会话识别（URL 嵌入 /s/<id>/ 时优先使用已知 ID）
       // 同一聊天 → 相同种子 → 同一会话；不同聊天 → 不同种子 → 不同会话
@@ -249,7 +251,9 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
             }
           }
         }
-      } catch {}
+      } catch (e: any) {
+        console.warn(`[proxy] ⚠ 上游覆盖失败: ${e?.message || e}`);
+      }
       // provider 记录实际转发目标，非原始路径识别值
       const effectiveProvider = upstreamProvider;
 
@@ -302,7 +306,11 @@ function joinUrlPath(base: string, path: string): string {
         reqHeaders['authorization'] = `Bearer ${config.api_key}`;
       }
 
-      const body = request.body ? Buffer.from(JSON.stringify(request.body)) : undefined;
+      // 非 JSON body 时 request.body 可能已是字符串，先检查类型再序列化（避免双重序列化）
+      const rawBody = request.body ?? undefined;
+      const body = rawBody != null
+        ? Buffer.from(typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody))
+        : undefined;
 
       if (isStream) {
         const { stream, collectResult } = await forwardStream(request.method, targetUrl, reqHeaders, body);

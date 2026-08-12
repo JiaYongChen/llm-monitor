@@ -211,32 +211,46 @@ export async function initDb(dbPath?: string): Promise<void> {
       output_tokens     INTEGER NOT NULL DEFAULT 0,
       uncached_input    INTEGER NOT NULL DEFAULT 0,
       cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      created_at_ms     INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (date, provider, model, tool)
     )
   `);
 
-  // v2 → v3：从 calls 表回填已有数据到 daily_stats（仅首次升级执行）
-  if (storedVersion < 3) {
-    db.run(`
-      INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-      SELECT
-        strftime('%Y-%m-%d', (created_at + 28800000) / 1000, 'unixepoch') as date,  -- UTC+8 与 recorder 一致
-        provider, model, COALESCE(tool, 'unknown') as tool,
-        COUNT(*) as call_count,
-        SUM(total_cost) as total_cost,
-        SUM(COALESCE(prompt_tokens, 0)) as prompt_tokens,
-        SUM(COALESCE(output_tokens, 0)) as output_tokens,
-        SUM(COALESCE(uncached_input, 0)) as uncached_input,
-        SUM(COALESCE(cache_read_tokens, 0)) as cache_read_tokens
-      FROM calls
-      GROUP BY date, provider, model, tool
-    `);
+  // 兼容已有库：添加 created_at_ms 列（列已存在则忽略）
+  try { db.run(`ALTER TABLE daily_stats ADD COLUMN created_at_ms INTEGER NOT NULL DEFAULT 0`); } catch {}
 
-    db.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)", ['3']);
-    console.log('数据库已升级到 schema v3（新增 daily_stats 统计表，已回填历史数据）');
+  // v2 → v3：从 calls 表回填已有数据到 daily_stats（仅首次升级执行）
+  // 使用 INSERT OR IGNORE + 事务包装确保幂等：升级中断后重启不会触发主键冲突
+  if (storedVersion < 3) {
+    db.run('BEGIN');
+    try {
+      db.run(`
+        INSERT OR IGNORE INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at_ms)
+        SELECT
+          strftime('%Y-%m-%d', (created_at + 28800000) / 1000, 'unixepoch') as date,  -- UTC+8 与 recorder 一致
+          provider, model, COALESCE(tool, 'unknown') as tool,
+          COUNT(*) as call_count,
+          SUM(total_cost) as total_cost,
+          SUM(COALESCE(prompt_tokens, 0)) as prompt_tokens,
+          SUM(COALESCE(output_tokens, 0)) as output_tokens,
+          SUM(COALESCE(uncached_input, 0)) as uncached_input,
+          SUM(COALESCE(cache_read_tokens, 0)) as cache_read_tokens,
+          MIN(created_at) as created_at_ms
+        FROM calls
+        GROUP BY date, provider, model, tool
+      `);
+
+      db.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)", ['3']);
+      db.run('COMMIT');
+      console.log('数据库已升级到 schema v3（新增 daily_stats 统计表，已回填历史数据）');
+    } catch (err) {
+      db.run('ROLLBACK');
+      throw err;
+    }
   }
 
   saveDb();
+  startSaveSafetyNet();
 }
 
 /** 获取数据库实例（必须先在 initDb 之后调用） */
@@ -245,8 +259,15 @@ export function getDb(): Database {
   return db;
 }
 
-/** 将内存中的数据库持久化到磁盘（原子写入：先写临时文件再 rename，防止进程被 kill 时文件损坏） */
-export function saveDb(dbPath?: string): void {
+// ── 写入节流：避免每次写操作都全量导出数据库 ──
+
+let saveDirty = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let saveSafetyInterval: ReturnType<typeof setInterval> | null = null;
+const SAVE_DEBOUNCE_MS = 500; // 500ms 内无新写入再落盘
+const SAVE_SAFETY_MS = 2000;  // 安全网：每 2s 强制检查一次 dirty，防止去抖+异常退出丢失窗口数据
+
+function flushSaveSync(dbPath?: string): void {
   if (!db) return;
   const path = dbPath ?? currentDbPath;
   const data = db.export();
@@ -254,12 +275,47 @@ export function saveDb(dbPath?: string): void {
   const tmp = path + '.tmp';
   writeFileSync(tmp, buffer);
   renameSync(tmp, path);
+  saveDirty = false;
 }
 
-/** 关闭数据库（先保存） */
+/** 将内存中的数据库持久化到磁盘（原子写入：先写临时文件再 rename，防止进程被 kill 时文件损坏）。
+ *  默认使用去抖机制合并高频写入；传 immediate=true 可强制立即落盘（closeDb 时使用）。 */
+export function saveDb(dbPath?: string, immediate = false): void {
+  if (!db) return;
+  if (immediate) {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    flushSaveSync(dbPath);
+    return;
+  }
+  saveDirty = true;
+  if (!saveTimer) {
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      if (saveDirty) flushSaveSync(dbPath);
+    }, SAVE_DEBOUNCE_MS);
+  }
+}
+
+/** 启动定期落盘安全网（initDb 时调用，closeDb 时清除） */
+function startSaveSafetyNet(): void {
+  if (saveSafetyInterval) return;
+  saveSafetyInterval = setInterval(() => {
+    if (saveDirty) {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      flushSaveSync();
+    }
+  }, SAVE_SAFETY_MS);
+  // 允许定时器不阻止进程退出
+  if (saveSafetyInterval && typeof saveSafetyInterval === 'object' && 'unref' in saveSafetyInterval) {
+    (saveSafetyInterval as any).unref();
+  }
+}
+
+/** 关闭数据库（立即保存并关闭） */
 export function closeDb(): void {
+  if (saveSafetyInterval) { clearInterval(saveSafetyInterval); saveSafetyInterval = null; }
   if (db) {
-    saveDb();
+    saveDb(undefined, true);
     db.close();
     db = null;
   }
@@ -429,9 +485,12 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string, la
 }
 
 /** 创建 pending 会话（由包装脚本在 CLI 启动时调用） */
+// pending session 计数器，防止同毫秒内创建多个 session 时指纹碰撞
+let pendingCounter = 0;
+
 export function createPendingSession(tool: string): number {
   const now = Date.now();
-  const fp = `pending:${tool}:${now}`;
+  const fp = `pending:${tool}:${now}:${pendingCounter++}`;
   const tc = getToolConfig(tool);
   return executeInsert(
     `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at, upstream_provider, upstream_model)
@@ -640,12 +699,26 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
   else if (groupBy === 'provider') groupCol = 'provider as category,';
   else if (groupBy === 'model') groupCol = 'model as category,';
 
-  // daily_stats.date 已是 YYYY-MM-DD 文本，直接把时间范围边界转为日期文本后与 date 列比较
-  let sql = `SELECT ${groupCol} date, ${aggs}
+  // 使用 created_at_ms（epoch 毫秒）做时区无关的范围过滤；当 created_at_ms 尚未写入（=0）时回退到 date 列比较
+  // 在 SELECT 中按 tzOffset 动态计算目标时区的日期文本（保持与前端 fillDateRange 的标签一致）
+  // CASE WHEN：存量行 created_at_ms=0 回退到 date 列，避免输出 1970-01-01
+  const tzSeconds = tzOffset * 3600;
+  const dateExpr = `CASE WHEN created_at_ms > 0 THEN strftime('%Y-%m-%d', (created_at_ms / 1000) + ${tzSeconds}, 'unixepoch') ELSE date END`;
+
+  let sql = `SELECT ${groupCol} ${dateExpr} as date, ${aggs}
      FROM daily_stats`;
-  const conditions: string[] = ['date >= ?'];
-  const params: any[] = [msToDateText(startMs)];
-  if (endMs != null) { conditions.push('date < ?'); params.push(msToDateText(endMs)); }
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  // 优先用 created_at_ms 过滤（时区无关），created_at_ms=0 时回退到 date 列兼容旧数据
+  // 注意：整个 OR 条件外加括号，否则 AND 优先级高于 OR 会导致后续 provider/tool 过滤只作用于 created_at_ms=0 分支
+  if (endMs != null) {
+    conditions.push(`((created_at_ms > 0 AND created_at_ms >= ? AND created_at_ms < ?) OR (created_at_ms = 0 AND date >= ? AND date < ?))`);
+    params.push(startMs, endMs, msToDateText(startMs), msToDateText(endMs));
+  } else {
+    conditions.push(`((created_at_ms > 0 AND created_at_ms >= ?) OR (created_at_ms = 0 AND date >= ?))`);
+    params.push(startMs, msToDateText(startMs));
+  }
   if (provider) { conditions.push('provider = ?'); params.push(provider); }
   if (tool) { conditions.push('tool = ?'); params.push(tool); }
   sql += ' WHERE ' + conditions.join(' AND ');
@@ -658,24 +731,26 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
 }
 
 /** 累加每日统计（upsert），独立于 calls 表，删除操作不影响。
- *  insertCall 已 saveDb，此处追加 saveDb 保证两条记录在同一次进程生命周期内都落盘。 */
+ *  @param createdAtMs 调用发生时的 epoch 毫秒时间戳，用于时区无关的范围查询 */
 export function upsertDailyStat(
   dateText: string, provider: string, model: string, tool: string | null,
   cost: number, promptTokens: number, outputTokens: number,
   uncachedInput: number, cacheReadTokens: number,
+  createdAtMs: number = Date.now(),
 ): void {
   const d = getDb();
   d.run(
-    `INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+    `INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at_ms)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(date, provider, model, tool) DO UPDATE SET
        call_count = call_count + 1,
        total_cost = total_cost + excluded.total_cost,
        prompt_tokens = prompt_tokens + excluded.prompt_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
        uncached_input = uncached_input + excluded.uncached_input,
-       cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens`,
-    [dateText, provider, model, tool || 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens],
+       cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+       created_at_ms = CASE WHEN created_at_ms = 0 THEN excluded.created_at_ms ELSE created_at_ms END`,
+    [dateText, provider, model, tool || 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs],
   );
   saveDb();
 }
@@ -713,75 +788,14 @@ export function deleteAllThirdPartyProviders(): number {
   return count;
 }
 
-/** 清空所有会话及其关联调用 */
+/** 清空所有会话及其关联调用 + 重置 AUTOINCREMENT */
 export function deleteAllSessions(): number {
   const d = getDb();
   d.run('DELETE FROM calls');
   const count = d.getRowsModified();
   d.run('DELETE FROM sessions');
-  // 移除 AUTOINCREMENT 约束以允许 ID 从 1 重新开始
-  try {
-    d.run("DROP TABLE IF EXISTS calls_new");
-    d.run("DROP TABLE IF EXISTS sessions_new");
-    d.run(`CREATE TABLE calls_new (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id      INTEGER,
-      provider        TEXT    NOT NULL,
-      model           TEXT,
-      endpoint        TEXT    NOT NULL,
-      method          TEXT    NOT NULL DEFAULT 'POST',
-      target_url      TEXT,
-      downstream_url  TEXT,
-      source_ip       TEXT,
-      status_code     INTEGER,
-      error_message   TEXT,
-      duration_ms     INTEGER NOT NULL DEFAULT 0,
-      prompt_tokens       INTEGER,
-      output_tokens       INTEGER,
-      cache_read_tokens   INTEGER,
-      cache_write_tokens  INTEGER,
-      uncached_input      INTEGER,
-      input_cost      REAL    NOT NULL DEFAULT 0,
-      output_cost     REAL    NOT NULL DEFAULT 0,
-      total_cost      REAL    NOT NULL DEFAULT 0,
-      cache_savings   REAL    NOT NULL DEFAULT 0,
-      request_body    TEXT,
-      response_body   TEXT,
-      fingerprint     TEXT    NOT NULL DEFAULT '',
-      source_port     INTEGER,
-      tool            TEXT,
-      created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    )`);
-    d.run(`CREATE TABLE sessions_new (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      tool          TEXT    NOT NULL,
-      label         TEXT,
-      fingerprint   TEXT    NOT NULL UNIQUE,
-      request_count INTEGER NOT NULL DEFAULT 0,
-      total_cost    REAL    NOT NULL DEFAULT 0,
-      total_tokens  INTEGER NOT NULL DEFAULT 0,
-      first_call_at INTEGER,
-      last_call_at  INTEGER,
-      first_endpoint TEXT,
-      status        TEXT    NOT NULL DEFAULT 'active',
-      created_at    INTEGER NOT NULL,
-      upstream_provider TEXT,
-      upstream_model    TEXT
-    )`);
-    // 重建索引
-    d.run('CREATE INDEX IF NOT EXISTS idx_calls_session ON calls_new(session_id)');
-    d.run('CREATE INDEX IF NOT EXISTS idx_calls_created ON calls_new(created_at)');
-    d.run('CREATE INDEX IF NOT EXISTS idx_calls_model ON calls_new(model)');
-    d.run('CREATE INDEX IF NOT EXISTS idx_calls_fingerprint ON calls_new(fingerprint)');
-    d.run('CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions_new(tool)');
-    d.run('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions_new(status)');
-    d.run('DROP TABLE IF EXISTS calls');
-    d.run('DROP TABLE IF EXISTS sessions');
-    d.run('ALTER TABLE calls_new RENAME TO calls');
-    d.run('ALTER TABLE sessions_new RENAME TO sessions');
-  } catch {
-    // 重建失败不影响删除本身，仅无法重置 ID
-  }
+  // 重置 AUTOINCREMENT 计数器（与 clearAllData 同法，避免 DDL 重建导致约束漂移）
+  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls', 'sessions')");
   saveDb();
   return count;
 }

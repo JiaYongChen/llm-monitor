@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyMiddie from '@fastify/middie';
 import { initDb, closeDb, listPricing, listProviderConfigs, upsertPricing } from './db.js';
+import { UPSTREAMS } from './router.js';
 import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.js';
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
@@ -56,6 +57,11 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
   for (const p of providers) {
     if (p.enabled) {
       const urls = [p.base_url, p.base_url_anthropic].filter(Boolean) as string[];
+      // 内置供应商（Anthropic/OpenAI）有 UPSTREAMS 硬编码默认值，空 URL 可接受
+      // 自定义供应商空 URL 降级为警告（不阻止启动，允许通过面板修复）
+      if (urls.length === 0 && !UPSTREAMS[p.provider.toLowerCase()]) {
+        console.warn(`[启动校验] ⚠ 供应商 "${p.provider}" 未配置任何 Base URL，请求时将返回 500。请在面板中配置上游地址`);
+      }
       for (const u of urls) {
         if (!/^https?:\/\/.+/.test(u)) {
           console.error(`[启动校验] 供应商 "${p.provider}" 的 base_url 无效: ${u || '(空)'}`);
@@ -144,18 +150,31 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
 // 直接运行时启动服务器
 const isMain = process.argv[1]?.includes('main.ts') || process.argv[1]?.includes('main.js');
 if (isMain) {
-  let shuttingDown = false;
-  const shutdown = async () => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    process.exit(0);
-  };
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
-
   const { proxy, webui } = await createApp();
   await Promise.all([
     listenWithRetry(proxy, PORT, '代理'),
     listenWithRetry(webui, WEBUI_PORT, '面板'),
   ]);
+
+  // 信号处理放在服务器启动之后，确保 proxy/webui 引用可用
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log('\n正在关闭...');
+    // 1) 先立即保存数据（不依赖 onClose 钩子，防止活跃 SSE 连接使 close() 挂起）
+    stopDailyRefresh();
+    stopRecorder();
+    closeDb();
+    // 2) 尝试优雅关闭服务器（最多等 3 秒，超时则强退）
+    try {
+      await Promise.race([
+        Promise.all([proxy.close(), webui.close()]),
+        new Promise(r => setTimeout(r, 3000)),
+      ]);
+    } catch {}
+    process.exit(0);
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }

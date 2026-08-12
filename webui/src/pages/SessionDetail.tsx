@@ -15,8 +15,8 @@ export default function SessionDetail() {
   const qc = useQueryClient();
   const nav = useNavigate();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const { data: s } = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.getSession(sessionId), enabled: !!sessionId });
-  const { data: calls } = useQuery({ queryKey: ['calls', sessionId], queryFn: () => api.listCalls(sessionId, undefined, undefined, 10000, 0), enabled: !!sessionId });
+  const { data: s } = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.getSession(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
+  const { data: calls } = useQuery({ queryKey: ['calls', sessionId], queryFn: () => api.listCalls(sessionId, undefined, undefined, 200, 0), enabled: !!sessionId, refetchInterval: 10000 });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
   const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: () => api.listPricing() });
 

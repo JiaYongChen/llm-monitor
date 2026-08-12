@@ -3,10 +3,18 @@ import type { NormalizedTokens } from '../shared/types.js';
 
 /**
  * 从上游 URL 检测 API 格式（供格式转换使用）。
- * 规则：URL 含 anthropic → anthropic，其余默认 openai。
+ * 精确匹配 /anthropic 路径段落 + 域名含 anthropic（含 anthropic-mirror 等变体），
+ * 仅排除路径中 anthropic- 前缀的非 Anthropic 网关（如 /anthropic-compat）。
  */
 export function detectFormatFromUrl(url: string): string {
-  return url.toLowerCase().includes('anthropic') ? 'anthropic' : 'openai';
+  const lower = url.toLowerCase();
+  try {
+    const host = new URL(url).hostname;
+    // 域名含 anthropic → 几乎肯定是 Anthropic 格式网关
+    if (host.includes('anthropic')) return 'anthropic';
+  } catch {}
+  // 路径精确匹配 /anthropic 作为独立段落（不以 - 继续，避免误判 /anthropic-compat）
+  return /\/anthropic(?:\/|$|\?|#)/.test(lower) ? 'anthropic' : 'openai';
 }
 
 /** 根据下游工具名映射到归一化格式（仅两种：ClaudeCode→anthropic，其余→openai） */

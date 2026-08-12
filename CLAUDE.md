@@ -138,9 +138,10 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 ## 注意事项
 
-- sql.js 是纯 WASM 实现，数据库运行在内存中，每次写入后需手动调用 `saveDb()` 持久化到磁盘
+- sql.js 是纯 WASM 实现，数据库运行在内存中，`saveDb()` 通过去抖（500ms）合并写入减少全量导出开销；另有 2s 安全网定时器兜底防异常退出丢数据
+- `closeDb()` 调用 `saveDb(undefined, true)` 立即落盘，信号处理器（SIGINT/SIGTERM）会先 `stopRecorder()` + `closeDb()` 再退出
 - 生产模式下前端需先 `npm run build` 输出到 `dist/web/`，`dist/` 已加入 `.gitignore`
 - 开发模式使用 Vite 中间件模式（`middlewareMode: true`），HMR 复用 Fastify 的 HTTP server
 - `/api/*` 路由注册在 WebUI 端口的独立 Fastify 实例上，通配路由在代理端口，两个端口隔离确保 API 不被代理拦截
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
-- 会话表使用 `AUTOINCREMENT`，删除全部会话后 ID 不会重置
+- 清空全部会话（`deleteAllSessions`）会同时重置 AUTOINCREMENT ID，清空全部数据（`clearAllData`）同步清空统计
