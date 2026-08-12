@@ -71,7 +71,7 @@ export default function Dashboard() {
   const totalUncached = stats?.reduce((a: number, b: any) => a + (b.total_uncached_input || 0), 0) || 0;
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-6 animate-in">
-      <div className="relative flex items-center justify-center">
+      <div className="relative flex items-center justify-center sticky top-0 z-10 bg-[#f5f5f7] -mt-8 pt-8 pb-3 -mb-3">
         <h1 className="text-2xl font-bold tracking-tight" style={{ color: titleColor }}>{pageTitle}</h1>
         {totalCalls > 0 && (
           <Badge variant="secondary" className="absolute right-0 gap-1.5">
@@ -129,9 +129,7 @@ export default function Dashboard() {
               const baseUrl = (tool === 'ClaudeCode' && up?.base_url_anthropic)
                 ? up.base_url_anthropic
                 : (up?.base_url || officialUrls[currentUpstream] || '');
-              const targetPath = baseUrl.toLowerCase().includes('anthropic') ? '/v1/messages' : '/v1/chat/completions';
-              const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${targetPath}` : '';
-              return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{fullUrl ? ` — ${fullUrl}` : ''}</span>;
+              return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream} — <span className="font-mono">{baseUrl}</span></span>;
             })()}
           </div>
           <div className="flex items-center gap-3">

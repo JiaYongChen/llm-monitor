@@ -50,4 +50,36 @@ describe('normalizeTokens', () => {
     expect(r.prompt_tokens).toBe(100);
     expect(r.output_tokens).toBe(50);
   });
+
+  // ── OpenAI Responses API 格式（/responses 端点，Codex 等工具使用）──
+
+  it('★ Responses API 格式归一化（input_tokens / output_tokens）', () => {
+    const r = normalizeTokens('openai', {
+      usage: { input_tokens: 700, output_tokens: 500, total_tokens: 1200 },
+    });
+    expect(r.prompt_tokens).toBe(700);
+    expect(r.output_tokens).toBe(500);
+    expect(r.uncached_input).toBe(700);
+    expect(r.cache_read_tokens).toBeNull();
+    expect(r.cache_write_tokens).toBeNull();
+  });
+
+  it('★ Responses API 带缓存字段', () => {
+    const r = normalizeTokens('openai', {
+      usage: { input_tokens: 1000, output_tokens: 600, total_tokens: 1600, input_tokens_details: { cached_tokens: 400 } },
+    });
+    expect(r.prompt_tokens).toBe(1000);
+    expect(r.output_tokens).toBe(600);
+    expect(r.cache_read_tokens).toBe(400);
+    expect(r.uncached_input).toBe(600);
+  });
+
+  it('★ Responses API 优先使用 prompt_tokens（Chat Completions 兼容）', () => {
+    // 当两种字段都存在时，prompt_tokens/completion_tokens 优先（现有一致行为）
+    const r = normalizeTokens('openai', {
+      usage: { prompt_tokens: 100, completion_tokens: 50, input_tokens: 999, output_tokens: 888 },
+    });
+    expect(r.prompt_tokens).toBe(100);
+    expect(r.output_tokens).toBe(50);
+  });
 });

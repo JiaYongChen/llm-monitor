@@ -64,7 +64,7 @@ base_url = "http://localhost:9400/s/<id>/codex"
 ### 调用拦截与记录
 - 透明代理转发（含 SSE 流式），无侵入
 - **格式转换**：自动检测工具格式与上游供应商格式，不匹配时双向转换（Anthropic ↔ OpenAI）
-- 自动解析请求/响应中的 Token 用量（Anthropic / OpenAI 两种格式）
+- 自动解析请求/响应中的 Token 用量（Anthropic / OpenAI Chat Completions / OpenAI Responses API 三种格式）
 - 缓存读写拆分：未缓存输入、缓存写入、缓存命中分别统计
 - **思考过程显示**：自动分离模型的思考/推理内容，终端实时输出（`[think]` 前缀、区域分隔），Web 面板折叠展示
 
@@ -119,10 +119,10 @@ llm-monitor/
 │   ├── config.ts                # CLI 参数解析 + 常量
 │   ├── db.ts                    # SQLite CRUD + 建表 + 迁移
 │   ├── router.ts                # 代理路由（/*）+ /api/* 查询 API
-│   ├── forwarder.ts             # HTTP 转发（含 SSE 流式透传）
+│   ├── forwarder.ts             # HTTP 转发（含 SSE 流式透传），三种 SSE 格式解析
 │   ├── converter.ts             # Anthropic ↔ OpenAI 格式双向转换
 │   ├── session.ts               # 会话指纹 + 标签生成 + CRUD
-│   ├── normalizer.ts            # Token 归一化（anthropic / openai）
+│   ├── normalizer.ts            # Token 归一化（anthropic / openai，含 Responses API fallback）
 │   ├── pricing.ts               # 定价匹配 + 费用计算
 │   ├── rates.ts                 # 汇率获取 / 缓存 / 定时刷新
 │   ├── recorder.ts              # 后台消费者（队列 → 计费 → 写库 + 统计累加）
@@ -197,6 +197,6 @@ llm-monitor/
 ## 测试
 
 ```bash
-npm test                # 运行全部 127 个测试
+npm test                # 运行全部 136 个测试
 npx vitest --watch      # watch 模式
 ```

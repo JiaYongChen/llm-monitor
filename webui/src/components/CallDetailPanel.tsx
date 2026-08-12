@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useCurrency, formatCost } from '../lib/currency';
 import { formatTime } from '../lib/utils';
 import { extractThinking } from '@/shared/extractThinking';
@@ -66,7 +65,7 @@ export default function CallDetailPanel({ call }: { call: any }) {
         {call.prompt_tokens != null || call.output_tokens != null ? (
           <>
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 rounded-lg bg-[#fafafc]">
+              <div className="p-4 rounded-lg bg-[#f0f0f4]">
                 <div className="flex items-center gap-2 mb-3">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5e5ce6" strokeWidth="2"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 01-4 4H4"/></svg>
                   <span className="text-xs font-semibold text-[#6e6e73]">输出</span>
@@ -77,7 +76,7 @@ export default function CallDetailPanel({ call }: { call: any }) {
                   <span className="text-sm font-mono font-semibold text-[#e69900]">{formatCost(call.output_cost, currency, rates)}</span>
                 </div>
               </div>
-              <div className="p-4 rounded-lg bg-[#fafafc]">
+              <div className="p-4 rounded-lg bg-[#f0f0f4]">
                 <div className="flex items-center gap-2 mb-3">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="2"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 014-4h12"/></svg>
                   <span className="text-xs font-semibold text-[#6e6e73]">输入</span>
@@ -119,64 +118,35 @@ function Line({ l, n, c }: { l: string; n: number; c: string }) {
   return <div className="flex items-center justify-between text-[11px] py-1"><div className="flex items-center gap-2"><span className="w-1 h-1 rounded-full" style={{ background: c }} /><span className="text-[#6e6e73]">{l}</span></div><span className="font-mono text-[#aeaeb2]">{n.toLocaleString()}</span></div>;
 }
 
-/** 简单代码块（无折叠） */
-function PreBlock({ text, maxH }: { text: string; maxH?: number }) {
-  const lines = text.split('\n');
-  return (
-    <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap p-3 rounded-lg overflow-auto bg-[#fafafc] border border-[#e5e5ea] text-[#6e6e73]" style={{ maxHeight: maxH ?? 300 }}>
-      {lines.length > 50 ? lines.slice(0, 50).join('\n') + `\n// ... 共 ${lines.length} 行` : text}
-    </pre>
-  );
-}
-
-/** 思考过程卡片 — 默认折叠，展开显示全文 */
+/** 思考过程卡片 — 始终显示全文，带滚动条 */
 function ThinkingCard({ thinking }: { thinking: string }) {
-  const [open, setOpen] = useState(false);
   return (
     <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-[#f5f5f7] transition-colors rounded-xl">
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-[#f0f0f4]">
         <span className="text-sm">🧠</span>
         <span className="text-sm font-semibold text-[#1d1d1f]">思考过程</span>
         <span className="text-[10px] font-mono text-[#aeaeb2]">{thinking.length} 字</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" strokeWidth="2" className="ml-auto" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      {open ? (
-        <div className="px-5 pb-4">
-          <p className="text-xs leading-relaxed whitespace-pre-wrap text-[#8e8e93] italic">{thinking}</p>
-        </div>
-      ) : (
-        <div className="px-5 pb-4">
-          <p className="text-xs leading-relaxed whitespace-pre-wrap text-[#aeaeb2] italic opacity-70">{thinking.slice(0, 100)}…</p>
-        </div>
-      )}
+      </div>
+      <div className="mx-[10px] mb-[10px] mt-2 p-4 max-h-48 overflow-y-auto scrollbar-visible bg-[#f0f0f4] rounded-lg">
+        <p className="text-xs leading-relaxed whitespace-pre-wrap text-[#8e8e93] italic">{thinking}</p>
+      </div>
     </div>
   );
 }
 
 function CodeBlock({ title, raw }: { title: string; raw: string | null }) {
-  const [open, setOpen] = useState(false);
   const text = pj(raw);
-  const lines = text.split('\n');
 
   return (
     <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-[#f5f5f7] transition-colors rounded-xl">
-        <div className="flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5e5ce6" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <span className="text-sm font-semibold text-[#1d1d1f]">{title}</span>
-          <span className="text-[10px] font-mono text-[#aeaeb2]">{text.length} B</span>
-        </div>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" strokeWidth="2" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      {open ? (
-        <div className="px-5 pb-4">
-          <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap p-4 rounded-lg overflow-auto bg-[#fafafc] border border-[#e5e5ea] text-[#6e6e73]" style={{ maxHeight: 400 }}>{text}</pre>
-        </div>
-      ) : text !== '(空)' ? (
-        <div className="px-5 pb-4">
-          <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap p-4 rounded-lg overflow-hidden bg-[#fafafc] border border-[#e5e5ea] text-[#aeaeb2] opacity-60" style={{ maxHeight: 100 }}>{lines.slice(0, 6).join('\n')}{lines.length > 6 ? `\n// ... 共 ${lines.length} 行` : ''}</pre>
-        </div>
-      ) : null}
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-[#f0f0f4]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5e5ce6" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span className="text-sm font-semibold text-[#1d1d1f]">{title}</span>
+        <span className="text-[10px] font-mono text-[#aeaeb2]">{text.length} B</span>
+      </div>
+      <div className="mx-[10px] mb-[10px] mt-2 p-4 max-h-64 overflow-y-auto scrollbar-visible bg-[#f0f0f4] rounded-lg">
+        <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap text-[#6e6e73]">{text}</pre>
+      </div>
     </div>
   );
 }

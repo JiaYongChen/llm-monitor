@@ -34,8 +34,11 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
             <span className="text-xs flex-1 truncate font-mono text-[#6e6e73]">{providerLabel(c.provider)}</span>
             {hasTokens ? (
               <>
-                <span className="text-[11px] font-mono w-24 text-right flex-shrink-0 text-[#6e6e73]" title={`缓存命中 ${fmtTokens(c.cache_read_tokens)} / 未命中 ${fmtTokens(c.uncached_input)}`}>↧&nbsp;{fmtTokens(c.cache_read_tokens)}/{fmtTokens(c.uncached_input)}</span>
-                <span className="text-[11px] font-mono w-16 text-right flex-shrink-0 text-[#6e6e73]">↥&nbsp;{fmtTokens(c.output_tokens)}</span>
+                <span className="text-[11px] font-mono text-right flex-shrink-0 min-w-[5rem]" title={`输入（未命中缓存）`}>
+                  <span className="text-[#f59e0b]">↓&nbsp;{fmtTokens(c.uncached_input)}</span>
+                  {c.cache_read_tokens > 0 && <span className="text-[#30b48b]"> ↻&nbsp;{fmtTokens(c.cache_read_tokens)}</span>}
+                </span>
+                <span className="text-[11px] font-mono w-16 text-right flex-shrink-0 text-[#5e5ce6]">↑&nbsp;{fmtTokens(c.output_tokens)}</span>
               </>
             ) : (
               <span className="text-xs flex-1 font-mono text-[#aeaeb2]">--</span>

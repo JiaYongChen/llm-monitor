@@ -280,6 +280,142 @@ describe('buildCleanResponseBody', () => {
     expect(obj.content).toBeUndefined();
   });
 
+  // ── OpenAI Responses API 格式（/responses 端点）──
+
+  /** 构造 OpenAI Responses API SSE 流 */
+  function responsesSSE(model: string, content: string, usage: object): string {
+    const lines: string[] = [];
+    lines.push(`event: response.created`);
+    lines.push(`data: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_1', object: 'response', model, status: 'in_progress' } })}`);
+    lines.push('');
+    if (content) {
+      lines.push(`event: response.output_text.delta`);
+      lines.push(`data: ${JSON.stringify({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 0, content_index: 0, delta: content })}`);
+      lines.push('');
+    }
+    lines.push(`event: response.completed`);
+    lines.push(`data: ${JSON.stringify({ type: 'response.completed', response: { id: 'resp_1', model, usage } })}`);
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  it('★ 从 Responses API SSE 中提取 content + usage', () => {
+    const raw = responsesSSE('gpt-5.6-sol', '你好，世界！', { input_tokens: 100, output_tokens: 50, total_tokens: 150 });
+    const result = buildCleanResponseBody(raw);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.model).toBe('gpt-5.6-sol');
+    expect(obj.content).toBe('你好，世界！');
+    expect(obj.usage).toEqual({ input_tokens: 100, output_tokens: 50, total_tokens: 150 });
+  });
+
+  it('★ Responses API 多段 delta 拼接', () => {
+    const lines = [
+      'event: response.created',
+      `data: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_1', model: 'gpt-5.6-sol' } })}`,
+      '',
+      'event: response.output_text.delta',
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 0, content_index: 0, delta: '第一段' })}`,
+      '',
+      'event: response.output_text.delta',
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 0, content_index: 0, delta: '第二段' })}`,
+      '',
+      'event: response.completed',
+      `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'resp_1', usage: { input_tokens: 10, output_tokens: 4 } } })}`,
+      '',
+    ].join('\n');
+    const obj = JSON.parse(buildCleanResponseBody(lines)!);
+    expect(obj.content).toBe('第一段第二段');
+    expect(obj.model).toBe('gpt-5.6-sol');
+  });
+
+  it('★ Responses API 无 content 有 usage 也返回', () => {
+    const lines = [
+      'event: response.created',
+      `data: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_1', model: 'gpt-5.6-sol' } })}`,
+      '',
+      'event: response.completed',
+      `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'resp_1', usage: { input_tokens: 50, output_tokens: 0 } } })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.content).toBeUndefined();
+    expect(obj.usage).toEqual({ input_tokens: 50, output_tokens: 0 });
+  });
+
+  it('★ Responses API reasoning_text.delta 与正文分离', () => {
+    const lines = [
+      'event: response.created',
+      `data: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_1', model: 'gpt-5.6-sol' } })}`,
+      '',
+      'event: response.reasoning_text.delta',
+      `data: ${JSON.stringify({ type: 'response.reasoning_text.delta', item_id: 'rsn_1', output_index: 0, content_index: 0, delta: '思考中' })}`,
+      '',
+      'event: response.reasoning_text.delta',
+      `data: ${JSON.stringify({ type: 'response.reasoning_text.delta', item_id: 'rsn_1', output_index: 0, content_index: 0, delta: '…继续' })}`,
+      '',
+      'event: response.output_text.delta',
+      `data: ${JSON.stringify({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 1, content_index: 0, delta: '最终答案' })}`,
+      '',
+      'event: response.completed',
+      `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'resp_1', usage: { input_tokens: 100, output_tokens: 50 } } })}`,
+      '',
+    ].join('\n');
+    const obj = JSON.parse(buildCleanResponseBody(lines)!);
+    expect(obj.thinking).toBe('思考中…继续');
+    expect(obj.content).toBe('最终答案');
+    expect(obj.model).toBe('gpt-5.6-sol');
+  });
+
+  it('★ Responses API 仅 event: 行含 type（data JSON 无 type 字段）', () => {
+    // 兼容供应商（如 Qwen）可能只在 event: 行写类型，data JSON 不含 type
+    const lines = [
+      'event: response.created',
+      `data: ${JSON.stringify({ response: { id: 'resp_1', model: 'qwen-max' } })}`,
+      '',
+      'event: response.output_text.delta',
+      `data: ${JSON.stringify({ delta: '你好' })}`,
+      '',
+      'event: response.output_text.delta',
+      `data: ${JSON.stringify({ delta: '世界' })}`,
+      '',
+      'event: response.completed',
+      `data: ${JSON.stringify({ response: { usage: { input_tokens: 50, output_tokens: 30, total_tokens: 80 } } })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.model).toBe('qwen-max');
+    expect(obj.content).toBe('你好世界');
+    expect(obj.usage).toEqual({ input_tokens: 50, output_tokens: 30, total_tokens: 80 });
+  });
+
+  it('★ Responses API event:type 无空格格式（Qwen 兼容）', () => {
+    // Qwen SSE 使用 "event:response.created"（冒号后无空格）
+    const lines = [
+      'id:1',
+      'event:response.created',
+      ':HTTP_STATUS/200',
+      `data:${JSON.stringify({ response: { id: 'resp_1', model: 'qwen3.8-max', output: [] } })}`,
+      '',
+      'event:response.output_text.delta',
+      `data:${JSON.stringify({ delta: '你好' })}`,
+      '',
+      'event:response.completed',
+      `data:${JSON.stringify({ response: { usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 } } })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.model).toBe('qwen3.8-max');
+    expect(obj.content).toBe('你好');
+    expect(obj.usage).toEqual({ input_tokens: 100, output_tokens: 50, total_tokens: 150 });
+  });
+
   it('★ OpenAI reasoning_content 与 content 分离', () => {
     const lines = [
       `data: ${JSON.stringify({ id: 'chatcmpl_1', object: 'chat.completion.chunk', model: 'deepseek-r1', choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: '分析中' } }] })}`,

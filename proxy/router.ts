@@ -64,6 +64,34 @@ export function setEnqueueRef(fn: (record: CallRecord) => void): void {
   _enqueueRef = fn;
 }
 
+/** 创建 SSE 流中替换上游 model 为下游 model 的 TransformStream */
+function createModelReplaceTransform(upstreamModel: string, downstreamModel: string): TransformStream<Uint8Array, Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  return new TransformStream({
+    transform(chunk, controller) {
+      const text = decoder.decode(chunk, { stream: true });
+      // 直接替换 model 字符串（SSE 中 model 只出现在 JSON 的 "model" 字段中，不会误伤正文）
+      const replaced = text.replaceAll(upstreamModel, downstreamModel);
+      controller.enqueue(encoder.encode(replaced));
+    },
+  });
+}
+
+/** 非流式 JSON 响应中替换 model 字段 */
+function replaceModelInJson(text: string, from: string, to: string): string {
+  try {
+    const obj = JSON.parse(text);
+    // 遍历常见 model 字段位置
+    if (obj.model && obj.model === from) obj.model = to;
+    if (obj.response?.model && obj.response.model === from) obj.response.model = to;
+    return JSON.stringify(obj);
+  } catch {
+    // 非 JSON → 直接字符串替换
+    return text.replaceAll(from, to);
+  }
+}
+
 export async function registerProxyRoutes(app: FastifyInstance): Promise<void> {
   await _registerProxyRoutes(app);
 }
@@ -194,7 +222,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const t0 = performance.now();
 
       // 诊断日志 — 下游请求详情
-      let model = bodyObj?.model || '?';
+      const downstreamModel = bodyObj?.model || '?';  // 下游工具原始请求的 model（应答时需还原）
+      let model = downstreamModel;
       const isStream = bodyObj?.stream === true;
 
       // 上游覆盖优先级：会话 > 工具 > URL 路径默认
@@ -246,11 +275,25 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         upstream = config.base_url;
       }
 
+/** 智能拼接 base URL 与路径，避免重复段（如 /v1/v1/） */
+function joinUrlPath(base: string, path: string): string {
+  const cleanBase = base.replace(/\/+$/, '');
+  const cleanPath = path.replace(/^\/+/, '');
+  if (!cleanPath) return cleanBase;
+  const baseParts = cleanBase.split('/');
+  const pathParts = cleanPath.split('/');
+  if (baseParts.length > 0 && pathParts.length > 0 &&
+      baseParts[baseParts.length - 1] === pathParts[0]) {
+    return `${cleanBase}/${pathParts.slice(1).join('/')}`;
+  }
+  return `${cleanBase}/${cleanPath}`;
+}
+
       // 验证上游 URL 有效
       if (!upstream || !upstream.startsWith('http')) {
         return reply.status(500).send({ error: `Provider "${upstreamProvider}" 未配置有效的 Base URL` });
       }
-      const targetUrl = actualRemaining ? `${upstream}/${actualRemaining}` : upstream;
+      const targetUrl = actualRemaining ? joinUrlPath(upstream, actualRemaining) : upstream;
 
       console.log(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
 
@@ -280,14 +323,24 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
           if (thinking) console.log(formatThinkingFull(thinking));
         });
         console.log(`[proxy] ◀ stream 已建立 | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
+        let responseStream = stream;
         if (convert) {
-          const convertedStream = stream.pipeThrough(createResponseTransform(targetFormat, sourceFormat));
-          return reply.type('text/event-stream').send(convertedStream);
+          responseStream = stream.pipeThrough(createResponseTransform(targetFormat, sourceFormat));
         }
-        return reply.type('text/event-stream').send(stream);
+        // 上游 model 与下游不一致时，应答中还原为下游工具请求的 model
+        if (model !== downstreamModel) {
+          console.log(`[proxy] 🔄 应答 model 还原: ${model} → ${downstreamModel} req=${reqId}`);
+          responseStream = responseStream.pipeThrough(createModelReplaceTransform(model, downstreamModel));
+        }
+        return reply.type('text/event-stream').send(responseStream);
       } else {
         const result = await forwardRequest(request.method, targetUrl, reqHeaders, body);
-        const responseText = convert ? convertResponse(result.text, targetFormat, sourceFormat) : result.text;
+        let responseText = convert ? convertResponse(result.text, targetFormat, sourceFormat) : result.text;
+        // 上游 model 与下游不一致时，应答中还原为下游工具请求的 model
+        if (model !== downstreamModel) {
+          console.log(`[proxy] 🔄 应答 model 还原: ${model} → ${downstreamModel} req=${reqId}`);
+          responseText = replaceModelInJson(responseText, model, downstreamModel);
+        }
         if (_enqueueRef) {
           _enqueueRef({
             provider: effectiveProvider, model, tool, endpoint, method: request.method,

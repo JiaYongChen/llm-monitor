@@ -53,7 +53,7 @@ export default function Settings() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6 animate-in">
-      <h1 className="text-2xl font-bold tracking-tight">设置</h1>
+      <h1 className="text-2xl font-bold tracking-tight sticky top-0 z-10 bg-[#f5f5f7] -mt-8 pt-8 pb-3 -mb-3">设置</h1>
 
       {/* 供应商接入 */}
       <Card>

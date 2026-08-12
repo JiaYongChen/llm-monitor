@@ -34,9 +34,11 @@ function normalizeAnthropic(u: any): NormalizedTokens {
 }
 
 function normalizeOpenAI(u: any): NormalizedTokens {
-  const input = u.prompt_tokens ?? null;
-  const output = u.completion_tokens ?? null;
-  const cached = u.prompt_tokens_details?.cached_tokens || 0;
+  // Chat Completions 优先，Responses API 字段 (input/output_tokens) 作 fallback
+  const input = u.prompt_tokens ?? u.input_tokens ?? null;
+  const output = u.completion_tokens ?? u.output_tokens ?? null;
+  // 缓存字段：Chat Completions → prompt_tokens_details.cached_tokens，Responses API → input_tokens_details.cached_tokens
+  const cached = u.prompt_tokens_details?.cached_tokens ?? u.input_tokens_details?.cached_tokens ?? 0;
   return {
     prompt_tokens: input, output_tokens: output,
     cache_read_tokens: cached > 0 ? cached : null,

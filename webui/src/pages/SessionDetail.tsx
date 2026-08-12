@@ -47,7 +47,7 @@ export default function SessionDetail() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6 animate-in">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between sticky top-0 z-10 bg-[#f5f5f7] -mt-8 pt-8 pb-3 -mb-3">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-[#1d1d1f]">{s.label || `会话 #${s.id}`}</h1>
@@ -96,9 +96,7 @@ export default function SessionDetail() {
             const baseUrl = (s.tool === 'ClaudeCode' && up?.base_url_anthropic)
               ? up.base_url_anthropic
               : (up?.base_url || officialUrls[currentUpstream] || '');
-            const targetPath = baseUrl.toLowerCase().includes('anthropic') ? '/v1/messages' : '/v1/chat/completions';
-            const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${targetPath}` : '';
-            return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream}{fullUrl ? ` — ${fullUrl}` : ''}</span>;
+            return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream} — <span className="font-mono">{baseUrl}</span></span>;
           })()}
         </div>
         <div className="flex items-center gap-3">
@@ -134,7 +132,9 @@ export default function SessionDetail() {
 
       <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
         <div className="px-5 py-3 border-b border-[#e5e5ea] flex items-center gap-2"><h2 className="text-sm font-semibold text-[#1d1d1f]">调用时间线</h2><span className="text-xs font-mono text-[#aeaeb2]">{calls?.length || 0} 条</span></div>
-        <CallTimeline calls={calls || []} />
+        <div className="max-h-[50vh] overflow-y-auto scrollbar-visible">
+          <CallTimeline calls={calls || []} />
+        </div>
       </div>
 
       <Dialog open={deleteConfirm} onClose={() => setDeleteConfirm(false)}>

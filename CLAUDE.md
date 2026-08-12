@@ -58,10 +58,10 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 |------|------|
 | `proxy/main.ts` | Fastify 入口：初始化数据库、注册路由、启动时校验供应商 base_url、挂载 Vite（dev）或静态文件（prod） |
 | `proxy/router.ts` | 核心路由：URL 首段按工具名识别（`/ClaudeCode`/`/codex`）映射到供应商后剥离转发 + `/api/*` 查询/写入 API |
-| `proxy/forwarder.ts` | HTTP 转发：非流式（forwardRequest）+ SSE 流式透传（forwardStream），从 SSE 中提取 usage JSON + 思考内容分离 |
+| `proxy/forwarder.ts` | HTTP 转发：非流式（forwardRequest）+ SSE 流式透传（forwardStream），从 SSE 中提取 usage JSON + 思考内容分离，支持三种 SSE 格式（Anthropic / OpenAI Responses API / OpenAI Chat Completions） |
 | `proxy/converter.ts` | 格式转换：Anthropic ↔ OpenAI 请求/响应双向转换（请求体 + 非流式 + SSE 流式），仅源格式 ≠ 目标格式时启用 |
 | `proxy/session.ts` | 会话识别：provider + 会话种子 → SHA256 指纹 → 自动创建/复用会话，自动生成标签（首条用户消息） |
-| `proxy/normalizer.ts` | Token 归一化：两种格式（anthropic / openai）usage → 统一的 NormalizedTokens，格式由下游工具决定 |
+| `proxy/normalizer.ts` | Token 归一化：三种 usage 格式 → 统一的 NormalizedTokens。OpenAI Chat Completions（prompt_tokens/completion_tokens）优先，OpenAI Responses API（input_tokens/output_tokens）作 fallback；格式由上游响应 URL 决定 |
 | `proxy/pricing.ts` | 定价匹配（最长模型前缀匹配）+ 费用计算（非 CNY 币种自动汇率换算为 CNY 存储） |
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
 | `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + upsertDailyStat + updateSessionStats |
@@ -72,7 +72,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 ## 数据流
 
-1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别工具（如 `/codex/v1/chat/completions` → codex）→ 映射到供应商 → 剥离首段 → 检测格式差异 → 如需转换调用 `converter.ts` → `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
+1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别工具（如 `/codex/v1/responses` → codex）→ 映射到供应商 → 剥离首段 → 检测格式差异 → 如需转换调用 `converter.ts` → `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
 2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body + tool）入队 — 此处不阻塞响应，思考内容从流式响应中独立分离存为 `thinking` 字段
 3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据上游 URL 检测响应格式（`detectFormatFromUrl`）→ `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `upsertDailyStat` 累加统计表 → `updateSessionStats` 更新会话聚合
 4. **展示阶段**：Web 面板通过 `/api/*` 端点查询 `daily_stats` 统计表（删除操作不影响）和 `calls` 明细表；思考过程在调用详情页折叠展示、终端以 `[think]` 前缀实时输出
@@ -82,7 +82,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 `proxy/router.ts` 的 `/*` 通配路由按 URL 第一段识别工具名（大小写不敏感），然后映射到上游供应商：
 
 - **ClaudeCode**（ClaudeCode CLI）：`/ClaudeCode/v1/messages` → `api.anthropic.com`
-- **codex**（Codex CLI）：`/codex/v1/chat/completions` → `api.openai.com`
+- **codex**（Codex CLI）：`/codex/v1/responses` → `api.openai.com`（Responses API 格式）
 - **向后兼容**：`/anthropic` → `ClaudeCode`、`/openai` → `codex` 旧格式继续可用
 - 自定义供应商工具通过 `tool_config` 表配置默认上游
 - 上游覆盖优先级：会话 > 工具 > URL 默认映射
@@ -119,7 +119,8 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 - 归一化格式由上游实际响应 URL 决定（`detectFormatFromUrl`），兜底用工具类型（`detectFormatFromTool`）
 - Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens`；`uncached_input = max(0, input - cacheWrite)`
-- OpenAI（含 Kimi / GLM 等兼容供应商）：`prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`；`uncached_input = max(0, input - cached)`
+- OpenAI Chat Completions（含 Kimi / GLM 等兼容供应商）：`prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`；`uncached_input = max(0, input - cached)`
+- OpenAI Responses API（Codex 等新工具使用 `/responses` 端点）：`input_tokens` / `output_tokens` / `input_tokens_details.cached_tokens`；在 `normalizeOpenAI` 中作为 Chat Completions 字段不存在时的 fallback
 - `uncached_input` 使用 `Math.max(0, ...)` 防御下溢为负
 
 ## 测试
