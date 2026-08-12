@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
-import ChartTooltip from './ChartTooltip';
+import ChartTooltip, { DashedCursor } from './ChartTooltip';
 
 const COLORS = {
   output: '#5e5ce6',
@@ -99,11 +99,11 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
           <div>
             <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">模型分布</h4>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={modelSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <BarChart data={modelSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
+                <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {modelNames.map((model, i) => (
                   <Bar key={model} dataKey={model} name={model} fill={MODEL_COLORS[i % MODEL_COLORS.length]} stackId="model" />
@@ -140,11 +140,11 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                     <span className="text-xs font-mono text-[#aeaeb2]">{tokens.toLocaleString()}</span>
                   </div>
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <BarChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                       <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
-                      <Tooltip content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
+                      <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                       <Bar dataKey="total_output_tokens" name="输出" stackId="a" fill={COLORS.output} />
                       <Bar dataKey="total_uncached_input" name="输入(未命中)" stackId="a" fill={COLORS.uncached} />
                       <Bar dataKey="total_cache_read_tokens" name="输入(命中)" stackId="a" fill={COLORS.cached} />
@@ -180,11 +180,11 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                 <span className="text-xs font-mono text-[#aeaeb2]">{totalTokens.toLocaleString()}</span>
               </div>
               <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <BarChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
+                  <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                   <Bar dataKey="total_output_tokens" name="输出" stackId="a" fill={COLORS.output} />
                   <Bar dataKey="total_uncached_input" name="输入(未命中)" stackId="a" fill={COLORS.uncached} />
                   <Bar dataKey="total_cache_read_tokens" name="输入(命中)" stackId="a" fill={COLORS.cached} />

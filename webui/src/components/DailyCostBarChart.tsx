@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useCurrency, formatCost } from '../lib/currency';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
-import ChartTooltip from './ChartTooltip';
+import ChartTooltip, { DashedCursor } from './ChartTooltip';
 
 const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#14b8a6'];
 
@@ -48,11 +48,11 @@ export default function DailyCostBarChart({ data, range, tz }: { data: DailyCost
 
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <BarChart data={chartData.rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <BarChart data={chartData.rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
         <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
         <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(v: number) => formatCost(v, currency, rates)} axisLine={false} tickLine={false} />
-        <Tooltip content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
+        <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {chartData.categories.map((cat, i) => (
           <Bar key={cat} dataKey={cat} name={cat} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />

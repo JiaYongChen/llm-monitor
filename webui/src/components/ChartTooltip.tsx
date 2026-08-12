@@ -1,5 +1,20 @@
 import type { ReactNode } from 'react';
 
+/**
+ * 柱状图选中列的虚线边框 cursor。
+ * 从 tooltip payload 读取柱子的精确 x/width（Bar 的 tooltip entry 带柱子几何），
+ * 宽度方向精确贴合实柱；高度方向覆盖整列高度用于标识选中列。
+ */
+export function DashedCursor(props: any) {
+  const { x, y, width, height, payload } = props;
+  const bar = payload && payload[0];
+  const barX = bar && bar.x != null ? bar.x : x;
+  const barWidth = bar && bar.width != null ? bar.width : width;
+  return (
+    <rect x={barX} y={y} width={barWidth} height={height} fill="transparent" stroke="#aeaeb2" strokeDasharray="4 4" />
+  );
+}
+
 interface ChartTooltipProps {
   active?: boolean;
   payload?: any[];
