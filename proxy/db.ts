@@ -6,7 +6,7 @@
  */
 
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, copyFileSync, renameSync } from 'node:fs';
 import { ensureDataDir, DB_PATH } from './config.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -31,7 +31,20 @@ export async function initDb(dbPath?: string): Promise<void> {
   // 如果文件已存在，从磁盘加载；否则创建空库
   if (existsSync(path)) {
     const buffer = readFileSync(path);
-    db = new SQL.Database(buffer);
+    try {
+      db = new SQL.Database(buffer);
+    } catch {
+      // 文件损坏（如 tsx watch kill 时保存中断），尝试从备份恢复
+      console.warn('数据库文件损坏，尝试从备份恢复…');
+      const backupPath = path + '.bak';
+      if (existsSync(backupPath)) {
+        db = new SQL.Database(readFileSync(backupPath));
+        console.log('已从备份恢复数据库');
+      } else {
+        db = new SQL.Database();
+        console.log('无可用备份，使用空数据库');
+      }
+    }
   } else {
     db = new SQL.Database();
   }
@@ -193,13 +206,15 @@ export function getDb(): Database {
   return db;
 }
 
-/** 将内存中的数据库持久化到磁盘 */
+/** 将内存中的数据库持久化到磁盘（原子写入：先写临时文件再 rename，防止进程被 kill 时文件损坏） */
 export function saveDb(dbPath?: string): void {
   if (!db) return;
   const path = dbPath ?? currentDbPath;
   const data = db.export();
   const buffer = Buffer.from(data);
-  writeFileSync(path, buffer);
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, buffer);
+  renameSync(tmp, path);
 }
 
 /** 关闭数据库（先保存） */
@@ -298,15 +313,17 @@ export function insertCall(r: CallRecord): number {
   );
 }
 
-/** 列出调用记录 */
+/** 列出调用记录（排除已删除会话的调用） */
 export function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0): Record<string, any>[] {
   let sql = 'SELECT c.* FROM calls c';
   const joins: string[] = [];
   const conditions: string[] = [];
   const params: any[] = [];
 
+  // 总是关联 sessions 表，排除已删除会话
+  joins.push("JOIN sessions s ON c.session_id = s.id AND s.status != 'deleted'");
+
   if (tool) {
-    joins.push('JOIN sessions s ON c.session_id = s.id');
     conditions.push('s.tool = ?');
     params.push(tool);
   }
@@ -397,9 +414,9 @@ export function updateSessionStats(sessionId: number, cost: number, tokens: numb
   );
 }
 
-/** 列出会话 */
+/** 列出会话（默认排除已删除） */
 export function listSessions(tool?: string, status?: string, limit = 100): Record<string, any>[] {
-  let sql = 'SELECT * FROM sessions WHERE 1=1';
+  let sql = "SELECT * FROM sessions WHERE status != 'deleted'";
   const params: any[] = [];
   if (tool) { sql += ' AND tool = ?'; params.push(tool); }
   if (status) { sql += ' AND status = ?'; params.push(status); }
@@ -449,9 +466,9 @@ export function updateSessionModel(sessionId: number, model: string | null): voi
 }
 
 /** 删除会话及其所有关联调用 */
+/** 删除会话（软删除：标记为 deleted，保留调用数据，不影响统计） */
 export function deleteSession(sessionId: number): void {
-  execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
-  execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
+  execute("UPDATE sessions SET status = 'deleted' WHERE id = ?", [sessionId]);
 }
 
 // ── Tool Config ──
