@@ -84,7 +84,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // 动态路由：/* 匹配所有非 /api 路径
-  // URL 首段必须为已注册的 provider（如 /anthropic/v1/messages）→ 剥离首段后转发
+  // URL 首段为工具名（如 /codex、/ClaudeCode）→ 映射到供应商 → 剥离首段后转发
   // 无 provider 前缀的请求直接 404
   app.route({
     method: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -119,27 +119,51 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       let providerConfig: ReturnType<typeof getProviderConfig>;
       let hasProviderPrefix = false;
 
-      // 非 API 路径 → 尝试识别 provider
+      // 非 API 路径 → 尝试识别
       if (!provider || provider === 'api') {
         return reply.callNotFound();
       }
 
-      providerConfig = getProviderConfig(provider);
-      if (providerConfig) {
-        // 策略 1：首段是已知供应商，剥离首段后转发
+      // 首段作为工具名匹配（大小写不敏感），再映射到供应商
+      const rawTool = segments[0];
+      const canonicalTool = (() => {
+        const lower = rawTool.toLowerCase();
+        if (lower === 'claudecode' || lower === 'claude') return 'ClaudeCode';
+        if (lower === 'codex') return 'codex';
+        return rawTool;  // 保持原样，后续从 tool_config 查找
+      })();
+      const toolConfig = getToolConfig(canonicalTool);
+
+      // 向后兼容旧格式 /anthropic → ClaudeCode，/openai → codex
+      const lowerRaw = rawTool.toLowerCase();
+      if (!toolConfig && (lowerRaw === 'anthropic' || lowerRaw === 'openai')) {
+        const compatTool = lowerRaw === 'anthropic' ? 'ClaudeCode' : 'codex';
+        tool = compatTool;
+        provider = lowerRaw === 'anthropic' ? 'Anthropic' : 'OpenAI';
+        providerConfig = getProviderConfig(provider);
         hasProviderPrefix = true;
-        provider = providerConfig.provider; // 规范化为配置名 e.g. 'anthropic'→'Anthropic'
         remaining = segments.slice(1).join('/') || '';
-        // 工具映射由下游 URL 端点决定：/anthropic/* → ClaudeCode，/openai/* → codex
+      } else if (toolConfig) {
+        // 策略 1：首段匹配已知工具名 → 映射到该工具的默认上游供应商
+        hasProviderPrefix = true;
+        tool = canonicalTool;
+        const upstream = toolConfig.upstream_provider
+          || (tool === 'ClaudeCode' ? 'Anthropic' : tool === 'codex' ? 'OpenAI' : 'unknown');
+        provider = upstream;
+        providerConfig = getProviderConfig(upstream);
+        remaining = segments.slice(1).join('/') || '';
+      } else if (providerConfig) {
+        // 策略 2：首段是供应商名（向后兼容其他自定义供应商路径）
+        hasProviderPrefix = true;
+        provider = providerConfig.provider;
         tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'codex' : provider;
+        remaining = segments.slice(1).join('/') || '';
       } else {
-        // URL 首段不是已注册的供应商，返回明确错误告知正确格式
         return reply.status(400).send({
-          error: `URL 路径必须以供应商名开头（如 /openai${rawPath} 或 /anthropic${rawPath}），当前为 /${rawPath}`,
-          hint: '检查 CLl 工具的 BASE_URL 配置，确保包含供应商前缀路径',
+          error: `无法识别的路径前缀 "/${segments[0]}"`,
+          hint: `URL 应以工具名开头，如 /codex${rawPath} 或 /ClaudeCode${rawPath}`,
         });
       }
-      // provider 已统一规范化为配置名，后续指纹、会话、CallRecord 均使用统一名称
 
       if (!providerConfig.enabled) {
         return reply.status(503).send({ error: `Provider "${provider}" 已禁用` });

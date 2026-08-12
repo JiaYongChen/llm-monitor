@@ -53,9 +53,9 @@ $env:LLM_MONITOR_TOOL = $Tool
 switch ($Tool) {
   'ClaudeCode' {
     if ($sessionId) {
-      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/s/$sessionId/anthropic"
+      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/s/$sessionId/ClaudeCode"
     } else {
-      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/anthropic"
+      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/ClaudeCode"
     }
     $env:ANTHROPIC_AUTH_TOKEN = 'llm-monitor'  # Claude Code CLI
     Write-Host "  启动 Claude Code..." -ForegroundColor Gray
@@ -68,9 +68,9 @@ switch ($Tool) {
   }
   'codex' {
     if ($sessionId) {
-      $env:OPENAI_BASE_URL = "http://localhost:$Port/s/$sessionId/openai"
+      $env:OPENAI_BASE_URL = "http://localhost:$Port/s/$sessionId/codex"
     } else {
-      $env:OPENAI_BASE_URL = "http://localhost:$Port/openai"
+      $env:OPENAI_BASE_URL = "http://localhost:$Port/codex"
     }
     $env:OPENAI_API_KEY = 'llm-monitor'  # Codex CLI
     Write-Host "  启动 Codex..." -ForegroundColor Gray
