@@ -696,7 +696,8 @@ export function clearAllData(): void {
   d.run('DELETE FROM sessions');
   d.run('DELETE FROM pricing');
   d.run('DELETE FROM provider_config');
-  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','pricing','provider_config')");
+  d.run('DELETE FROM daily_stats');
+  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','pricing','provider_config','daily_stats')");
   saveDb();
 }
 
