@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "llm-monitor": "./scripts/start-tool.cmd"
+    "llm-monitor": "./scripts/start-tool"
   },
   "scripts": {
     "dev": "tsx watch --clear-screen=false --ignore webui --ignore node_modules proxy/main.ts --dev",

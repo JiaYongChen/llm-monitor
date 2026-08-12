@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# 通过 llm-monitor 代理启动 Claude Code / Codex CLI 工具
+# 用法: llm-monitor <ClaudeCode|codex> [项目目录] [--port 9400]
+
+set -euo pipefail
+
+# ── 参数解析 ──
+TOOL="${1:-}"
+PROJECT="${2:-$(pwd)}"
+PORT=9400
+
+# 解析 --port 参数
+for arg in "$@"; do
+  if [[ "$arg" == --port=* ]]; then
+    PORT="${arg#--port=}"
+  elif [[ "$arg" == --port ]] && [[ -n "${3:-}" ]]; then
+    PORT="$3"
+  fi
+done
+
+# 标准化工具名
+if [[ "$TOOL" == "Claude" ]]; then
+  TOOL="ClaudeCode"
+fi
+
+if [[ "$TOOL" != "ClaudeCode" && "$TOOL" != "codex" ]]; then
+  echo "用法: llm-monitor <ClaudeCode|codex> [项目目录]"
+  exit 1
+fi
+
+# 颜色
+CYAN='\033[0;36m'
+GRAY='\033[0;90m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+echo -e "${CYAN}=== llm-monitor 代理启动 ===${NC}"
+echo -e "${GRAY}  工具: $TOOL${NC}"
+echo -e "${GRAY}  项目: $PROJECT${NC}"
+echo -e "${GRAY}  代理: http://localhost:$PORT${NC}"
+
+# 预创建 pending 会话
+SESSION_ID=""
+if RESULT=$(curl -s -X POST "http://localhost:$PORT/proxy/sessions/start" \
+  -H "Content-Type: application/json" \
+  -d "{\"tool\":\"$TOOL\"}" 2>/dev/null); then
+  SESSION_ID=$(echo "$RESULT" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+  if [[ -n "$SESSION_ID" ]]; then
+    STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo -e "${GREEN}  会话: #$SESSION_ID ($STATUS)${NC}"
+  fi
+else
+  echo -e "${YELLOW}  会话预创建失败（代理可能未启动）${NC}"
+fi
+
+# 设置代理环境变量
+export LLM_MONITOR_PORT="$PORT"
+export LLM_MONITOR_TOOL="$TOOL"
+
+case "$TOOL" in
+  ClaudeCode)
+    if [[ -n "$SESSION_ID" ]]; then
+      export ANTHROPIC_BASE_URL="http://localhost:$PORT/s/$SESSION_ID/ClaudeCode"
+    else
+      export ANTHROPIC_BASE_URL="http://localhost:$PORT/ClaudeCode"
+    fi
+    export ANTHROPIC_AUTH_TOKEN="llm-monitor"
+    echo -e "${GRAY}  启动 Claude Code...${NC}"
+    cd "$PROJECT"
+    claude
+    ;;
+  codex)
+    if [[ -n "$SESSION_ID" ]]; then
+      export OPENAI_BASE_URL="http://localhost:$PORT/s/$SESSION_ID/codex"
+    else
+      export OPENAI_BASE_URL="http://localhost:$PORT/codex"
+    fi
+    export OPENAI_API_KEY="llm-monitor"
+    echo -e "${GRAY}  启动 Codex...${NC}"
+    cd "$PROJECT"
+    codex
+    ;;
+esac
