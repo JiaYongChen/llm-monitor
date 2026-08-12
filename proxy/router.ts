@@ -136,6 +136,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
 
       // 向后兼容旧格式 /anthropic → ClaudeCode，/openai → codex
       const lowerRaw = rawTool.toLowerCase();
+      providerConfig = getProviderConfig(provider);
       if (!toolConfig && (lowerRaw === 'anthropic' || lowerRaw === 'openai')) {
         const compatTool = lowerRaw === 'anthropic' ? 'ClaudeCode' : 'codex';
         tool = compatTool;
@@ -165,6 +166,9 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      if (!providerConfig) {
+        return reply.status(503).send({ error: `上游供应商 "${provider}" 未配置，请在面板中添加` });
+      }
       if (!providerConfig.enabled) {
         return reply.status(503).send({ error: `Provider "${provider}" 已禁用` });
       }
