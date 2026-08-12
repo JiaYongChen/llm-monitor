@@ -75,7 +75,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别工具（如 `/codex/v1/responses` → codex）→ 映射到供应商 → 剥离首段 → 检测格式差异 → 如需转换调用 `converter.ts` → `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
 2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body + tool）入队 — 此处不阻塞响应，思考内容从流式响应中独立分离存为 `thinking` 字段
 3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据上游 URL 检测响应格式（`detectFormatFromUrl`）→ `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `upsertDailyStat` 累加统计表 → `updateSessionStats` 更新会话聚合
-4. **展示阶段**：Web 面板通过 `/api/*` 端点查询 `daily_stats` 统计表（删除操作不影响）和 `calls` 明细表；思考过程在调用详情页折叠展示、终端以 `[think]` 前缀实时输出
+4. **展示阶段**：Web 面板通过 `/api/*` 端点查询 `daily_stats` 统计表（删除操作不影响）和 `calls` 明细表；思考过程在调用详情页始终可见（带滚动条）、终端以 `[think]` 前缀实时输出
 
 ## 路由架构
 

@@ -66,7 +66,7 @@ base_url = "http://localhost:9400/s/<id>/codex"
 - **格式转换**：自动检测工具格式与上游供应商格式，不匹配时双向转换（Anthropic ↔ OpenAI）
 - 自动解析请求/响应中的 Token 用量（Anthropic / OpenAI Chat Completions / OpenAI Responses API 三种格式）
 - 缓存读写拆分：未缓存输入、缓存写入、缓存命中分别统计
-- **思考过程显示**：自动分离模型的思考/推理内容，终端实时输出（`[think]` 前缀、区域分隔），Web 面板折叠展示
+- **思考过程显示**：自动分离模型的思考/推理内容，终端实时输出（`[think]` 前缀、区域分隔），Web 面板始终可见
 
 ### 会话管理
 - **指纹识别**：SHA256(provider + 首条消息种子) → 同一聊天自动归属同一会话
