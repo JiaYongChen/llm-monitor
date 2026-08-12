@@ -1,7 +1,8 @@
 /** 数据库 CRUD 测试 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, insertCall, upsertSession, listCalls, getCall, listSessions, getSession, updateSessionStats, getStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb } from '../proxy/db.js';
+import { initDb, insertCall, upsertSession, listCalls, getCall, listSessions, getSession, updateSessionStats, getStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
+import { upsertDailyStat } from '../proxy/db.js';
 import type { CallRecord } from '../shared/types.js';
 
 const tmp = createTempDb();
@@ -131,5 +132,29 @@ describe('db', () => {
     deletePricing(id);
     const after = listPricing();
     expect(after.some((p: any) => p.id === id)).toBe(false);
+  });
+
+  it('upsertDailyStat 新增记录', () => {
+    upsertDailyStat('2026-08-12', 'OpenAI', 'gpt-4o', 'codex', 0.05, 100, 50, 80, 20);
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12'");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].call_count).toBe(1);
+    expect(rows[0].total_cost).toBeCloseTo(0.05);
+    expect(rows[0].prompt_tokens).toBe(100);
+    expect(rows[0].output_tokens).toBe(50);
+    expect(rows[0].uncached_input).toBe(80);
+    expect(rows[0].cache_read_tokens).toBe(20);
+  });
+
+  // 日期用 2026-08-13，与上一条用例（2026-08-12 同键）隔离，避免共享数据库中的累加干扰断言
+  it('upsertDailyStat 重复键累加', () => {
+    upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.03, 50, 30, 40, 10);
+    upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.02, 30, 20, 20, 5);
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13'");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].call_count).toBe(2);
+    expect(rows[0].total_cost).toBeCloseTo(0.05);
+    expect(rows[0].prompt_tokens).toBe(80);
+    expect(rows[0].output_tokens).toBe(50);
   });
 });

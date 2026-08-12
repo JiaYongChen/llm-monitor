@@ -278,8 +278,8 @@ function rowToDict(columns: string[], row: any[]): Record<string, any> {
   return obj;
 }
 
-/** 执行 SELECT 查询，返回对象数组 */
-function queryAll(sql: string, params?: any[]): Record<string, any>[] {
+/** 执行 SELECT 查询，返回对象数组（导出供测试使用） */
+export function queryAll(sql: string, params?: any[]): Record<string, any>[] {
   const d = getDb();
   const stmt = d.prepare(sql);
   if (params) stmt.bind(params);
@@ -676,6 +676,26 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
   sql += ' GROUP BY ' + groupParts.join(', ');
   sql += ' ORDER BY date ASC';
   return queryAll(sql, params);
+}
+
+/** 累加每日统计（upsert），独立于 calls 表，删除操作不影响 */
+export function upsertDailyStat(
+  dateText: string, provider: string, model: string, tool: string,
+  cost: number, promptTokens: number, outputTokens: number,
+  uncachedInput: number, cacheReadTokens: number,
+): void {
+  execute(
+    `INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+     ON CONFLICT(date, provider, model, tool) DO UPDATE SET
+       call_count = call_count + 1,
+       total_cost = total_cost + excluded.total_cost,
+       prompt_tokens = prompt_tokens + excluded.prompt_tokens,
+       output_tokens = output_tokens + excluded.output_tokens,
+       uncached_input = uncached_input + excluded.uncached_input,
+       cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens`,
+    [dateText, provider, model, tool, cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens],
+  );
 }
 
 // ── Data Management ──
