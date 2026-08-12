@@ -221,4 +221,62 @@ describe('buildCleanResponseBody', () => {
     const result = buildCleanResponseBody(lines);
     expect(result).toBeNull();
   });
+
+  it('★ Anthropic thinking_delta 与正文分离', () => {
+    const lines = [
+      'event: message_start',
+      `data: ${JSON.stringify({ type: 'message_start', message: { model: 'claude-opus-5', id: 'msg_1', type: 'message', role: 'assistant', content: [], usage: { input_tokens: 500 } } })}`,
+      '',
+      'event: content_block_start',
+      `data: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '先分析' } })}`,
+      '',
+      'event: content_block_delta',
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '需求，再给方案' } })}`,
+      '',
+      'event: content_block_stop',
+      `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
+      '',
+      'event: content_block_start',
+      `data: ${JSON.stringify({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } })}`,
+      '',
+      'event: content_block_delta',
+      `data: ${JSON.stringify({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '最终答案' } })}`,
+      '',
+      'event: content_block_stop',
+      `data: ${JSON.stringify({ type: 'content_block_stop', index: 1 })}`,
+      '',
+      'event: message_delta',
+      `data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 30 } })}`,
+      '',
+      'event: message_stop',
+      `data: ${JSON.stringify({ type: 'message_stop' })}`,
+      '',
+    ].join('\n');
+    const obj = JSON.parse(buildCleanResponseBody(lines)!);
+    expect(obj.thinking).toBe('先分析需求，再给方案');
+    expect(obj.content).toBe('最终答案');
+    expect(obj.usage).toEqual({ input_tokens: 500, output_tokens: 30 });
+  });
+
+  it('★ 纯思考响应（无正文无 usage）也返回，含 thinking 字段', () => {
+    const lines = [
+      'event: message_start',
+      `data: ${JSON.stringify({ type: 'message_start', message: { model: 'claude-opus-5', id: 'msg_1', type: 'message', role: 'assistant', content: [], usage: null } })}`,
+      '',
+      'event: content_block_start',
+      `data: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '只有思考' } })}`,
+      '',
+      'event: content_block_stop',
+      `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
+      '',
+      'event: message_stop',
+      `data: ${JSON.stringify({ type: 'message_stop' })}`,
+      '',
+    ].join('\n');
+    const result = buildCleanResponseBody(lines);
+    expect(result).not.toBeNull();
+    const obj = JSON.parse(result!);
+    expect(obj.thinking).toBe('只有思考');
+    expect(obj.content).toBeUndefined();
+  });
 });

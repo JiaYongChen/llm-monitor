@@ -106,6 +106,7 @@ export function buildCleanResponseBody(raw: string): string | null {
 
   // ── 尝试 Anthropic 格式 ──
   const anthropicText: string[] = [];
+  const anthropicThinking: string[] = [];
   let anthropicModel = '';
   let anthropicInputUsage: any = null;   // message_start.message.usage（input_tokens、缓存）
   let anthropicOutputUsage: any = null;  // message_delta.usage（output_tokens）
@@ -127,8 +128,8 @@ export function buildCleanResponseBody(raw: string): string | null {
           } else if (obj.content_block?.type === 'tool_use' && obj.content_block.name) {
             anthropicText.push(`[调用工具: ${obj.content_block.name}]`);
           } else if (obj.content_block?.type === 'thinking' && obj.content_block.thinking) {
-            // 思考块的初始文本（短思考响应可能无后续 delta）
-            anthropicText.push(obj.content_block.thinking);
+            // 思考块的初始文本（短思考响应可能无后续 delta）→ 独立收集，与正文分离
+            anthropicThinking.push(obj.content_block.thinking);
           }
         } else if (obj.type === 'content_block_delta') {
           // 文本增量（text_delta）、工具调用增量（input_json_delta）、思考增量（thinking_delta）
@@ -137,7 +138,7 @@ export function buildCleanResponseBody(raw: string): string | null {
           } else if (obj.delta?.partial_json) {
             anthropicText.push(obj.delta.partial_json);
           } else if (obj.delta?.thinking) {
-            anthropicText.push(obj.delta.thinking);
+            anthropicThinking.push(obj.delta.thinking);
           }
         } else if (obj.type === 'message_delta' && obj.usage) {
           // message_delta 包含 output_tokens
@@ -162,10 +163,12 @@ export function buildCleanResponseBody(raw: string): string | null {
   // 至少有一侧非空 usage 即可（排除网关回显的 usage:{} 空对象）
   const hasAnthropicUsage = (anthropicInputUsage != null && Object.keys(anthropicInputUsage).length > 0)
     || (anthropicOutputUsage != null && Object.keys(anthropicOutputUsage).length > 0);
-  if (anthropicText.length > 0 || hasAnthropicUsage) {
+  if (anthropicText.length > 0 || anthropicThinking.length > 0 || hasAnthropicUsage) {
     return JSON.stringify({
       model: anthropicModel,
-      content: anthropicText.join(''),
+      // 正文非空时才输出 content 字段（纯思考响应无正文，不输出该键）
+      ...(anthropicText.length > 0 ? { content: anthropicText.join('') } : {}),
+      ...(anthropicThinking.length > 0 ? { thinking: anthropicThinking.join('') } : {}),
       usage: Object.keys(anthropicUsage).length > 0 ? anthropicUsage : null,
     });
   }
