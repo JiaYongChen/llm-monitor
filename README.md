@@ -23,18 +23,13 @@ npx tsx proxy/main.ts --port 9400 --webui-port 9401
 
 ## 对接 CLI 工具
 
-```powershell
+```bash
 # 一键启动（自动预创建会话并锁定，同终端复用同一会话）
 npm link                           # 一次性注册命令
-llm-monitor Claude D:\my-project   # 通过代理启动 ClaudeCode
+llm-monitor ClaudeCode             # 通过代理启动 ClaudeCode
 llm-monitor codex                  # 通过代理启动 Codex
-
-# 手动设置环境变量
-$env:ANTHROPIC_BASE_URL = "http://localhost:9400/anthropic"
-$env:OPENAI_BASE_URL = "http://localhost:9400/openai"
 ```
-
-> 脚本使用 `/s/<id>/` URL 前缀将会话 ID 嵌入 `ANTHROPIC_BASE_URL`，确保同一终端内所有请求归属同一会话。
+> Windows / macOS / Linux 均支持。脚本使用 `/s/<id>/` 前缀嵌入会话 ID，同终端所有请求归入同一会话。URL 路径以工具名作前缀（`/ClaudeCode`、`/codex`），大小写不敏感。
 
 ## 功能
 
@@ -43,11 +38,12 @@ $env:OPENAI_BASE_URL = "http://localhost:9400/openai"
 - **格式转换**：自动检测工具格式与上游供应商格式，不匹配时双向转换（Anthropic ↔ OpenAI）
 - 自动解析请求/响应中的 Token 用量（Anthropic / OpenAI 两种格式）
 - 缓存读写拆分：未缓存输入、缓存写入、缓存命中分别统计
+- **思考过程显示**：自动分离模型的思考/推理内容，终端实时输出（`[think]` 前缀、区域分隔），Web 面板折叠展示
 
 ### 会话管理
 - **指纹识别**：SHA256(provider + 首条消息种子) → 同一聊天自动归属同一会话
 - **自动标签**：新建会话自动提取首条用户消息作为标签
-- **工具标识**：URL 前缀反推工具类型（`/anthropic/*` → ClaudeCode，`/openai/*` → codex）
+- **工具标识**：URL 工具名前缀反向识别（`/ClaudeCode/*` → ClaudeCode，`/codex/*` → codex）
 - 工具级上游配置：Dashboard 可设置每个工具的默认上游供应商和模型，新会话自动继承
 - 会话级上游覆盖：会话详情页可单独覆盖供应商和模型
 
@@ -101,7 +97,8 @@ llm-monitor/
 │   ├── normalizer.ts            # Token 归一化（anthropic / openai）
 │   ├── pricing.ts               # 定价匹配 + 费用计算
 │   ├── rates.ts                 # 汇率获取 / 缓存 / 定时刷新
-│   ├── recorder.ts              # 后台消费者（队列 → 计费 → 写库）
+│   ├── recorder.ts              # 后台消费者（队列 → 计费 → 写库 + 统计累加）
+│   ├── thinking-preview.ts      # 终端思考输出格式化
 │   └── data/
 │       └── default-pricing.json # 预置模型定价
 ├── webui/                       # React 前端
@@ -113,9 +110,12 @@ llm-monitor/
 │       ├── lib/                 # currency / utils
 │       └── api/                 # API 客户端
 ├── shared/                      # 前后端共享类型定义
-├── scripts/                     # 辅助脚本
-│   ├── start-tool.ps1           # CLI 工具代理启动脚本
-│   └── llm-monitor.cmd          # npm bin 全局命令包装
+│   └── extractThinking.ts       # 思考提取函数（兼容三种响应形态）
+├── scripts/                     # CLI 启动脚本
+│   ├── start-tool               # bash (macOS/Linux)
+│   ├── start-tool.cmd           # → PowerShell (Windows)
+│   ├── start-tool.ps1           # PowerShell 实现
+│   └── llm-monitor.cmd          # Windows 别名
 ├── tests/                       # Vitest 测试
 ├── dist/                        # 构建输出（已 gitignore）
 │   └── web/                     # 前端静态文件
@@ -161,14 +161,14 @@ llm-monitor/
 | DELETE | `/api/providers/:provider` | 删除供应商 |
 | PUT | `/api/config` | 更新全局配置 |
 | POST | `/api/rates/refresh` | 手动刷新汇率 |
-| POST | `/api/data/clear` | 清空全部数据 |
+| POST | `/api/data/clear` | 清空全部数据（含统计表） |
 | POST | `/api/data/clear-providers` | 清空第三方供应商 |
-| POST | `/api/data/clear-sessions` | 清空全部会话 |
-| POST | `/api/data/cleanup` | 清理 N 天前的旧调用 |
+| POST | `/api/data/clear-sessions` | 清空全部会话（统计不变） |
+| POST | `/api/data/cleanup` | 清理 N 天前的旧调用（统计不变） |
 
 ## 测试
 
 ```bash
-npm test                # 运行全部 113 个测试
+npm test                # 运行全部 127 个测试
 npx vitest --watch      # watch 模式
 ```
