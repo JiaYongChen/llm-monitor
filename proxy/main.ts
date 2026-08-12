@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyMiddie from '@fastify/middie';
-import { initDb, closeDb, listPricing, upsertPricing } from './db.js';
+import { initDb, closeDb, listPricing, listProviderConfigs, upsertPricing } from './db.js';
 import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.js';
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
@@ -50,6 +50,22 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
   await initDb();
   scheduleDailyRefresh();
   await importDefaultPricing();
+
+  // 启动时校验所有已启用供应商的 base_url 有效，阻止无效配置启动
+  const providers = listProviderConfigs() as any[];
+  for (const p of providers) {
+    if (p.enabled) {
+      const urls = [p.base_url, p.base_url_anthropic].filter(Boolean) as string[];
+      for (const u of urls) {
+        if (!/^https?:\/\/.+/.test(u)) {
+          console.error(`[启动校验] 供应商 "${p.provider}" 的 base_url 无效: ${u || '(空)'}`);
+          console.error('  请在 Web 面板设置中配置正确的上游地址后重试');
+          process.exit(1);
+        }
+      }
+    }
+  }
+
   startRecorder();
   setEnqueueRef(enqueueRecord);
 

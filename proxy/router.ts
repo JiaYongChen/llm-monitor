@@ -133,11 +133,11 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         // 工具映射由下游 URL 端点决定：/anthropic/* → ClaudeCode，/openai/* → codex
         tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'codex' : provider;
       } else {
-        // 策略 2：首段不是已知供应商 → 兜底按 OpenAI 格式转发（Codex 新版本直接打 /responses 等路径）
-        provider = 'OpenAI';
-        providerConfig = getProviderConfig('OpenAI')!;
-        remaining = rawPath;
-        tool = 'codex';
+        // URL 首段不是已注册的供应商，返回明确错误告知正确格式
+        return reply.status(400).send({
+          error: `URL 路径必须以供应商名开头（如 /openai${rawPath} 或 /anthropic${rawPath}），当前为 /${rawPath}`,
+          hint: '检查 CLl 工具的 BASE_URL 配置，确保包含供应商前缀路径',
+        });
       }
       // provider 已统一规范化为配置名，后续指纹、会话、CallRecord 均使用统一名称
 
