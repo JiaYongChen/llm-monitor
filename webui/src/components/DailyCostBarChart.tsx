@@ -14,7 +14,7 @@ interface DailyCostRow {
 
 export default function DailyCostBarChart({ data, range, tz }: { data: DailyCostRow[]; range: string; tz: number }) {
   const { currency, rates } = useCurrency();
-  const isHourly = range === 'today' || range === 'yesterday';
+  // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
 
   // 按 category 和 date 组织数据 → 宽表格式：{ date, CatA: cost, CatB: cost, ... }
   const chartData = useMemo(() => {
@@ -50,7 +50,7 @@ export default function DailyCostBarChart({ data, range, tz }: { data: DailyCost
     <ResponsiveContainer width="100%" height={300}>
       <BarChart data={chartData.rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
         <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(v: number) => formatCost(v, currency, rates)} axisLine={false} tickLine={false} />
         <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
