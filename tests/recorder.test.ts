@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, closeDb, upsertSession, upsertPricing, listCalls, addProviderConfig } from '../proxy/db.js';
+import { initDb, closeDb, upsertSession, upsertPricing, listCalls, addProviderConfig, queryAll } from '../proxy/db.js';
 import { enqueueRecord, startRecorder, stopRecorder } from '../proxy/recorder.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
@@ -42,6 +42,14 @@ describe('recorder', () => {
     expect(calls[0].total_cost).toBeGreaterThan(0);
     expect(calls[0].prompt_tokens).toBe(500);
     expect(calls[0].cache_read_tokens).toBe(200);
+
+    // 验证 daily_stats 通过 recorder 真实路径累加
+    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'anthropic'");
+    expect(stats.length).toBe(1);
+    expect(stats[0].call_count).toBe(1);
+    expect(stats[0].output_tokens).toBe(300);
+    expect(stats[0].uncached_input).toBe(400);  // prompt_tokens(500) - cache_write(100)
+    expect(stats[0].cache_read_tokens).toBe(200);
   });
 
   it('★ 通过上游 URL 检测格式：非 anthropic 一律按 OpenAI 归一化', async () => {
@@ -70,5 +78,39 @@ describe('recorder', () => {
     expect(calls[0].prompt_tokens).toBe(200);
     expect(calls[0].output_tokens).toBe(100);
     expect(calls[0].total_cost).toBeGreaterThan(0);
+
+    // 验证 daily_stats 通过 recorder 真实路径累加
+    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'DeepSeek'");
+    expect(stats.length).toBe(1);
+    expect(stats[0].call_count).toBe(1);
+    expect(stats[0].output_tokens).toBe(100);
+  });
+
+  it('★ daily_stats tool 归一化：空 tool 自动兜底 unknown', async () => {
+    // 构造 tool 为空字符串的记录，验证 upsertDailyStat 内部归一化
+    const record: CallRecord = {
+      provider: 'anthropic', model: 'claude-sonnet-5', tool: '',  // 空 tool
+      endpoint: '/v1/messages', method: 'POST',
+      target_url: 'https://api.anthropic.com/v1/messages', downstream_url: 'http://localhost:9400/anthropic/v1/messages', source_ip: '127.0.0.1',
+      status_code: 200, error_message: null, duration_ms: 500,
+      request_body: null,
+      response_body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }),
+      fingerprint: 'fp_tool_norm', source_port: 54323, session_id: 1,
+      prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
+      cache_write_tokens: null, uncached_input: null,
+      input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+    };
+    enqueueRecord(record);
+    await new Promise(r => setTimeout(r, 300));
+
+    const stats = queryAll("SELECT * FROM daily_stats WHERE tool = 'unknown'");
+    expect(stats.length).toBe(1);
+    expect(stats[0].call_count).toBe(1);
+    // tool 为 NULL 的行不应存在
+    const nullStats = queryAll('SELECT * FROM daily_stats WHERE tool IS NULL');
+    expect(nullStats.length).toBe(0);
   });
 });
