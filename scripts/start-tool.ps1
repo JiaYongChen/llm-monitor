@@ -67,12 +67,25 @@ switch ($Tool) {
     }
   }
   'codex' {
-    if ($sessionId) {
-      $env:OPENAI_BASE_URL = "http://localhost:$Port/s/$sessionId/codex"
-    } else {
-      $env:OPENAI_BASE_URL = "http://localhost:$Port/codex"
-    }
-    $env:OPENAI_API_KEY = 'llm-monitor'  # Codex CLI
+    # Codex 不支持 OPENAI_BASE_URL 环境变量，只能通过 config.toml 配置
+    $codexHome = "$env:USERPROFILE\.codex"
+    $configPath = "$codexHome\config.toml"
+    New-Item -ItemType Directory -Force $codexHome | Out-Null
+    $baseUrl = if ($sessionId) { "http://localhost:$Port/s/$sessionId/codex" } else { "http://localhost:$Port/codex" }
+    $toml = @"
+model_provider = "LLM-Monitor"
+preferred_auth_method = "apikey"
+forced_login_method = "api"
+
+[model_providers.LLM-Monitor]
+name = "LLM-Monitor"
+base_url = "$baseUrl"
+experimental_bearer_token = "llm-monitor"
+wire_api = "responses"
+"@
+    Set-Content -Path $configPath -Value $toml -Encoding UTF8 -Force
+    Write-Host "  已写入 Codex 代理配置: $configPath" -ForegroundColor Gray
+    Write-Host "    base_url = $baseUrl" -ForegroundColor Gray
     Write-Host "  启动 Codex..." -ForegroundColor Gray
     Push-Location $Project
     try {

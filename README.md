@@ -29,7 +29,35 @@ npm link                           # 一次性注册命令
 llm-monitor ClaudeCode             # 通过代理启动 ClaudeCode
 llm-monitor codex                  # 通过代理启动 Codex
 ```
-> Windows / macOS / Linux 均支持。脚本使用 `/s/<id>/` 前缀嵌入会话 ID，同终端所有请求归入同一会话。URL 路径以工具名作前缀（`/ClaudeCode`、`/codex`），大小写不敏感。
+
+### 代理 Base URL
+
+**Claude Code** — 环境变量 `ANTHROPIC_BASE_URL`：
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:9400/ClaudeCode"
+# 含会话锁定（同终端复用）：
+export ANTHROPIC_BASE_URL="http://localhost:9400/s/<id>/ClaudeCode"
+```
+
+**Codex** — 配置文件 `~/.codex/config.toml`（不支持 `OPENAI_BASE_URL` 环境变量）：
+```toml
+model_provider = "LLM-Monitor"
+model = "gpt-5.6-sol"
+preferred_auth_method = "apikey"
+forced_login_method = "api"
+
+[model_providers.LLM-Monitor]
+name = "LLM-Monitor"
+base_url = "http://localhost:9400/codex"
+experimental_bearer_token = "llm-monitor"
+wire_api = "responses"
+```
+```toml
+# 含会话锁定（同终端复用）：
+base_url = "http://localhost:9400/s/<id>/codex"
+```
+
+> URL 路径以工具名作前缀，大小写不敏感。脚本使用 `/s/<id>/` 嵌入会话 ID，同终端所有请求归入同一会话。`llm-monitor codex` 启动脚本会自动写入 `config.toml`。
 
 ## 功能
 

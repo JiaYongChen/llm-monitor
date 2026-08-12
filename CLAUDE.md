@@ -32,6 +32,7 @@ llm-monitor codex ./project # 启动 Codex（指定目录）
 - Windows：`scripts/start-tool.cmd` → `start-tool.ps1`
 - macOS/Linux：`scripts/start-tool`（bash）
 - 预创建会话后将 ID 嵌入 URL（`/s/<id>/ClaudeCode` 或 `/s/<id>/codex`），同终端所有请求归入同一会话
+- Codex 通过写入 `~/.codex/config.toml` 配置代理（不支持环境变量 `OPENAI_BASE_URL`）；Claude Code 通过 `ANTHROPIC_BASE_URL` 环境变量
 
 ## 技术架构
 
