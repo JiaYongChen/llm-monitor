@@ -313,17 +313,14 @@ export function insertCall(r: CallRecord): number {
   );
 }
 
-/** 列出调用记录（排除已删除会话的调用） */
+/** 列出调用记录 */
 export function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0): Record<string, any>[] {
   let sql = 'SELECT c.* FROM calls c';
-  const joins: string[] = [];
   const conditions: string[] = [];
   const params: any[] = [];
 
-  // 总是关联 sessions 表，排除已删除会话
-  joins.push("JOIN sessions s ON c.session_id = s.id AND s.status != 'deleted'");
-
   if (tool) {
+    sql = 'SELECT c.* FROM calls c JOIN sessions s ON c.session_id = s.id';
     conditions.push('s.tool = ?');
     params.push(tool);
   }
@@ -414,9 +411,9 @@ export function updateSessionStats(sessionId: number, cost: number, tokens: numb
   );
 }
 
-/** 列出会话（默认排除已删除） */
+/** 列出会话 */
 export function listSessions(tool?: string, status?: string, limit = 100): Record<string, any>[] {
-  let sql = "SELECT * FROM sessions WHERE status != 'deleted'";
+  let sql = 'SELECT * FROM sessions WHERE 1=1';
   const params: any[] = [];
   if (tool) { sql += ' AND tool = ?'; params.push(tool); }
   if (status) { sql += ' AND status = ?'; params.push(status); }
@@ -466,9 +463,9 @@ export function updateSessionModel(sessionId: number, model: string | null): voi
 }
 
 /** 删除会话及其所有关联调用 */
-/** 删除会话（软删除：标记为 deleted，保留调用数据，不影响统计） */
 export function deleteSession(sessionId: number): void {
-  execute("UPDATE sessions SET status = 'deleted' WHERE id = ?", [sessionId]);
+  execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
+  execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
 }
 
 // ── Tool Config ──
