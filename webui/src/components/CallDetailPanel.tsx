@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useCurrency, formatCost } from '../lib/currency';
 import { formatTime } from '../lib/utils';
+import { extractThinking } from '@/shared/extractThinking';
 
 function pj(raw: string | null): string {
   if (!raw) return '(空)';
@@ -104,6 +105,10 @@ export default function CallDetailPanel({ call }: { call: any }) {
         )}
       </div>
 
+      {extractThinking(call.response_body) && (
+        <ThinkingCard thinking={extractThinking(call.response_body)!} />
+      )}
+
       <CodeBlock title="请求体" raw={call.request_body} />
       <CodeBlock title="响应体" raw={call.response_body} />
     </div>
@@ -121,6 +126,30 @@ function PreBlock({ text, maxH }: { text: string; maxH?: number }) {
     <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap p-3 rounded-lg overflow-auto bg-[#fafafc] border border-[#e5e5ea] text-[#6e6e73]" style={{ maxHeight: maxH ?? 300 }}>
       {lines.length > 50 ? lines.slice(0, 50).join('\n') + `\n// ... 共 ${lines.length} 行` : text}
     </pre>
+  );
+}
+
+/** 思考过程卡片 — 默认折叠，展开显示全文 */
+function ThinkingCard({ thinking }: { thinking: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-[#f5f5f7] transition-colors rounded-xl">
+        <span className="text-sm">🧠</span>
+        <span className="text-sm font-semibold text-[#1d1d1f]">思考过程</span>
+        <span className="text-[10px] font-mono text-[#aeaeb2]">{thinking.length} 字</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" strokeWidth="2" className="ml-auto" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      {open ? (
+        <div className="px-5 pb-4">
+          <p className="text-xs leading-relaxed whitespace-pre-wrap text-[#8e8e93] italic">{thinking}</p>
+        </div>
+      ) : (
+        <div className="px-5 pb-4">
+          <p className="text-xs leading-relaxed whitespace-pre-wrap text-[#aeaeb2] italic opacity-70">{thinking.slice(0, 100)}…</p>
+        </div>
+      )}
+    </div>
   );
 }
 
