@@ -55,7 +55,7 @@ export async function initDb(dbPath?: string): Promise<void> {
   db.run(`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)`);
 
   // 仅在 schema 版本变更时重建表
-  const currentVersion = 2;
+  const currentVersion = 3;
   const storedVersion = (() => {
     try {
       const r = db.exec("SELECT value FROM metadata WHERE key = 'schema_version'");
@@ -64,7 +64,8 @@ export async function initDb(dbPath?: string): Promise<void> {
     return 1; // 无版本号视为 v1（旧 TEXT 时间格式）
   })();
 
-  if (storedVersion < currentVersion) {
+  // 仅 v1 → v2（时间戳格式变更）需要重建表；v2 → v3 为增量迁移（见 initDb 末尾 daily_stats 块），不能删表
+  if (storedVersion < 2) {
     // 迁移前备份：复制数据库文件以防数据丢失
     const backupPath = path.replace(/\.db$/, `.v${storedVersion}-backup.db`);
     try {
@@ -196,6 +197,44 @@ export async function initDb(dbPath?: string): Promise<void> {
       upstream_model    TEXT
     )
   `);
+
+  // v2 → v3：新增 daily_stats 统计表，支持物理删除后统计不变（须在 calls 表就绪后执行回填）
+  if (storedVersion < 3) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS daily_stats (
+        date              TEXT    NOT NULL,
+        provider          TEXT    NOT NULL,
+        model             TEXT    NOT NULL,
+        tool              TEXT    NOT NULL,
+        call_count        INTEGER NOT NULL DEFAULT 0,
+        total_cost        REAL    NOT NULL DEFAULT 0,
+        prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+        output_tokens     INTEGER NOT NULL DEFAULT 0,
+        uncached_input    INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (date, provider, model, tool)
+      )
+    `);
+
+    // 从 calls 表回填已有数据到 daily_stats
+    db.run(`
+      INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
+      SELECT
+        strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') as date,
+        provider, model, COALESCE(tool, 'unknown') as tool,
+        COUNT(*) as call_count,
+        SUM(total_cost) as total_cost,
+        SUM(COALESCE(prompt_tokens, 0)) as prompt_tokens,
+        SUM(COALESCE(output_tokens, 0)) as output_tokens,
+        SUM(COALESCE(uncached_input, 0)) as uncached_input,
+        SUM(COALESCE(cache_read_tokens, 0)) as cache_read_tokens
+      FROM calls
+      GROUP BY date, provider, model, tool
+    `);
+
+    db.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)", ['3']);
+    console.log('数据库已升级到 schema v3（新增 daily_stats 统计表，已回填历史数据）');
+  }
 
   saveDb();
 }
