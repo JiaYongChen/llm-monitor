@@ -2,8 +2,11 @@ import { useCurrency, formatCost } from '../lib/currency';
 import { formatTime } from '../lib/utils';
 import { displayName } from '../lib/display';
 
+/** Token 紧凑显示：≥1M 用 M、≥1K 用 K，保证列宽固定时数字不溢出（精确值见悬浮提示） */
 function fmtTokens(n: number | null | undefined): string {
   if (n == null || n === 0) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
 }
 
@@ -17,7 +20,7 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
           <span className="text-[11px] font-medium w-36 flex-shrink-0 text-center text-[#aeaeb2]" title="调用发生时间">时间</span>
           <span className="text-[11px] font-medium w-10 text-center flex-shrink-0 text-[#aeaeb2]" title="HTTP 请求方法">方法</span>
           <span className="text-[11px] font-medium flex-1 text-center text-[#aeaeb2]" title="上游供应商">供应商</span>
-          <span className="text-[11px] font-medium min-w-[5rem] text-center flex-shrink-0 text-[#aeaeb2]" title="输入 tokens（↓ 未命中缓存 / ↻ 命中缓存）">输入 ↓ / ↻</span>
+          <span className="text-[11px] font-medium w-32 text-center flex-shrink-0 text-[#aeaeb2]" title="输入 tokens（↓ 未命中缓存 / ↻ 命中缓存）">输入 ↓ / ↻</span>
           <span className="text-[11px] font-medium w-16 text-center flex-shrink-0 text-[#aeaeb2]" title="输出 tokens">输出 ↑</span>
           <span className="text-[11px] font-medium w-14 text-center flex-shrink-0 text-[#aeaeb2]" title="请求耗时">耗时</span>
           <span className="text-[11px] font-medium w-24 text-center flex-shrink-0 text-[#aeaeb2]" title="本次调用费用">费用</span>
@@ -37,14 +40,17 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
             <span className="text-xs flex-1 truncate font-mono text-[#6e6e73]">{displayName(c.provider)}</span>
             {hasTokens ? (
               <>
-                <span className="text-[11px] font-mono text-right flex-shrink-0 min-w-[5rem]" title={`输入（未命中缓存）`}>
+                <span className="text-[11px] font-mono text-right flex-shrink-0 w-32" title={`输入 tokens：未命中缓存 ${(c.uncached_input ?? 0).toLocaleString()} · 命中缓存 ${(c.cache_read_tokens ?? 0).toLocaleString()}`}>
                   <span className="text-[#f59e0b]">↓&nbsp;{fmtTokens(c.uncached_input)}</span>
                   {c.cache_read_tokens > 0 && <span className="text-[#30b48b]"> ↻&nbsp;{fmtTokens(c.cache_read_tokens)}</span>}
                 </span>
-                <span className="text-[11px] font-mono w-16 text-right flex-shrink-0 text-[#5e5ce6]">↑&nbsp;{fmtTokens(c.output_tokens)}</span>
+                <span className="text-[11px] font-mono w-16 text-right flex-shrink-0 text-[#5e5ce6]" title={`输出 tokens：${(c.output_tokens ?? 0).toLocaleString()}`}>↑&nbsp;{fmtTokens(c.output_tokens)}</span>
               </>
             ) : (
-              <span className="text-xs flex-1 font-mono text-[#aeaeb2]">--</span>
+              <>
+                <span className="text-xs font-mono w-32 text-right flex-shrink-0 text-[#aeaeb2]">--</span>
+                <span className="text-xs font-mono w-16 text-right flex-shrink-0 text-[#aeaeb2]">--</span>
+              </>
             )}
             <span className="text-xs font-mono w-14 text-right flex-shrink-0 text-[#aeaeb2]">{c.duration_ms >= 1000 ? `${(c.duration_ms / 1000).toFixed(1)}s` : `${c.duration_ms}ms`}</span>
             <span className="text-xs font-mono font-medium w-24 text-right flex-shrink-0 text-[#6e6e73]">{c.total_cost > 0 ? formatCost(c.total_cost, currency, rates) : '--'}</span>
