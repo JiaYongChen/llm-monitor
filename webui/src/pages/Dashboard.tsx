@@ -45,7 +45,7 @@ export default function Dashboard() {
   const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
   const [dailyRange, setDailyRange] = useState('30d');
   const [dailyTz, setDailyTz] = useState(8);
-  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, undefined, dailyTz), enabled: !!provider, refetchInterval: 60000 });
+  const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, undefined, dailyTz), refetchInterval: 60000 });
   const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, 'model', dailyTz), enabled: !!provider, refetchInterval: 60000 });
   // 费用分布：与 Token 用量共用同一时间筛选（dailyRange/dailyTz）
   const costGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
@@ -214,14 +214,20 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* 每日调用量和调用次数趋势（仅供应商筛选视图，时间筛选与费用分布共用） */}
-      {provider && dailyStats && (
+      {/* 每日调用量和 token 用量趋势（所有视图，时间筛选与费用分布共用） */}
+      {dailyStats && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Token 用量</CardTitle>
           </CardHeader>
           <CardContent>
-            <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={dailyModelStats} />
+            <DailyBarChart
+              data={dailyStats}
+              range={dailyRange}
+              tz={dailyTz}
+              modelData={costDailyData}
+              groupLabel={provider ? '模型分布' : tool ? '供应商分布' : '工具分布'}
+            />
           </CardContent>
         </Card>
       )}
