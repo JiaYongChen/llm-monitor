@@ -30,15 +30,15 @@ llm-monitor ClaudeCode             # 通过代理启动 ClaudeCode
 llm-monitor codex                  # 通过代理启动 Codex（chatgpt 为 Codex 的别名）
 ```
 
-> 工具名大小写不敏感，统一归一化为规范名存储（ClaudeCode / Codex）；`chatgpt` 作为 Codex 的别名。
+> 工具名大小写不敏感，统一以小写存储（claudecode / codex）；`chatgpt` 作为 codex 的别名。
 
 ### 代理 Base URL
 
 **Claude Code** — 环境变量 `ANTHROPIC_BASE_URL`：
 ```bash
-export ANTHROPIC_BASE_URL="http://localhost:9400/ClaudeCode"
+export ANTHROPIC_BASE_URL="http://localhost:9400/claudecode"
 # 含会话锁定（同终端复用）：
-export ANTHROPIC_BASE_URL="http://localhost:9400/s/<id>/ClaudeCode"
+export ANTHROPIC_BASE_URL="http://localhost:9400/s/<id>/claudecode"
 ```
 
 **Codex** — 配置文件 `~/.codex/config.toml`（不支持 `OPENAI_BASE_URL` 环境变量）：
@@ -50,13 +50,13 @@ forced_login_method = "api"
 
 [model_providers.LLM-Monitor]
 name = "LLM-Monitor"
-base_url = "http://localhost:9400/Codex"
+base_url = "http://localhost:9400/codex"
 experimental_bearer_token = "llm-monitor"
 wire_api = "responses"
 ```
 ```toml
 # 含会话锁定（同终端复用）：
-base_url = "http://localhost:9400/s/<id>/Codex"
+base_url = "http://localhost:9400/s/<id>/codex"
 ```
 
 > URL 路径以工具名作前缀，大小写不敏感。脚本使用 `/s/<id>/` 嵌入会话 ID，同终端所有请求归入同一会话。`llm-monitor codex` 启动脚本会自动写入 `config.toml`（合并写入：保留用户已有配置，仅更新代理 section 的 base_url）。
@@ -73,7 +73,7 @@ base_url = "http://localhost:9400/s/<id>/Codex"
 ### 会话管理
 - **指纹识别**：SHA256(provider + 首条消息种子) → 同一聊天自动归属同一会话
 - **自动标签**：新建会话自动提取首条用户消息作为标签
-- **工具标识**：URL 工具名前缀反向识别（`/ClaudeCode/*` → ClaudeCode，`/Codex/*` → Codex），大小写不敏感并归一化为规范名
+- **工具标识**：URL 工具名前缀反向识别（`/claudecode/*` → claudecode，`/codex/*` → codex），大小写不敏感并小写存储，前端显示统一走 `displayName` 还原
 - 工具级上游配置：Dashboard 可设置每个工具的默认上游供应商和模型，新会话自动继承
 - 会话级上游覆盖：会话详情页可单独覆盖供应商和模型
 

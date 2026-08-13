@@ -22,10 +22,10 @@ $ErrorActionPreference = 'Stop'
 
 # 标准化工具名（大小写不敏感；ChatGPT 视为 Codex）
 $Tool = switch ($Tool.ToLower()) {
-  'claude'     { 'ClaudeCode' }
-  'claudecode' { 'ClaudeCode' }
-  'codex'      { 'Codex' }
-  'chatgpt'    { 'Codex' }
+  'claude'     { 'claudecode' }
+  'claudecode' { 'claudecode' }
+  'codex'      { 'codex' }
+  'chatgpt'    { 'codex' }
   default      { $Tool }
 }
 
@@ -58,11 +58,11 @@ $env:LLM_MONITOR_PORT = $Port.ToString()
 $env:LLM_MONITOR_TOOL = $Tool
 
 switch ($Tool) {
-  'ClaudeCode' {
+  'claudecode' {
     if ($sessionId) {
-      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/s/$sessionId/ClaudeCode"
+      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/s/$sessionId/claudecode"
     } else {
-      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/ClaudeCode"
+      $env:ANTHROPIC_BASE_URL = "http://localhost:$Port/claudecode"
     }
     $env:ANTHROPIC_AUTH_TOKEN = 'llm-monitor'  # Claude Code CLI
     Write-Host "  启动 Claude Code..." -ForegroundColor Gray
@@ -73,12 +73,12 @@ switch ($Tool) {
       Pop-Location
     }
   }
-  'Codex' {
+  'codex' {
     # Codex 不支持 OPENAI_BASE_URL 环境变量，只能通过 config.toml 配置
     $codexHome = "$env:USERPROFILE\.codex"
     $configPath = "$codexHome\config.toml"
     New-Item -ItemType Directory -Force $codexHome | Out-Null
-    $baseUrl = if ($sessionId) { "http://localhost:$Port/s/$sessionId/Codex" } else { "http://localhost:$Port/Codex" }
+    $baseUrl = if ($sessionId) { "http://localhost:$Port/s/$sessionId/codex" } else { "http://localhost:$Port/codex" }
     $toml = @"
 model_provider = "LLM-Monitor"
 preferred_auth_method = "apikey"

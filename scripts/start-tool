@@ -33,11 +33,11 @@ done
 
 # 标准化工具名（大小写不敏感；ChatGPT 视为 Codex）
 case "$(printf '%s' "$TOOL" | tr '[:upper:]' '[:lower:]')" in
-  claude|claudecode) TOOL="ClaudeCode" ;;
-  codex|chatgpt)     TOOL="Codex" ;;
+  claude|claudecode) TOOL="claudecode" ;;
+  codex|chatgpt)     TOOL="codex" ;;
 esac
 
-if [[ "$TOOL" != "ClaudeCode" && "$TOOL" != "Codex" ]]; then
+if [[ "$TOOL" != "claudecode" && "$TOOL" != "codex" ]]; then
   echo "用法: llm-monitor <ClaudeCode|Codex|ChatGPT> [项目目录]"
   exit 1
 fi
@@ -73,26 +73,26 @@ export LLM_MONITOR_PORT="$PORT"
 export LLM_MONITOR_TOOL="$TOOL"
 
 case "$TOOL" in
-  ClaudeCode)
+  claudecode)
     if [[ -n "$SESSION_ID" ]]; then
-      export ANTHROPIC_BASE_URL="http://localhost:$PORT/s/$SESSION_ID/ClaudeCode"
+      export ANTHROPIC_BASE_URL="http://localhost:$PORT/s/$SESSION_ID/claudecode"
     else
-      export ANTHROPIC_BASE_URL="http://localhost:$PORT/ClaudeCode"
+      export ANTHROPIC_BASE_URL="http://localhost:$PORT/claudecode"
     fi
     export ANTHROPIC_AUTH_TOKEN="llm-monitor"
     echo -e "${GRAY}  启动 Claude Code...${NC}"
     cd "$PROJECT"
     claude
     ;;
-  Codex)
+  codex)
     # Codex 不支持 OPENAI_BASE_URL 环境变量，只能通过 config.toml 配置
     CODEX_HOME="$HOME/.codex"
     CONFIG_PATH="$CODEX_HOME/config.toml"
     mkdir -p "$CODEX_HOME"
     if [[ -n "$SESSION_ID" ]]; then
-      BASE_URL="http://localhost:$PORT/s/$SESSION_ID/Codex"
+      BASE_URL="http://localhost:$PORT/s/$SESSION_ID/codex"
     else
-      BASE_URL="http://localhost:$PORT/Codex"
+      BASE_URL="http://localhost:$PORT/codex"
     fi
     # 写入策略：不覆盖原有内容 — 代理 section 缺失时追加，base_url 每次都更新
     if [[ ! -f "$CONFIG_PATH" ]]; then

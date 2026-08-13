@@ -31,11 +31,11 @@ llm-monitor codex ./project # 启动 Codex（指定目录）
 llm-monitor chatgpt         # chatGPT 为 Codex 的别名
 ```
 
-- 工具名大小写不敏感：`claude`/`claudeCode` → 规范名 `ClaudeCode`，`codex`/`chatGPT` → 规范名 `Codex`
+- 工具名大小写不敏感：`claude`/`claudeCode` → 小写存储 `claudecode`，`codex`/`chatGPT` → `codex`
 
 - Windows：`scripts/start-tool.cmd` → `start-tool.ps1`
 - macOS/Linux：`scripts/start-tool`（bash）
-- 预创建会话后将 ID 嵌入 URL（`/s/<id>/ClaudeCode` 或 `/s/<id>/codex`），同终端所有请求归入同一会话
+- 预创建会话后将 ID 嵌入 URL（`/s/<id>/claudecode` 或 `/s/<id>/codex`，大小写不敏感），同终端所有请求归入同一会话
 - Codex 通过写入 `~/.codex/config.toml` 配置代理（不支持环境变量 `OPENAI_BASE_URL`）；Claude Code 通过 `ANTHROPIC_BASE_URL` 环境变量
 
 ## 技术架构
@@ -61,7 +61,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | 文件 | 职责 |
 |------|------|
 | `proxy/main.ts` | Fastify 入口：初始化数据库、注册路由、启动时校验供应商 base_url、挂载 Vite（dev）或静态文件（prod） |
-| `proxy/router.ts` | 核心路由：URL 首段按工具名识别（`/ClaudeCode`/`/codex`）映射到供应商后剥离转发 + `/api/*` 查询/写入 API |
+| `proxy/router.ts` | 核心路由：URL 首段按工具名识别（`/claudecode`/`/codex`，大小写不敏感）映射到供应商后剥离转发 + `/api/*` 查询/写入 API |
 | `proxy/forwarder.ts` | HTTP 转发：非流式（forwardRequest）+ SSE 流式透传（forwardStream），从 SSE 中提取 usage JSON + 思考内容分离，支持三种 SSE 格式（Anthropic / OpenAI Responses API / OpenAI Chat Completions） |
 | `proxy/converter.ts` | 格式转换：Anthropic ↔ OpenAI 请求/响应双向转换（请求体 + 非流式 + SSE 流式），仅源格式 ≠ 目标格式时启用 |
 | `proxy/session.ts` | 会话识别：provider + 会话种子 → SHA256 指纹 → 自动创建/复用会话，自动生成标签（首条用户消息） |
@@ -69,7 +69,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `proxy/pricing.ts` | 定价匹配（最长模型前缀匹配）+ 费用计算（非 CNY 币种自动汇率换算为 CNY 存储） |
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
 | `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + upsertDailyStat + updateSessionStats |
-| `proxy/db.ts` | sql.js 数据库全部操作：建表（schema v3）、CRUD、daily_stats 累加、统计聚合、Settings、Provider Config、Tool Config；`normalizeToolName` / `canonicalProviderName` 工具/供应商名归一化（大小写不敏感 → 规范名），`migrateToolCanonicalNames` 启动时一次性迁移历史数据（metadata 门控 + 事务） |
+| `proxy/db.ts` | sql.js 数据库全部操作：建表（schema v3）、CRUD、daily_stats 累加、统计聚合、Settings、Provider Config、Tool Config；`normalizeToolName` / `normalizeProviderName` 名称归一化（toLowerCase + 内置别名，大小写不敏感 → 小写存储），`migrateLowercaseNames` 启动时一次性把历史名称字段转小写（metadata 门控 + 事务，先合并变体再改名）；Provider Config / Tool Config / Pricing 三张配置表带 created_at/updated_at（毫秒，存量行 0 = 未知） |
 | `proxy/thinking-preview.ts` | 终端思考输出格式化：分隔线包围 + `[think]` 独立前缀标签 |
 | `proxy/config.ts` | CLI 参数解析（--port / --webui-port）+ 目录常量（DATA_DIR=~/.llm-monitor） |
 | `shared/extractThinking.ts` | 思考提取函数：兼容流式干净结构 / Anthropic 原始 / OpenAI 原始三种响应形态，前后端共用 |
@@ -85,9 +85,9 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 `proxy/router.ts` 的 `/*` 通配路由按 URL 第一段识别工具名（大小写不敏感），然后映射到上游供应商：
 
-- **ClaudeCode**（ClaudeCode CLI）：`/ClaudeCode/v1/messages` → `api.anthropic.com`
+- **ClaudeCode**（ClaudeCode CLI）：`/claudecode/v1/messages` → `api.anthropic.com`（大小写不敏感）
 - **codex**（Codex CLI）：`/codex/v1/responses` → `api.openai.com`（Responses API 格式）
-- **向后兼容**：`/anthropic` → `ClaudeCode`、`/openai` → `codex` 旧格式继续可用
+- **向后兼容**：`/anthropic` → `claudecode`、`/openai` → `codex` 旧格式继续可用
 - 自定义供应商工具通过 `tool_config` 表配置默认上游
 - 上游覆盖优先级：会话 > 工具 > URL 默认映射
 - 启动时校验所有已启用供应商的 `base_url` 有效，无效则拒绝启动
@@ -112,12 +112,12 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | Anthropic → OpenAI | ✅ | ✅ | ✅ |
 | OpenAI → Anthropic | ✅ | ✅ | ✅ |
 
-- 源格式由工具决定：ClaudeCode → anthropic，其余 → openai
+- 源格式由工具决定：claudecode → anthropic，其余 → openai
 - 目标格式由上游供应商 base_url 决定（含 anthropic → anthropic 格式）
 
 ## 工具级配置
 
-`tool_config` 表存储每个工具（ClaudeCode / Codex）的默认上游供应商和模型。新建会话时自动继承工具级配置，会话详情页可单独覆盖。
+`tool_config` 表存储每个工具（claudecode / codex）的默认上游供应商和模型。新建会话时自动继承工具级配置，会话详情页可单独覆盖。
 
 ## Token 归一化
 
@@ -149,5 +149,5 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - `/api/*` 路由注册在 WebUI 端口的独立 Fastify 实例上，通配路由在代理端口，两个端口隔离确保 API 不被代理拦截
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
 - 清空全部会话（`deleteAllSessions`）会同时重置 AUTOINCREMENT ID，清空全部数据（`clearAllData`）同步清空统计
-- 工具 / 供应商 / 模型名匹配全部大小写不敏感：工具名与供应商名写入前归一化为规范名（`normalizeToolName` / `canonicalProviderName`；ClaudeCode / Codex，chatGPT→Codex）；与内置供应商（Anthropic/OpenAI）仅大小写不同的新增请求提示「已存在」而非插入新行；定价匹配模型前缀大小写不敏感；前端仅工具/供应商名首字母大写（`capitalizeFirst`），模型 ID 保持原样
-- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/daily_stats 变体）
+- 工具 / 供应商 / 模型名存储统一小写（`normalizeToolName` / `normalizeProviderName`，模型名写入时 toLowerCase），查询匹配大小写不敏感（LOWER() 兜底 + 入参归一化等值）；`migrateLowercaseNames` 单次迁移历史数据（metadata 门控 `lowercase_migrated`，事务包裹：先按唯一约束维度合并变体行再 LOWER 改名）；前端显示统一走 `displayName`（整体映射表 + 特殊词 AI/GPT/API/CLI/LLM/URL/HTTP/HTTPS/JSON/SQL/ID/IP/GLM/KIMI 全大写 + 按分隔符分词首字母大写）；provider_config / tool_config / pricing 三张配置表带 created_at/updated_at（毫秒，存量行 0 = 未知）
+- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/daily_stats 变体）；旧迁移产出 CamelCase 中间态，随后由 `migrateLowercaseNames` 统一转小写
