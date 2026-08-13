@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import {
   listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
   listToolConfigs, getToolConfig, updateToolConfig, normalizeToolName,
-  listCalls as dbListCalls, getCall as dbGetCall, getStats, getDailyStats,
+  listCalls as dbListCalls, countCalls as dbCountCalls, getCall as dbGetCall, getSessionTokenStats, getStats, getDailyStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
   deleteAllThirdPartyProviders, deleteAllSessions,
@@ -384,6 +384,9 @@ function _registerApiRoutes(app: FastifyInstance): void {
     const s = getSession(parseInt((req.params as any).id));
     return s || reply.status(404).send('Not found');
   });
+  app.get('/api/sessions/:id/token-stats', async (req) => {
+    return getSessionTokenStats(parseInt((req.params as any).id));
+  });
   app.put('/api/sessions/:id/label', async (req) => {
     updateSessionLabel(parseInt((req.params as any).id), (req.body as any).label);
     return { ok: true };
@@ -426,6 +429,14 @@ function _registerApiRoutes(app: FastifyInstance): void {
       q?.limit ? parseInt(q.limit) : 50,
       q?.offset ? parseInt(q.offset) : 0,
     );
+  });
+  app.get('/api/calls/count', async (req) => {
+    const q = req.query as any;
+    return { count: dbCountCalls(
+      q?.session_id ? parseInt(q.session_id) : undefined,
+      q?.provider || undefined,
+      q?.tool || undefined,
+    ) };
   });
   app.get('/api/calls/:id', async (req, reply) => {
     const c = dbGetCall(parseInt((req.params as any).id));

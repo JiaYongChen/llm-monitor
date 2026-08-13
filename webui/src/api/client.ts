@@ -71,6 +71,20 @@ export async function listCalls(sessionId?: number, provider?: string, tool?: st
   return fetchJson(`/calls?${params}`);
 }
 
+/** 统计符合条件的调用总数（与 listCalls 同过滤条件，供分页展示） */
+export async function countCalls(sessionId?: number, provider?: string, tool?: string) {
+  const params = new URLSearchParams();
+  if (sessionId) params.set('session_id', String(sessionId));
+  if (provider) params.set('provider', provider);
+  if (tool) params.set('tool', tool);
+  return fetchJson(`/calls/count?${params}`);
+}
+
+/** 会话 Token 分项统计（全量聚合，不受时间线分页影响） */
+export async function getSessionTokenStats(sessionId: number) {
+  return fetchJson(`/sessions/${sessionId}/token-stats`);
+}
+
 export async function getCall(id: number) {
   return fetchJson(`/calls/${id}`);
 }

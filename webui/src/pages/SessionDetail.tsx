@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
@@ -9,6 +9,9 @@ import CallTimeline from '../components/CallTimeline';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
 
+/** 时间线分页大小 */
+const PAGE_SIZE = 50;
+
 export default function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const sessionId = Number(id);
@@ -16,17 +19,25 @@ export default function SessionDetail() {
   const qc = useQueryClient();
   const nav = useNavigate();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [page, setPage] = useState(1);
+  // 切换会话时回到第一页
+  useEffect(() => { setPage(1); }, [sessionId]);
   const { data: s } = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.getSession(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
-  const { data: calls } = useQuery({ queryKey: ['calls', sessionId], queryFn: () => api.listCalls(sessionId, undefined, undefined, 200, 0), enabled: !!sessionId, refetchInterval: 10000 });
+  const { data: calls } = useQuery({ queryKey: ['calls', sessionId, page], queryFn: () => api.listCalls(sessionId, undefined, undefined, PAGE_SIZE, (page - 1) * PAGE_SIZE), enabled: !!sessionId, refetchInterval: 10000 });
+  const { data: callsCount } = useQuery({ queryKey: ['calls-count', sessionId], queryFn: () => api.countCalls(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
+  const { data: tokenStats } = useQuery({ queryKey: ['session-token-stats', sessionId], queryFn: () => api.getSessionTokenStats(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
   const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: () => api.listPricing() });
 
   if (!s) return <div className="p-8 text-sm text-[#aeaeb2]">加载中...</div>;
 
   const callsList = calls || [];
-  const uncachedTokens = callsList.reduce((sum: number, c: any) => sum + (c.uncached_input || 0), 0);
-  const cacheHitTokens = callsList.reduce((sum: number, c: any) => sum + (c.cache_read_tokens || 0), 0);
-  const outputTokens = callsList.reduce((sum: number, c: any) => sum + (c.output_tokens || 0), 0);
+  // Token 分项统计来自后端全量聚合，不受时间线分页影响
+  const uncachedTokens = tokenStats?.uncached_input || 0;
+  const cacheHitTokens = tokenStats?.cache_read_tokens || 0;
+  const outputTokens = tokenStats?.output_tokens || 0;
+  const totalCalls = callsCount?.count || 0;
+  const totalPages = Math.max(1, Math.ceil(totalCalls / PAGE_SIZE));
 
   // 工具本身对应的内置供应商无需覆写（claudecode→anthropic, codex→openai；大小写不敏感）
   const toolLower = (s.tool || '').toLowerCase();
@@ -133,10 +144,17 @@ export default function SessionDetail() {
       </div>
 
       <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
-        <div className="px-5 py-3 border-b border-[#e5e5ea] flex items-center gap-2"><h2 className="text-sm font-semibold text-[#1d1d1f]">调用时间线</h2><span className="text-xs font-mono text-[#aeaeb2]">{calls?.length || 0} 条</span></div>
+        <div className="px-5 py-3 border-b border-[#e5e5ea] flex items-center gap-2"><h2 className="text-sm font-semibold text-[#1d1d1f]">调用时间线</h2><span className="text-xs font-mono text-[#aeaeb2]">共 {totalCalls} 条</span></div>
         <div className="max-h-[50vh] overflow-y-auto scrollbar-visible">
           <CallTimeline calls={calls || []} />
         </div>
+        {totalPages > 1 && (
+          <div className="px-5 py-2.5 border-t border-[#e5e5ea] flex items-center justify-center gap-3">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹ 上一页</Button>
+            <span className="text-xs font-mono text-[#aeaeb2]">第 {page} / {totalPages} 页</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>下一页 ›</Button>
+          </div>
+        )}
       </div>
 
       <Dialog open={deleteConfirm} onClose={() => setDeleteConfirm(false)}>

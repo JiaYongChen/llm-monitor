@@ -459,6 +459,38 @@ export function listCalls(sessionId?: number, provider?: string, tool?: string, 
   return queryAll(sql, params);
 }
 
+/** 统计符合条件的调用总数（与 listCalls 相同的过滤条件，供分页展示「共 N 条」） */
+export function countCalls(sessionId?: number, provider?: string, tool?: string): number {
+  let sql = 'SELECT COUNT(*) AS cnt FROM calls c';
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (tool) {
+    sql = 'SELECT COUNT(*) AS cnt FROM calls c JOIN sessions s ON c.session_id = s.id';
+    conditions.push('s.tool = ?');
+    params.push(normalizeToolName(tool));
+  }
+  if (sessionId != null) { conditions.push('c.session_id = ?'); params.push(sessionId); }
+  if (provider) { conditions.push('c.provider = ?'); params.push(normalizeProviderName(provider)); }
+  if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
+  return Number(queryOne(sql, params)?.cnt) || 0;
+}
+
+/** 会话 Token 分项统计（输出 / 未命中缓存输入 / 命中缓存）— 全量聚合，不受时间线分页影响 */
+export function getSessionTokenStats(sessionId: number): { output_tokens: number; uncached_input: number; cache_read_tokens: number } {
+  const row = queryOne(
+    `SELECT COALESCE(SUM(output_tokens), 0) AS output_tokens,
+            COALESCE(SUM(uncached_input), 0) AS uncached_input,
+            COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens
+     FROM calls WHERE session_id = ?`,
+    [sessionId],
+  );
+  return {
+    output_tokens: Number(row?.output_tokens) || 0,
+    uncached_input: Number(row?.uncached_input) || 0,
+    cache_read_tokens: Number(row?.cache_read_tokens) || 0,
+  };
+}
+
 /** 获取单条调用 */
 export function getCall(callId: number): Record<string, any> | null {
   return queryOne('SELECT * FROM calls WHERE id = ?', [callId]);

@@ -1,6 +1,6 @@
 /** 数据库 CRUD 测试 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, insertCall, upsertSession, listCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll, upsertDailyStat } from '../proxy/db.js';
+import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll, upsertDailyStat } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -88,6 +88,26 @@ describe('db', () => {
     }
     const calls = listCalls(sid, undefined, undefined, 3, 0);
     expect(calls).toHaveLength(3);
+    expect(countCalls(sid)).toBe(5);  // 总数不受分页限制
+  });
+
+  it('countCalls 过滤条件与 listCalls 一致', () => {
+    const sid = upsertSession('fp_count', 'codex', '/v1/chat/completions');
+    const rec: CallRecord = {
+      provider: 'openai', model: 'gpt-4o', tool: 'codex', endpoint: '/v1/chat/completions',
+      method: 'POST', target_url: 'https://api.openai.com/v1/chat/completions', downstream_url: 'http://localhost:9400/openai/v1/chat/completions', source_ip: '127.0.0.1',
+      status_code: 200, error_message: null, duration_ms: 100,
+      prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
+      cache_write_tokens: null, uncached_input: null,
+      input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+      request_body: null, response_body: null,
+      fingerprint: 'fp_count', source_port: 1112, session_id: sid,
+    };
+    insertCall(rec);
+    expect(countCalls(sid)).toBe(1);
+    expect(countCalls(sid, 'openai')).toBe(1);
+    expect(countCalls(sid, 'anthropic')).toBe(0);
+    expect(countCalls()).toBeGreaterThanOrEqual(1);  // 无过滤 = 全表
   });
 
   it('updateSessionStats 更新会话统计', () => {
