@@ -8,10 +8,10 @@ export const CURRENCIES: Record<string, { symbol: string; label: string }> = {
   GBP: { symbol: '£', label: 'GBP' },
 };
 
-/** 供应商品牌色 */
+/** 供应商品牌色（键与库中小写存储一致） */
 export const PROVIDER_COLORS: Record<string, string> = {
-  Anthropic: '#d97706',
-  OpenAI: '#16a34a',
+  anthropic: '#d97706',
+  openai: '#16a34a',
 };
 
 /** 为未知供应商生成确定性颜色（基于名称哈希） */

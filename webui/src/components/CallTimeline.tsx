@@ -1,15 +1,6 @@
 import { useCurrency, formatCost } from '../lib/currency';
-import { formatTime, capitalizeFirst } from '../lib/utils';
-
-/** 供应商名称展示映射（键为小写） */
-const PROVIDER_DISPLAY: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-};
-
-function providerLabel(raw: string): string {
-  return PROVIDER_DISPLAY[(raw || '').toLowerCase()] || capitalizeFirst(raw);
-}
+import { formatTime } from '../lib/utils';
+import { displayName } from '../lib/display';
 
 function fmtTokens(n: number | null | undefined): string {
   if (n == null || n === 0) return '0';
@@ -31,7 +22,7 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sc }} />
             <span className="text-xs font-mono w-14 flex-shrink-0 text-[#aeaeb2]">{formatTime(c.created_at, 'time')}</span>
             <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium w-10 text-center flex-shrink-0 bg-[#f0f0f4] text-[#6e6e73]">{c.method}</span>
-            <span className="text-xs flex-1 truncate font-mono text-[#6e6e73]">{providerLabel(c.provider)}</span>
+            <span className="text-xs flex-1 truncate font-mono text-[#6e6e73]">{displayName(c.provider)}</span>
             {hasTokens ? (
               <>
                 <span className="text-[11px] font-mono text-right flex-shrink-0 min-w-[5rem]" title={`输入（未命中缓存）`}>

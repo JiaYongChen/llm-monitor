@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
-import { capitalizeFirst } from '../lib/utils';
+import { displayName } from '../lib/display';
 
 const COLORS = {
   output: '#5e5ce6',
@@ -132,9 +132,8 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                 <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                 <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                {/* 模型 ID 保持原样，不做首字母大写 */}
                 {modelNames.map((model, i) => (
-                  <Bar key={model} dataKey={model} name={model} fill={MODEL_COLORS[i % MODEL_COLORS.length]} stackId="model" />
+                  <Bar key={model} dataKey={model} name={displayName(model)} fill={MODEL_COLORS[i % MODEL_COLORS.length]} stackId="model" />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -149,7 +148,7 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
               <div key={model} className="grid grid-cols-2 gap-6">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-medium text-[#aeaeb2]">{model} 调用次数</h4>
+                    <h4 className="text-xs font-medium text-[#aeaeb2]">{displayName(model)} 调用次数</h4>
                     <span className="text-xs font-mono text-[#6366f1]">{calls.toLocaleString()} 次</span>
                   </div>
                   <ResponsiveContainer width="100%" height={200}>
@@ -164,7 +163,7 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-medium text-[#aeaeb2]">{model} Token 用量</h4>
+                    <h4 className="text-xs font-medium text-[#aeaeb2]">{displayName(model)} Token 用量</h4>
                     <span className="text-xs font-mono text-[#aeaeb2]">{tokens.toLocaleString()}</span>
                   </div>
                   <ResponsiveContainer width="100%" height={200}>

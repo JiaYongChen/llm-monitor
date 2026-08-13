@@ -8,19 +8,12 @@ import { Activity, Zap, Layers } from 'lucide-react';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
 import { useCurrency, formatCost, CURRENCIES, PROVIDER_COLORS } from '../lib/currency';
-import { capitalizeFirst, lookupCi } from '../lib/utils';
+import { lookupCi } from '../lib/utils';
+import { displayName } from '../lib/display';
 
 /** 工具侧边栏图标颜色映射 */
 const TOOL_COLORS: Record<string, string> = {
   ClaudeCode: '#d97706', Codex: '#16a34a',
-};
-/** 工具显示名称映射 */
-const TOOL_DISPLAY: Record<string, string> = {
-  ClaudeCode: 'ClaudeCode', Codex: 'Codex',
-};
-/** 供应商显示名称映射 */
-const PROVIDER_DISPLAY: Record<string, string> = {
-  Anthropic: 'Anthropic', OpenAI: 'OpenAI',
 };
 /** 总览图标颜色（侧边栏激活态紫色） */
 const OVERVIEW_COLOR = '#5e5ce6';
@@ -41,7 +34,7 @@ export default function Dashboard() {
   const toolConfig = (toolConfigs as any[])?.find((t: any) => tool && t.tool.toLowerCase() === tool.toLowerCase());
 
   /** 根据当前筛选状态决定标题文本和颜色（映射表查找大小写不敏感） */
-  const pageTitle = provider ? (lookupCi(PROVIDER_DISPLAY, provider) || capitalizeFirst(provider)) : tool ? (lookupCi(TOOL_DISPLAY, tool) || capitalizeFirst(tool)) : '总览';
+  const pageTitle = provider ? displayName(provider) : tool ? displayName(tool) : '总览';
   const titleColor = provider
     ? (lookupCi(PROVIDER_COLORS, provider) || OVERVIEW_COLOR)
     : tool
@@ -87,7 +80,7 @@ export default function Dashboard() {
       {tool && providers && (() => {
         // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, Codex→OpenAI；大小写不敏感）
         const toolLower = (tool || '').toLowerCase();
-        const toolBuiltin = toolLower === 'claudecode' ? 'Anthropic' : toolLower === 'codex' ? 'OpenAI' : null;
+        const toolBuiltin = toolLower === 'claudecode' ? 'anthropic' : toolLower === 'codex' ? 'openai' : null;
         const enabledProviders = (providers as any[]).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
         const currentUpstream = toolConfig?.upstream_provider || '';
         const currentModel = toolConfig?.upstream_model || '';
@@ -121,18 +114,18 @@ export default function Dashboard() {
                 qc.invalidateQueries({ queryKey: ['tool-configs'] });
               }}
             >
-              <option value="">跟随请求路径（{capitalizeFirst(tool)}）</option>
+              <option value="">跟随请求路径（{displayName(tool)}）</option>
               {enabledProviders.map((p: any) => (
-                <option key={p.provider} value={p.provider}>{capitalizeFirst(p.provider)}</option>
+                <option key={p.provider} value={p.provider}>{displayName(p.provider)}</option>
               ))}
             </select>
             {currentUpstream && (() => {
               const up = (providers as any[]).find((p: any) => p.provider === currentUpstream);
-              const officialUrls: Record<string, string> = { Anthropic: 'https://api.anthropic.com', OpenAI: 'https://api.openai.com' };
+              const officialUrls: Record<string, string> = { anthropic: 'https://api.anthropic.com', openai: 'https://api.openai.com' };
               const baseUrl = (toolLower === 'claudecode' && up?.base_url_anthropic)
                 ? up.base_url_anthropic
                 : (up?.base_url || officialUrls[currentUpstream] || '');
-              return <span className="text-xs text-[#30b48b]">转发到 {capitalizeFirst(currentUpstream)} — <span className="font-mono">{baseUrl}</span></span>;
+              return <span className="text-xs text-[#30b48b]">转发到 {displayName(currentUpstream)} — <span className="font-mono">{baseUrl}</span></span>;
             })()}
           </div>
           <div className="flex items-center gap-3">
@@ -147,16 +140,15 @@ export default function Dashboard() {
                   qc.invalidateQueries({ queryKey: ['tool-configs'] });
                 }}
               >
-                {/* 模型 ID 保持原样，不做首字母大写 */}
                 {models.map((m: string) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>{displayName(m)}</option>
                 ))}
               </select>
             ) : (
               <span className="text-sm text-[#aeaeb2] px-3 py-1.5">跟随客户端请求</span>
             )}
             {currentModel && (
-              <span className="text-xs text-[#0071e3]">强制使用 {currentModel}</span>
+              <span className="text-xs text-[#0071e3]">强制使用 {displayName(currentModel)}</span>
             )}
           </div>
         </div>

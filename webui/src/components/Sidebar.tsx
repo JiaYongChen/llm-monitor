@@ -4,12 +4,7 @@ import { useMemo } from 'react';
 import * as api from '../api/client';
 
 import { providerColor } from '../lib/currency';
-import { capitalizeFirst, lookupCi } from '../lib/utils';
-
-/** 工具显示名称映射 */
-const TOOL_DISPLAY: Record<string, string> = {
-  ClaudeCode: 'ClaudeCode', Codex: 'Codex',
-};
+import { displayName } from '../lib/display';
 
 /** 已知工具的元数据（图标、颜色） */
 const KNOWN_TOOLS: Record<string, { l: string; c: string }> = {
@@ -55,8 +50,8 @@ export default function Sidebar() {
   sessions?.forEach((s: any) => { const l = groups.get(s.tool) || []; l.push(s); groups.set(s.tool, l); });
 
   const enabledProviders = (providers as any[])?.filter((p: any) => p.enabled === 1).sort((a: any, b: any) => {
-    const aBuiltin = a.provider === 'Anthropic' || a.provider === 'OpenAI' ? 0 : 1;
-    const bBuiltin = b.provider === 'Anthropic' || b.provider === 'OpenAI' ? 0 : 1;
+    const aBuiltin = a.provider === 'anthropic' || a.provider === 'openai' ? 0 : 1;
+    const bBuiltin = b.provider === 'anthropic' || b.provider === 'openai' ? 0 : 1;
     return aBuiltin - bBuiltin || a.provider.localeCompare(b.provider);
   }) || [];
 
@@ -101,7 +96,7 @@ export default function Sidebar() {
                 className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedTool === tool ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
               >
                 <div className="w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0" style={{ background: m.c }}>{m.l}</div>
-                <span className="truncate">{lookupCi(TOOL_DISPLAY, tool) || capitalizeFirst(tool)}</span>
+                <span className="truncate">{displayName(tool)}</span>
               </button>
             );
           })}
@@ -119,7 +114,7 @@ export default function Sidebar() {
               className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedProvider === p.provider ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
             >
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: providerColor(p.provider) }} />
-              <span className="truncate">{capitalizeFirst(p.provider)}</span>
+              <span className="truncate">{displayName(p.provider)}</span>
             </button>
           ))}
         </div>
@@ -134,7 +129,7 @@ export default function Sidebar() {
             <div key={tool} className="mb-3">
               <div className="flex items-center gap-2 pl-7 pr-3 mb-1">
                 <div className="w-4 h-4 rounded flex items-center justify-center text-[8px] font-bold text-white" style={{ background: m.c }}>{m.l}</div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">{lookupCi(TOOL_DISPLAY, tool) || capitalizeFirst(tool)}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">{displayName(tool)}</span>
               </div>
               {ss?.slice(0, 20).map((s: any) => (
                 <Link key={s.id} to={loc.pathname === `/sessions/${s.id}` ? '#' : `/sessions/${s.id}`}

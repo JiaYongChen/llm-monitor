@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { useCurrency, CURRENCIES } from '../lib/currency';
-import { capitalizeFirst } from '../lib/utils';
+import { displayName } from '../lib/display';
 
 export default function PricingTable() {
   const { currency } = useCurrency();
@@ -56,10 +56,10 @@ export default function PricingTable() {
             {pricing?.map((p: any) => (
               <tr key={p.id} className="hover:bg-[#13131c] transition-colors group" style={{ borderBottom: '1px solid #1a1a2a50' }}>
                 <td className="py-2.5 px-3">
-                  <span className="text-[11px] font-medium">{capitalizeFirst(p.provider)}</span>
+                  <span className="text-[11px] font-medium">{displayName(p.provider)}</span>
                 </td>
                 <td className="py-2.5 px-3">
-                  <span className="text-[11px] font-mono" style={{ color: '#d4d4e0' }}>{p.model}</span>
+                  <span className="text-[11px] font-mono" style={{ color: '#d4d4e0' }}>{displayName(p.model)}</span>
                 </td>
                 <td className="py-2.5 px-3 text-right">
                   <span className="text-[11px] font-mono" style={{ color: '#9898a8' }}>{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.input_price.toFixed(3)}</span>

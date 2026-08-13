@@ -2,12 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import * as api from '../api/client';
 import CallDetailPanel from '../components/CallDetailPanel';
-import { capitalizeFirst } from '../lib/utils';
-
-/** 工具显示名称映射 */
-const TOOL_DISPLAY: Record<string, string> = {
-  ClaudeCode: 'ClaudeCode', Codex: 'Codex',
-};
+import { displayName } from '../lib/display';
 
 export default function CallDetail() {
   const { id } = useParams<{ id: string }>();
@@ -24,7 +19,7 @@ export default function CallDetail() {
 
   if (!call) return <div className="p-6 text-sm" style={{ color: '#52525b' }}>加载中...</div>;
 
-  const toolName = TOOL_DISPLAY[call.tool] || capitalizeFirst(call.tool) || '';
+  const toolName = displayName(call.tool);
   const sessionLabel = session?.label || (session ? `会话 #${session.id}` : '');
 
   return (

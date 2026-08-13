@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useCurrency, formatCost } from '../lib/currency';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
-import { capitalizeFirst } from '../lib/utils';
+import { displayName } from '../lib/display';
 
 const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#14b8a6'];
 
@@ -64,8 +64,7 @@ export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: 
         <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {chartData.categories.map((cat, i) => (
-          // 模型维度保持 ID 原样；工具/供应商维度首字母大写
-          <Bar key={cat} dataKey={cat} name={groupBy === 'model' ? cat : capitalizeFirst(cat)} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />
+          <Bar key={cat} dataKey={cat} name={displayName(cat)} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />
         ))}
       </BarChart>
     </ResponsiveContainer>
