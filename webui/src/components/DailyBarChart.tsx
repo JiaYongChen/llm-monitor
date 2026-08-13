@@ -145,38 +145,44 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
             const calls = md.reduce((s, d) => s + (d.count || 0), 0);
             const tokens = md.reduce((s, d) => s + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens, 0);
             return (
-              <div key={model} className="grid grid-cols-2 gap-6">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-medium text-[#aeaeb2]">{displayName(model)} 调用次数</h4>
-                    <span className="text-xs font-mono text-[#6366f1]">{calls.toLocaleString()} 次</span>
+              <div key={model}>
+                {/* 模型标签行：模型名独立成标签，图表显示在标签下方 */}
+                <h4 className="text-sm font-semibold text-[#1d1d1f] mb-2">{displayName(model)}</h4>
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    {/* 左侧调用次数折线图（小标题去掉模型名前缀，汇总数字保留） */}
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-medium text-[#aeaeb2]">调用次数</h4>
+                      <span className="text-xs font-mono text-[#6366f1]">{calls.toLocaleString()} 次</span>
+                    </div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} allowDecimals={false} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 12 }} formatter={(v: number) => [v.toLocaleString(), '请求数']} labelFormatter={(d: string) => d} />
+                        <Line type="monotone" dataKey="count" name="调用次数" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} allowDecimals={false} axisLine={false} tickLine={false} />
-                      <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 12 }} formatter={(v: number) => [v.toLocaleString(), '请求数']} labelFormatter={(d: string) => d} />
-                      <Line type="monotone" dataKey="count" name="调用次数" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-medium text-[#aeaeb2]">{displayName(model)} Token 用量</h4>
-                    <span className="text-xs font-mono text-[#aeaeb2]">{tokens.toLocaleString()}</span>
+                  <div>
+                    {/* 右侧 Token 用量柱状图（小标题去掉模型名前缀，汇总数字保留） */}
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-medium text-[#aeaeb2]">Token 用量</h4>
+                      <span className="text-xs font-mono text-[#aeaeb2]">{tokens.toLocaleString()}</span>
+                    </div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
+                        <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
+                        {tokenTypes.map(tt => (
+                          <Bar key={tt.key} dataKey={tt.key} name={tt.name} stackId="a" fill={tt.color} stroke="#fff" strokeWidth={1} />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
-                      <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
-                      {tokenTypes.map(tt => (
-                        <Bar key={tt.key} dataKey={tt.key} name={tt.name} stackId="a" fill={tt.color} stroke="#fff" strokeWidth={1} />
-                      ))}
-                    </BarChart>
-                  </ResponsiveContainer>
                 </div>
               </div>
             );
