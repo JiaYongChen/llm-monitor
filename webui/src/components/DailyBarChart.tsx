@@ -3,6 +3,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
+import { sortByPresetOrder } from '../lib/utils';
 
 const COLORS = {
   output: '#5e5ce6',
@@ -48,7 +49,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     if (!modelData || modelData.length === 0) return null;
     // 优先使用 category（新后端统一字段），回退到 model 字段
     const getCat = (d: DailyData) => d.category || d.model || '';
-    const models = [...new Set(modelData.map(getCat).filter(Boolean))];
+    const models = sortByPresetOrder([...new Set(modelData.map(getCat).filter(Boolean))]);
     const byDate = new Map<string, Record<string, number>>();
     for (const d of modelData) {
       const cat = getCat(d);
@@ -90,18 +91,10 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     return list;
   }, [filledData]);
 
-  // 模型列表（去重），按总量升序排列（小值在柱状底部）
+  // 类别列表（去重），固定顺序：内置工具/供应商按预设序，其余字母序（不随用量变化）
   const modelNames = useMemo(() => {
     const names = [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))];
-    // 计算每个模型的总 token 量用于排序
-    const totals = new Map<string, number>();
-    for (const d of modelData || []) {
-      const cat = d.category || d.model || '';
-      if (!cat) continue;
-      totals.set(cat, (totals.get(cat) || 0) + d.total_output_tokens + d.total_uncached_input + d.total_cache_read_tokens);
-    }
-    names.sort((a, b) => (totals.get(a) || 0) - (totals.get(b) || 0));
-    return names;
+    return sortByPresetOrder(names);
   }, [modelData]);
 
   // 单个模型的按日数据（用于每模型趋势图）
