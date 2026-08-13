@@ -10,10 +10,10 @@ describe('categoryColorMap', () => {
     expect(a.get('codex')).toBe(b.get('codex'));
   });
 
-  it('内置类别按预设序取色：claudecode → 色板第 1 色、codex → 第 2 色', () => {
+  it('内置类别固定取色：claudecode → 色板第 2 色、codex → 第 1 色', () => {
     const map = categoryColorMap(['codex', 'claudecode']);
-    expect(map.get('claudecode')).toBe(CATEGORY_COLORS[0]);
-    expect(map.get('codex')).toBe(CATEGORY_COLORS[1]);
+    expect(map.get('claudecode')).toBe(CATEGORY_COLORS[1]);
+    expect(map.get('codex')).toBe(CATEGORY_COLORS[0]);
   });
 
   it('不同集合下同一类别颜色不变（内置类别）', () => {
