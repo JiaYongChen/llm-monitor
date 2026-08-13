@@ -28,7 +28,7 @@ export default function SessionDetail() {
   const cacheHitTokens = callsList.reduce((sum: number, c: any) => sum + (c.cache_read_tokens || 0), 0);
   const outputTokens = callsList.reduce((sum: number, c: any) => sum + (c.output_tokens || 0), 0);
 
-  // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, Codex→OpenAI；大小写不敏感）
+  // 工具本身对应的内置供应商无需覆写（claudecode→anthropic, codex→openai；大小写不敏感）
   const toolLower = (s.tool || '').toLowerCase();
   const toolBuiltin = toolLower === 'claudecode' ? 'anthropic' : toolLower === 'codex' ? 'openai' : null;
   const enabledProviders = (providers || []).filter((p: any) => p.enabled && p.provider !== toolBuiltin);

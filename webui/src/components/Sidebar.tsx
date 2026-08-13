@@ -7,10 +7,10 @@ import { providerColor } from '../lib/currency';
 import { displayName } from '../lib/display';
 import { collectTools } from '../lib/utils';
 
-/** 已知工具的元数据（图标、颜色） */
+/** 已知工具的元数据（图标、颜色；键与库中小写存储一致） */
 const KNOWN_TOOLS: Record<string, { l: string; c: string }> = {
-  'ClaudeCode': { l: 'C', c: '#d97706' },
-  'Codex': { l: 'X', c: '#16a34a' },
+  'claudecode': { l: 'C', c: '#d97706' },
+  'codex': { l: 'X', c: '#16a34a' },
 };
 const DEFAULT_META = { l: '?', c: '#9ca3af' };
 

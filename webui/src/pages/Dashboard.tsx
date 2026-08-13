@@ -13,7 +13,7 @@ import { displayName } from '../lib/display';
 
 /** 工具侧边栏图标颜色映射 */
 const TOOL_COLORS: Record<string, string> = {
-  ClaudeCode: '#d97706', Codex: '#16a34a',
+  claudecode: '#d97706', codex: '#16a34a',
 };
 /** 总览图标颜色（侧边栏激活态紫色） */
 const OVERVIEW_COLOR = '#5e5ce6';
@@ -78,7 +78,7 @@ export default function Dashboard() {
 
       {/* 工具级上游配置（仅在筛选到具体工具时显示） */}
       {tool && providers && (() => {
-        // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, Codex→OpenAI；大小写不敏感）
+        // 工具本身对应的内置供应商无需覆写（claudecode→anthropic, codex→openai；大小写不敏感）
         const toolLower = (tool || '').toLowerCase();
         const toolBuiltin = toolLower === 'claudecode' ? 'anthropic' : toolLower === 'codex' ? 'openai' : null;
         const enabledProviders = (providers as any[]).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
