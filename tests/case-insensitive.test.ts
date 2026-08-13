@@ -154,7 +154,7 @@ describe('上游供应商归一化对称性', () => {
   });
 
   it('会话继承 tool_config 时 upstream_provider 已归一化', () => {
-    // 直接 SQL 构造带变体供应商名的工具配置（绕过 updateToolConfig 归一化）
+    // 直接 SQL 插入历史数据（绕过 updateToolConfig 归一化，模拟大小写变体）
     getDb().run(`INSERT INTO tool_config (tool, upstream_provider) VALUES ('legacytool', 'anthropic')`);
     const sid1 = createPendingSession('legacytool');
     expect(getSession(sid1)!.upstream_provider).toBe('anthropic');

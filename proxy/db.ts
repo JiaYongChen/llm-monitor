@@ -227,6 +227,13 @@ export async function initDb(dbPath?: string): Promise<void> {
     console.error(`[db] ⚠ 历史数据归一化迁移失败（已回滚，不影响启动，下次启动重试）: ${(err as Error).message}`);
   }
 
+  // 历史数据小写迁移（名称字段统一小写，单次执行；失败降级警告，下次启动重试）
+  try {
+    migrateLowercaseNames();
+  } catch (err) {
+    console.error(`[db] ⚠ 小写迁移失败（已回滚，不影响启动，下次启动重试）: ${(err as Error).message}`);
+  }
+
   // v2 → v3：从 calls 表回填已有数据到 daily_stats（仅首次升级执行）
   // 使用 INSERT OR IGNORE + 事务包装确保幂等：升级中断后重启不会触发主键冲突
   if (storedVersion < 3) {
@@ -673,6 +680,60 @@ export function migrateToolCanonicalNames(): void {
   }
 }
 
+/** 小写迁移：历史数据全部名称字段（工具/供应商/模型）统一转小写。
+ *  单次执行（metadata 门控 lowercase_migrated），事务包裹，失败回滚。
+ *  顺序：先合并变体行（各表有 UNIQUE/主键约束，直接 LOWER 可能冲突），再纯小写化。 */
+export function migrateLowercaseNames(): void {
+  if (getSetting('lowercase_migrated') === '1') return;
+  const d = getDb();
+  d.run('BEGIN');
+  try {
+    // ── 1. 变体合并：逐表把仅大小写不同的行收敛为一行 ──
+    mergeProviderConfigVariants();
+    // tool_config：按小写分组，每组收敛为一行（未命中内置别名时 survivor 取首行）
+    const seenTools = new Set<string>();
+    for (const tc of queryAll('SELECT tool FROM tool_config')) {
+      const lower = (tc.tool as string).toLowerCase();
+      if (seenTools.has(lower)) continue;
+      seenTools.add(lower);
+      mergeToolConfigVariants(lower);
+    }
+    // pricing：先供应商维度、后模型维度
+    for (const p of queryAll('SELECT DISTINCT LOWER(provider) AS lower FROM pricing')) {
+      mergePricingProviderVariants(p.lower as string, p.lower as string);
+    }
+    mergePricingModelVariants();
+    // daily_stats：工具 → 供应商 → 模型（后序阶段依赖前序阶段已收敛的行名定位冲突）
+    for (const r of queryAll('SELECT DISTINCT LOWER(tool) AS lower FROM daily_stats')) {
+      mergeDailyStatsVariants('tool', r.lower as string, r.lower as string);
+    }
+    for (const r of queryAll('SELECT DISTINCT LOWER(provider) AS lower FROM daily_stats')) {
+      mergeDailyStatsVariants('provider', r.lower as string, r.lower as string);
+    }
+    mergeDailyStatsModelVariants();
+
+    // ── 2. 纯小写化：合并后各约束维度每组只剩一行，改名无冲突 ──
+    const updates: Array<[string, string]> = [
+      ['provider_config', 'provider'],
+      ['tool_config', 'tool'], ['tool_config', 'upstream_provider'], ['tool_config', 'upstream_model'],
+      ['sessions', 'tool'], ['sessions', 'upstream_provider'], ['sessions', 'upstream_model'],
+      ['calls', 'provider'], ['calls', 'model'], ['calls', 'tool'],
+      ['pricing', 'provider'], ['pricing', 'model'],
+      ['daily_stats', 'provider'], ['daily_stats', 'model'], ['daily_stats', 'tool'],
+    ];
+    for (const [table, col] of updates) {
+      runRaw(`UPDATE ${table} SET ${col} = LOWER(${col}) WHERE ${col} != LOWER(${col})`);
+    }
+
+    runRaw("INSERT OR REPLACE INTO metadata (key, value) VALUES ('lowercase_migrated', '1')");
+    d.run('COMMIT');
+    saveDb();
+  } catch (err) {
+    d.run('ROLLBACK');
+    throw err;
+  }
+}
+
 /** provider_config 变体收敛：同一供应商名（大小写不敏感）的多行合并为一行。
  *  规范行选择：内置供应商精确名优先，否则取首行（rowid 最小）；
  *  base_url / base_url_anthropic / api_key 空字段按 rowid 顺序由变体行补齐，enabled 跟随规范行。 */
@@ -686,7 +747,7 @@ function mergeProviderConfigVariants(): void {
   }
   for (const group of groups.values()) {
     if (group.length <= 1) continue;
-    const survivor = group.find(r => BUILTIN_PROVIDERS.has(r.provider)) ?? group[0];
+    const survivor = group.find(r => BUILTIN_PROVIDERS.has(String(r.provider).toLowerCase())) ?? group[0];
     let baseUrl = (survivor.base_url as string) || '';
     let baseUrlAnthropic = (survivor.base_url_anthropic as string) || '';
     let apiKey = (survivor.api_key as string) || '';
@@ -747,6 +808,22 @@ function mergePricingProviderVariants(lower: string, canonical: string): void {
   }
 }
 
+/** pricing 模型维度变体合并：LOWER(model) 与既有行冲突时删除变体行（规范行优先），否则改名为小写。
+ *  与供应商维度策略一致。 */
+function mergePricingModelVariants(): void {
+  const rows = queryAll('SELECT rowid AS rid, provider, model, effective_from FROM pricing WHERE model != LOWER(model)');
+  for (const row of rows) {
+    const lowerModel = (row.model as string).toLowerCase();
+    const conflict = queryOne('SELECT 1 AS one FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
+      [row.provider, lowerModel, row.effective_from]);
+    if (conflict) {
+      runRaw('DELETE FROM pricing WHERE rowid = ?', [row.rid]);
+    } else {
+      runRaw('UPDATE pricing SET model = ? WHERE rowid = ?', [lowerModel, row.rid]);
+    }
+  }
+}
+
 /** daily_stats 变体合并：按指定列（tool / provider）把大小写变体归一到规范名。
  *  复合主键冲突时累加合并进规范行，否则原地改名。 */
 function mergeDailyStatsVariants(col: 'tool' | 'provider', lower: string, canonical: string): void {
@@ -773,6 +850,35 @@ function mergeDailyStatsVariants(col: 'tool' | 'provider', lower: string, canoni
       runRaw('DELETE FROM daily_stats WHERE rowid = ?', [row.rid]);
     } else {
       runRaw(`UPDATE daily_stats SET ${col} = ? WHERE rowid = ?`, [canonical, row.rid]);
+    }
+  }
+}
+
+/** daily_stats 模型维度变体合并：按复合主键 (date, provider, model, tool) 冲突时累加合并进小写行。
+ *  与 mergeDailyStatsVariants 同模式（按单列 model 工作）。 */
+function mergeDailyStatsModelVariants(): void {
+  const rows = queryAll('SELECT rowid AS rid, * FROM daily_stats WHERE model != LOWER(model)');
+  for (const row of rows) {
+    const lowerModel = (row.model as string).toLowerCase();
+    const conflict = queryOne(
+      'SELECT 1 AS one FROM daily_stats WHERE date = ? AND provider = ? AND model = ? AND tool = ?',
+      [row.date, row.provider, lowerModel, row.tool],
+    );
+    if (conflict) {
+      runRaw(
+        `UPDATE daily_stats SET
+           call_count = call_count + ?, total_cost = total_cost + ?,
+           prompt_tokens = prompt_tokens + ?, output_tokens = output_tokens + ?,
+           uncached_input = uncached_input + ?, cache_read_tokens = cache_read_tokens + ?,
+           created_at_ms = CASE WHEN created_at_ms = 0 THEN ? ELSE created_at_ms END
+         WHERE date = ? AND provider = ? AND model = ? AND tool = ?`,
+        [row.call_count, row.total_cost, row.prompt_tokens, row.output_tokens,
+         row.uncached_input, row.cache_read_tokens, row.created_at_ms,
+         row.date, row.provider, lowerModel, row.tool],
+      );
+      runRaw('DELETE FROM daily_stats WHERE rowid = ?', [row.rid]);
+    } else {
+      runRaw('UPDATE daily_stats SET model = ? WHERE rowid = ?', [lowerModel, row.rid]);
     }
   }
 }

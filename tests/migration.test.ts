@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   initDb, closeDb, getDb, queryAll, listToolConfigs, updateToolConfig,
-  migrateToolCanonicalNames, listProviderConfigs,
+  migrateToolCanonicalNames, migrateLowercaseNames, listProviderConfigs,
 } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
@@ -12,6 +12,8 @@ afterAll(() => { closeDb(); tmp.cleanup(); });
 
 // 直接调用迁移前清除单次执行门控（initDb 启动时已执行过一次）
 const clearGate = () => getDb().run("DELETE FROM metadata WHERE key = 'tool_canonical_migrated'");
+// 小写迁移门控同模式清理
+const clearLowerGate = () => getDb().run("DELETE FROM metadata WHERE key = 'lowercase_migrated'");
 
 describe('migrateToolCanonicalNames 历史数据迁移', () => {
   it('归一化各表旧工具名，daily_stats 主键冲突时合并', () => {
@@ -93,7 +95,7 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     clearGate();
     const d = getDb();
     d.run(`INSERT INTO calls (session_id, provider, model, endpoint, method, status_code, duration_ms, fingerprint, tool, created_at)
-           VALUES (1, 'anthropic', 'm-prov', '/v1/x', 'POST', 200, 10, 'fp_prov_variant', 'ClaudeCode', 1)`);
+           VALUES (1, 'Anthropic', 'm-prov', '/v1/x', 'POST', 200, 10, 'fp_prov_variant', 'ClaudeCode', 1)`);
 
     migrateToolCanonicalNames();
 
@@ -157,7 +159,7 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     clearGate();
     const d = getDb();
     d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
-           VALUES ('anthropic', 'claude-mig-x', 1, 0.5, 2)`);
+           VALUES ('Anthropic', 'claude-mig-x', 1, 0.5, 2)`);
 
     migrateToolCanonicalNames();
 
@@ -172,5 +174,88 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     d.run(`INSERT INTO sessions (tool, fingerprint, status, created_at) VALUES ('codex', 'fp_gated', 'active', 1)`);
     migrateToolCanonicalNames();
     expect(queryAll(`SELECT tool FROM sessions WHERE fingerprint = 'fp_gated'`)[0].tool).toBe('codex');
+  });
+});
+
+describe('migrateLowercaseNames 小写迁移', () => {
+  it('工具/供应商/模型全链路转小写，daily_stats 冲突累加合并', () => {
+    clearLowerGate();
+    const d = getDb();
+    // 清掉旧迁移用例残留的 'Codex' 主键行，避免 INSERT 撞主键（与其他用例 fixture 隔离）
+    d.run(`DELETE FROM tool_config WHERE LOWER(tool) = 'codex'`);
+    // 直接 SQL 构造旧数据（绕过归一化函数，模拟历史 CamelCase 数据）
+    d.run(`INSERT INTO sessions (tool, fingerprint, status, created_at) VALUES ('ClaudeCode', 'fp_lc_1', 'active', 1)`);
+    d.run(`INSERT INTO calls (session_id, provider, model, endpoint, method, status_code, duration_ms, fingerprint, tool, created_at)
+           VALUES (1, 'OpenAI', 'GPT-5', '/v1/x', 'POST', 200, 10, 'fp_lc_1', 'Codex', 1)`);
+    d.run(`INSERT INTO tool_config (tool, upstream_provider, upstream_model) VALUES ('Codex', 'OpenAI', 'GLM-X')`);
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
+           VALUES ('OpenAI', 'GPT-5', 1, 0.5, 2)`);
+    // daily_stats：大小写变体冲突行（迁移后主键相同，须累加合并）
+    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
+           VALUES ('2026-08-01', 'OpenAI', 'GPT-5', 'Codex', 1, 0.1, 10, 5, 8, 2)`);
+    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
+           VALUES ('2026-08-01', 'openai', 'gpt-5', 'codex', 2, 0.2, 20, 10, 16, 4)`);
+
+    migrateLowercaseNames();
+
+    expect(queryAll(`SELECT tool FROM sessions WHERE fingerprint = 'fp_lc_1'`)[0].tool).toBe('claudecode');
+    const call = queryAll(`SELECT * FROM calls WHERE fingerprint = 'fp_lc_1'`)[0];
+    expect(call.provider).toBe('openai');
+    expect(call.model).toBe('gpt-5');
+    expect(call.tool).toBe('codex');
+    const tc = queryAll(`SELECT * FROM tool_config WHERE LOWER(tool) = 'codex'`);
+    expect(tc).toHaveLength(1);
+    expect(tc[0].tool).toBe('codex');
+    expect(tc[0].upstream_provider).toBe('openai');
+    expect(tc[0].upstream_model).toBe('glm-x');
+    expect(queryAll(`SELECT provider FROM pricing WHERE LOWER(model) = 'gpt-5'`)[0].provider).toBe('openai');
+    const merged = queryAll(`SELECT * FROM daily_stats WHERE date = '2026-08-01' AND model = 'gpt-5'`);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].provider).toBe('openai');
+    expect(merged[0].model).toBe('gpt-5');
+    expect(merged[0].tool).toBe('codex');
+    expect(merged[0].call_count).toBe(3);
+    expect(merged[0].total_cost).toBeCloseTo(0.3);
+  });
+
+  it('provider_config 大小写变体收敛为一行并小写', () => {
+    clearLowerGate();
+    const d = getDb();
+    // 使用独立供应商名，避免与旧迁移用例残留的 'zhipu' 行互相污染
+    d.run(`INSERT INTO provider_config (provider, base_url, api_key, enabled) VALUES ('Moonshot', 'https://a.example', '', 1)`);
+    d.run(`INSERT INTO provider_config (provider, base_url, api_key, enabled) VALUES ('MOONSHOT', '', 'k-variant', 1)`);
+
+    migrateLowercaseNames();
+
+    const rows = listProviderConfigs().filter((p: any) => p.provider.toLowerCase() === 'moonshot');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].provider).toBe('moonshot');
+    expect(rows[0].base_url).toBe('https://a.example');
+    expect(rows[0].api_key).toBe('k-variant');
+  });
+
+  it('pricing 模型维度变体：冲突时保留小写行', () => {
+    clearLowerGate();
+    const d = getDb();
+    // 使用独立模型名，避免与首个用例残留的 'gpt-5' 行互相污染
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
+           VALUES ('openai', 'lc-ts-model', 1, 0.5, 2)`);
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
+           VALUES ('openai', 'LC-TS-Model', 9, 4.5, 18)`);
+
+    migrateLowercaseNames();
+
+    const rows = queryAll(`SELECT * FROM pricing WHERE provider = 'openai' AND LOWER(model) = 'lc-ts-model'`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].model).toBe('lc-ts-model');
+  });
+
+  it('单次执行门控：已迁移则跳过', () => {
+    clearLowerGate();
+    migrateLowercaseNames();
+    const d = getDb();
+    d.run(`INSERT INTO sessions (tool, fingerprint, status, created_at) VALUES ('NEWTOOL', 'fp_lc_gate', 'active', 1)`);
+    migrateLowercaseNames();
+    expect(queryAll(`SELECT tool FROM sessions WHERE fingerprint = 'fp_lc_gate'`)[0].tool).toBe('NEWTOOL');
   });
 });
