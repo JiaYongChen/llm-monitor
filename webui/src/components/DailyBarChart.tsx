@@ -153,7 +153,7 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                     {/* 左侧调用次数折线图（小标题去掉模型名前缀，汇总数字保留） */}
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-xs font-medium text-[#aeaeb2]">调用次数</h4>
-                      <span className="text-xs font-mono text-[#6366f1]">{calls.toLocaleString()} 次</span>
+                      <span className="text-xs font-mono text-[#aeaeb2]">{calls.toLocaleString()} 次</span>
                     </div>
                     <ResponsiveContainer width="100%" height={200}>
                       <LineChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
