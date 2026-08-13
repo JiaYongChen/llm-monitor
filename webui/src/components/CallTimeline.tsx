@@ -17,8 +17,7 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
   const { currency, rates } = useCurrency();
   return (
     <div>
-      {calls.length > 0 && (
-        <div className={`${COLS} py-2 sticky top-0 z-10 bg-white border-b border-[#e5e5ea]`}>
+      <div className={`${COLS} py-2 sticky top-0 z-10 bg-white border-b border-[#e5e5ea]`}>
           <span />
           <span className="text-[11px] font-medium text-center text-[#aeaeb2]" title="调用发生时间">时间</span>
           <span className="text-[11px] font-medium text-center text-[#aeaeb2]" title="HTTP 请求方法">方法</span>
@@ -29,7 +28,6 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
           <span className="text-[11px] font-medium text-center text-[#aeaeb2]" title="请求耗时">耗时</span>
           <span className="text-[11px] font-medium text-center text-[#aeaeb2]" title="本次调用费用">费用</span>
         </div>
-      )}
       {calls.map((c, i) => {
         const ok = c.status_code === 200;
         const sc = ok ? '#30b48b' : c.status_code === 429 ? '#e69900' : '#e03a3a';
