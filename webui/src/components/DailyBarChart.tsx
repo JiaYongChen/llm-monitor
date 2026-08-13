@@ -45,11 +45,17 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     return fillDateRange(range, tz).map(date => map.get(date) || { ...ZERO_ROW, date });
   }, [data, range, tz]);
 
+  // 堆叠分布图的类别（保持后端返回顺序，供柱段渲染；图例单独按预设序排列）
+  const seriesModels = useMemo(
+    () => [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))],
+    [modelData],
+  );
+
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;
     // 优先使用 category（新后端统一字段），回退到 model 字段
     const getCat = (d: DailyData) => d.category || d.model || '';
-    const models = sortByPresetOrder([...new Set(modelData.map(getCat).filter(Boolean))]);
+    const models = seriesModels;
     const byDate = new Map<string, Record<string, number>>();
     for (const d of modelData) {
       const cat = getCat(d);
@@ -64,7 +70,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
       for (const m of models) row[m] = entry[m] || 0;
       return row;
     });
-  }, [modelData, range, tz]);
+  }, [modelData, seriesModels, range, tz]);
 
   const hasData = filledData.some(d =>
     d.total_output_tokens > 0 || d.total_uncached_input > 0 || d.total_cache_read_tokens > 0,
@@ -124,8 +130,15 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                 <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                {modelNames.map((model, i) => (
+                <Legend
+                  wrapperStyle={{ fontSize: 12 }}
+                  payload={sortByPresetOrder(seriesModels).map(model => {
+                    // 图例按固定预设序排列；颜色沿用柱段在 seriesModels 中的索引，保证图例色与柱色一致
+                    const i = seriesModels.indexOf(model);
+                    return { id: model, value: displayName(model), type: 'rect' as const, color: MODEL_COLORS[i % MODEL_COLORS.length] };
+                  })}
+                />
+                {seriesModels.map((model, i) => (
                   <Bar key={model} dataKey={model} name={displayName(model)} fill={MODEL_COLORS[i % MODEL_COLORS.length]} stackId="model" />
                 ))}
               </BarChart>
