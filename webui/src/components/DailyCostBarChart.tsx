@@ -4,9 +4,7 @@ import { useCurrency, formatCost } from '../lib/currency';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
-import { sortByPresetOrder } from '../lib/utils';
-
-const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#14b8a6'];
+import { sortByPresetOrder, categoryColorMap } from '../lib/utils';
 
 interface DailyCostRow {
   date: string;
@@ -52,6 +50,9 @@ export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: 
     chartData.categories.some(cat => (r[cat] || 0) > 0)
   );
 
+  // 类别 → 颜色：由类别名唯一决定（与 Token 用量分布图一致）
+  const colorMap = useMemo(() => categoryColorMap(chartData.categories), [chartData.categories]);
+
   if (!hasData) return (
     <p className="text-sm text-gray-500 text-center py-8">暂无数据</p>
   );
@@ -65,14 +66,13 @@ export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: 
         <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
         <Legend
           wrapperStyle={{ fontSize: 12 }}
-          payload={sortByPresetOrder(chartData.categories).map(cat => {
-            // 图例按固定预设序排列；颜色沿用柱段在升序 categories 中的索引，保证图例色与柱色一致
-            const i = chartData.categories.indexOf(cat);
-            return { id: cat, value: displayName(cat), type: 'rect' as const, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] };
-          })}
+          payload={sortByPresetOrder(chartData.categories).map(cat => ({
+            // 图例按固定预设序排列；颜色由类别名唯一决定，与柱段取色一致
+            id: cat, value: displayName(cat), type: 'rect' as const, color: colorMap.get(cat),
+          }))}
         />
-        {chartData.categories.map((cat, i) => (
-          <Bar key={cat} dataKey={cat} name={displayName(cat)} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />
+        {chartData.categories.map(cat => (
+          <Bar key={cat} dataKey={cat} name={displayName(cat)} fill={colorMap.get(cat)} stackId="cost" />
         ))}
       </BarChart>
     </ResponsiveContainer>

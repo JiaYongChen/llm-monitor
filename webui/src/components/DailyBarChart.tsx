@@ -3,15 +3,13 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
-import { sortByPresetOrder } from '../lib/utils';
+import { sortByPresetOrder, categoryColorMap } from '../lib/utils';
 
 const COLORS = {
   output: '#5e5ce6',
   uncached: '#f59e0b',
   cached: '#30b48b',
 };
-
-const MODEL_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
 interface DailyData {
   date: string;
@@ -50,6 +48,9 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     () => [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))],
     [modelData],
   );
+
+  // 类别 → 颜色：由类别名唯一决定（与费用分布图一致）
+  const colorMap = useMemo(() => categoryColorMap(seriesModels), [seriesModels]);
 
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;
@@ -132,14 +133,13 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
                 <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                 <Legend
                   wrapperStyle={{ fontSize: 12 }}
-                  payload={sortByPresetOrder(seriesModels).map(model => {
-                    // 图例按固定预设序排列；颜色沿用柱段在 seriesModels 中的索引，保证图例色与柱色一致
-                    const i = seriesModels.indexOf(model);
-                    return { id: model, value: displayName(model), type: 'rect' as const, color: MODEL_COLORS[i % MODEL_COLORS.length] };
-                  })}
+                  payload={sortByPresetOrder(seriesModels).map(model => ({
+                    // 图例按固定预设序排列；颜色由类别名唯一决定，与柱段取色一致
+                    id: model, value: displayName(model), type: 'rect' as const, color: colorMap.get(model),
+                  }))}
                 />
-                {seriesModels.map((model, i) => (
-                  <Bar key={model} dataKey={model} name={displayName(model)} fill={MODEL_COLORS[i % MODEL_COLORS.length]} stackId="model" />
+                {seriesModels.map(model => (
+                  <Bar key={model} dataKey={model} name={displayName(model)} fill={colorMap.get(model)} stackId="model" />
                 ))}
               </BarChart>
             </ResponsiveContainer>
