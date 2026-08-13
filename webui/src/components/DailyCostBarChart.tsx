@@ -4,6 +4,7 @@ import { useCurrency, formatCost } from '../lib/currency';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
+import { sortByPresetOrder } from '../lib/utils';
 
 const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#14b8a6'];
 
@@ -62,7 +63,14 @@ export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: 
         <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
         <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(v: number) => formatCost(v, currency, rates)} axisLine={false} tickLine={false} />
         <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Legend
+          wrapperStyle={{ fontSize: 12 }}
+          payload={sortByPresetOrder(chartData.categories).map(cat => {
+            // 图例按固定预设序排列；颜色沿用柱段在升序 categories 中的索引，保证图例色与柱色一致
+            const i = chartData.categories.indexOf(cat);
+            return { id: cat, value: displayName(cat), type: 'rect' as const, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] };
+          })}
+        />
         {chartData.categories.map((cat, i) => (
           <Bar key={cat} dataKey={cat} name={displayName(cat)} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />
         ))}
