@@ -44,5 +44,6 @@ export function formatCost(value: number, currency: CurrencyKey, rates?: Record<
     if (rate) displayValue = value * rate;
   }
   const c = CURRENCIES[currency] || CURRENCIES.CNY;
-  return `${c.symbol}${displayValue.toFixed(4)} ${c.label}`;
+  // 金额显示只保留小数点后两位（四舍五入）
+  return `${c.symbol}${displayValue.toFixed(2)} ${c.label}`;
 }
