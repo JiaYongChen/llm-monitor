@@ -52,8 +52,8 @@ describe('session', () => {
   });
 
   it('toolFromProvider 通过 URL 前缀区分工具', () => {
-    expect(toolFromProvider('anthropic')).toBe('ClaudeCode');
-    expect(toolFromProvider('openai')).toBe('Codex');
+    expect(toolFromProvider('anthropic')).toBe('claudecode');
+    expect(toolFromProvider('openai')).toBe('codex');
     expect(toolFromProvider('unknown')).toBe('unknown');
   });
 

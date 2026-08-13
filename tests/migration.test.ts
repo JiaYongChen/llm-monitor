@@ -97,7 +97,7 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
 
     migrateToolCanonicalNames();
 
-    expect(queryAll(`SELECT provider FROM calls WHERE fingerprint = 'fp_prov_variant'`)[0].provider).toBe('Anthropic');
+    expect(queryAll(`SELECT provider FROM calls WHERE fingerprint = 'fp_prov_variant'`)[0].provider).toBe('anthropic');
   });
 
   it('provider_config 大小写变体收敛为一行并合并配置', () => {
@@ -122,13 +122,14 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
   it('内置供应商与大小写变体并存时保留内置行并合并配置', () => {
     clearGate();
     const d = getDb();
-    d.run(`INSERT INTO provider_config (provider, base_url, api_key, enabled) VALUES ('openai', 'https://gw.example', 'gw-key', 1)`);
+    // 种子行已小写化，插入大写变体模拟历史数据（小写变体会与种子主键冲突）
+    d.run(`INSERT INTO provider_config (provider, base_url, api_key, enabled) VALUES ('OPENAI', 'https://gw.example', 'gw-key', 1)`);
 
     migrateToolCanonicalNames();
 
     const rows = listProviderConfigs().filter((p: any) => p.provider.toLowerCase() === 'openai');
     expect(rows).toHaveLength(1);
-    expect(rows[0].provider).toBe('OpenAI');
+    expect(rows[0].provider).toBe('openai');
     // 内置行空字段由变体行补齐（用户历史配置不丢失）
     expect(rows[0].base_url).toBe('https://gw.example');
     expect(rows[0].api_key).toBe('gw-key');
@@ -147,7 +148,7 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     const rows = listToolConfigs().filter((t: any) => t.tool.toLowerCase() === 'cursor');
     expect(rows).toHaveLength(1);
     expect(rows[0].tool).toBe('cursor');
-    expect(rows[0].upstream_provider).toBe('OpenAI');
+    expect(rows[0].upstream_provider).toBe('openai');  // 供应商维度归一到小写种子名
     expect(rows[0].upstream_model).toBe('gpt-x');
     expect(queryAll(`SELECT tool FROM sessions WHERE fingerprint = 'fp_cursor_pp'`)[0].tool).toBe('cursor');
   });
@@ -160,7 +161,7 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
 
     migrateToolCanonicalNames();
 
-    expect(queryAll(`SELECT provider FROM pricing WHERE model = 'claude-mig-x'`)[0].provider).toBe('Anthropic');
+    expect(queryAll(`SELECT provider FROM pricing WHERE model = 'claude-mig-x'`)[0].provider).toBe('anthropic');
   });
 
   it('单次执行门控：已迁移则跳过', () => {

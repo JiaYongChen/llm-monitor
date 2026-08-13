@@ -43,8 +43,8 @@ describe('recorder', () => {
     expect(calls[0].prompt_tokens).toBe(500);
     expect(calls[0].cache_read_tokens).toBe(200);
 
-    // 验证 daily_stats 通过 recorder 真实路径累加（供应商名写入时归一化为规范名 'Anthropic'）
-    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'Anthropic'");
+    // 验证 daily_stats 通过 recorder 真实路径累加（供应商名写入时小写存储 'anthropic'）
+    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'anthropic'");
     expect(stats.length).toBe(1);
     expect(stats[0].call_count).toBe(1);
     expect(stats[0].output_tokens).toBe(300);
@@ -74,13 +74,13 @@ describe('recorder', () => {
 
     const calls = listCalls(sid);
     expect(calls.length).toBe(1);
-    // provider 不是 'Anthropic' → 按 OpenAI 格式归一化
+    // provider 不是 'anthropic' → 按 OpenAI 格式归一化
     expect(calls[0].prompt_tokens).toBe(200);
     expect(calls[0].output_tokens).toBe(100);
     expect(calls[0].total_cost).toBeGreaterThan(0);
 
-    // 验证 daily_stats 通过 recorder 真实路径累加
-    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'DeepSeek'");
+    // 验证 daily_stats 通过 recorder 真实路径累加（供应商名小写存储 'deepseek'）
+    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'deepseek'");
     expect(stats.length).toBe(1);
     expect(stats[0].call_count).toBe(1);
     expect(stats[0].output_tokens).toBe(100);

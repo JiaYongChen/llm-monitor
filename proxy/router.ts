@@ -41,8 +41,8 @@ export function getConfiguredUpstream(provider: string, tool?: string, endpoint?
   if (!config.enabled) {
     return { base_url: '', api_key: '', enabled: false };
   }
-  // 根据工具类型选择 URL：ClaudeCode → Anthropic 格式 → base_url_anthropic，codex → OpenAI 格式 → base_url
-  const isAnthropicTool = tool === 'ClaudeCode';
+  // 根据工具类型选择 URL：claudecode → Anthropic 格式 → base_url_anthropic，codex → OpenAI 格式 → base_url
+  const isAnthropicTool = tool === 'claudecode';
   const url = isAnthropicTool && config.base_url_anthropic ? config.base_url_anthropic : config.base_url;
   return { base_url: url, api_key: config.api_key, enabled: true };
 }
@@ -113,7 +113,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // 动态路由：/* 匹配所有非 /api 路径
-  // URL 首段为工具名（如 /codex、/ClaudeCode）→ 映射到供应商 → 剥离首段后转发
+  // URL 首段为工具名（如 /codex、/claudecode）→ 映射到供应商 → 剥离首段后转发
   // 无 provider 前缀的请求直接 404
   app.route({
     method: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -158,15 +158,15 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const canonicalTool = normalizeToolName(rawTool);
       const toolConfig = getToolConfig(canonicalTool);
 
-      // 向后兼容旧格式 /anthropic → ClaudeCode，/openai → codex
+      // 向后兼容旧格式 /anthropic → claudecode，/openai → codex
       const lowerRaw = rawTool.toLowerCase();
       // 内置工具即使无 tool_config 行也走默认供应商映射（全新安装可直接使用）
-      const isBuiltinTool = canonicalTool === 'ClaudeCode' || canonicalTool === 'Codex';
+      const isBuiltinTool = canonicalTool === 'claudecode' || canonicalTool === 'codex';
       providerConfig = getProviderConfig(provider);
       if (!toolConfig && (lowerRaw === 'anthropic' || lowerRaw === 'openai')) {
-        const compatTool = lowerRaw === 'anthropic' ? 'ClaudeCode' : 'Codex';
+        const compatTool = lowerRaw === 'anthropic' ? 'claudecode' : 'codex';
         tool = compatTool;
-        provider = lowerRaw === 'anthropic' ? 'Anthropic' : 'OpenAI';
+        provider = lowerRaw === 'anthropic' ? 'anthropic' : 'openai';
         providerConfig = getProviderConfig(provider);
         hasProviderPrefix = true;
         remaining = segments.slice(1).join('/') || '';
@@ -177,7 +177,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         hasProviderPrefix = true;
         tool = canonicalTool;
         const upstream = toolConfig?.upstream_provider
-          || (tool === 'ClaudeCode' ? 'Anthropic' : tool === 'Codex' ? 'OpenAI' : 'unknown');
+          || (tool === 'claudecode' ? 'anthropic' : tool === 'codex' ? 'openai' : 'unknown');
         provider = upstream;
         providerConfig = getProviderConfig(upstream);
         remaining = segments.slice(1).join('/') || '';
@@ -185,12 +185,12 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         // 策略 2：首段是供应商名（向后兼容其他自定义供应商路径）
         hasProviderPrefix = true;
         provider = providerConfig.provider;
-        tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'Codex' : provider;
+        tool = provider === 'anthropic' ? 'claudecode' : provider === 'openai' ? 'codex' : provider;
         remaining = segments.slice(1).join('/') || '';
       } else {
         return reply.status(400).send({
           error: `无法识别的路径前缀 "/${segments[0]}"`,
-          hint: `URL 应以工具名开头，如 /codex${rawPath} 或 /ClaudeCode${rawPath}`,
+          hint: `URL 应以工具名开头，如 /codex${rawPath} 或 /claudecode${rawPath}`,
         });
       }
 

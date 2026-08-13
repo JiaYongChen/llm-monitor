@@ -4,11 +4,11 @@ import { upsertSession, getSession, activateSession } from './db.js';
 
 // ── Provider → 工具名映射 ──
 
-/** 通过 URL 中的 provider 确定工具名称（大小写不敏感） */
+/** 通过 URL 中的 provider 确定工具名称（大小写不敏感，返回小写工具名） */
 export function toolFromProvider(provider: string): string {
   switch (provider.toLowerCase()) {
-    case 'anthropic': return 'ClaudeCode';
-    case 'openai':    return 'Codex';
+    case 'anthropic': return 'claudecode';
+    case 'openai':    return 'codex';
     default:          return provider;
   }
 }

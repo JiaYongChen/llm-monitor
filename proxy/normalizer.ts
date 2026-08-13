@@ -17,7 +17,7 @@ export function detectFormatFromUrl(url: string): string {
   return /\/anthropic(?:\/|$|\?|#)/.test(lower) ? 'anthropic' : 'openai';
 }
 
-/** 根据下游工具名映射到归一化格式（仅两种：ClaudeCode→anthropic，其余→openai） */
+/** 根据下游工具名映射到归一化格式（仅两种：claudecode→anthropic，其余→openai） */
 export function detectFormatFromTool(name: string): string {
   return name.toLowerCase() === 'claudecode' ? 'anthropic' : 'openai';
 }

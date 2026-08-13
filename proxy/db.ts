@@ -25,7 +25,6 @@ export async function initDb(dbPath?: string): Promise<void> {
   ensureDataDir();
   const path = dbPath ?? DB_PATH;
   currentDbPath = path; // 记录当前数据库路径，供后续 saveDb() 使用
-  invalidateNameCaches(); // 换库时清空归一化缓存，防止跨库残留
 
   SQL = await initSqlJs();
 
@@ -157,8 +156,8 @@ export async function initDb(dbPath?: string): Promise<void> {
     )
   `);
 
-  // 初始化内置 provider 的默认配置
-  const defaults: string[] = ['Anthropic', 'OpenAI'];
+  // 初始化内置 provider 的默认配置（存储不变量：供应商名小写）
+  const defaults: string[] = ['anthropic', 'openai'];
   for (const p of defaults) {
     db.run('INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, enabled) VALUES (?, ?, ?, 1)', [p, '', '']);
   }
@@ -190,7 +189,7 @@ export async function initDb(dbPath?: string): Promise<void> {
   try { db.run(`ALTER TABLE calls ADD COLUMN tool TEXT`); } catch {}
   try { db.run(`ALTER TABLE calls ADD COLUMN downstream_url TEXT`); } catch {}
 
-  // 工具级上游配置（ClaudeCode / codex 等的默认供应商和模型覆盖）
+  // 工具级上游配置（claudecode / codex 等的默认供应商和模型覆盖）
   db.run(`
     CREATE TABLE IF NOT EXISTS tool_config (
       tool              TEXT PRIMARY KEY,
@@ -396,10 +395,11 @@ function execute(sql: string, params?: any[]): number {
 
 // ── Calls CRUD ──
 
-/** 插入调用记录，返回新 id（工具名 / 供应商名写入前归一化为规范名） */
+/** 插入调用记录，返回新 id（工具名 / 供应商名 / 模型名写入前归一化为小写） */
 export function insertCall(r: CallRecord): number {
   if (r.tool) r.tool = normalizeToolName(r.tool);
-  if (r.provider) r.provider = canonicalProviderName(r.provider);
+  if (r.provider) r.provider = normalizeProviderName(r.provider);
+  if (r.model) r.model = r.model.toLowerCase();
   return executeInsert(
     `INSERT INTO calls (session_id, provider, model, endpoint, method,
       target_url, downstream_url, source_ip,
@@ -431,7 +431,7 @@ export function listCalls(sessionId?: number, provider?: string, tool?: string, 
     params.push(normalizeToolName(tool));
   }
   if (sessionId != null) { conditions.push('c.session_id = ?'); params.push(sessionId); }
-  if (provider) { conditions.push('c.provider = ?'); params.push(canonicalProviderName(provider)); }
+  if (provider) { conditions.push('c.provider = ?'); params.push(normalizeProviderName(provider)); }
 
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ' ORDER BY c.created_at DESC LIMIT ? OFFSET ?';
@@ -470,9 +470,9 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string, la
     return Number(fullMatch.id);
   }
 
-  // 从工具级配置继承上游供应商和模型（供应商名归一化为规范名）
+  // 从工具级配置继承上游供应商和模型（供应商名归一化为小写）
   const tc = getToolConfig(tool);
-  const tcProvider = tc?.upstream_provider ? canonicalProviderName(tc.upstream_provider) : null;
+  const tcProvider = tc?.upstream_provider ? normalizeProviderName(tc.upstream_provider) : null;
   const tcModel = tc?.upstream_model || null;
 
   // 2. 查找同工具最近的 pending 会话 → 升级
@@ -505,7 +505,7 @@ export function createPendingSession(tool: string): number {
   tool = normalizeToolName(tool);
   const fp = `pending:${tool}:${now}:${pendingCounter++}`;
   const tc = getToolConfig(tool);
-  const tcProvider = tc?.upstream_provider ? canonicalProviderName(tc.upstream_provider) : null;
+  const tcProvider = tc?.upstream_provider ? normalizeProviderName(tc.upstream_provider) : null;
   return executeInsert(
     `INSERT INTO sessions (tool, fingerprint, status, first_call_at, last_call_at, first_endpoint, created_at, upstream_provider, upstream_model)
      VALUES (?, ?, 'pending', ?, ?, '/_startup_', ?, ?, ?) RETURNING id`,
@@ -565,76 +565,51 @@ export function mergeSessions(sourceId: number, targetId: number): void {
   saveDb();
 }
 
-/** 设置会话的上游覆盖（供应商名归一化为 provider_config 中的规范名） */
+/** 设置会话的上游覆盖（供应商名归一化为小写存储） */
 export function updateSessionUpstream(sessionId: number, upstreamProvider: string | null): void {
-  const canonical = upstreamProvider ? canonicalProviderName(upstreamProvider) : upstreamProvider;
-  execute('UPDATE sessions SET upstream_provider = ? WHERE id = ?', [canonical, sessionId]);
+  const normalized = upstreamProvider ? normalizeProviderName(upstreamProvider) : upstreamProvider;
+  execute('UPDATE sessions SET upstream_provider = ? WHERE id = ?', [normalized, sessionId]);
 }
 
 export function updateSessionModel(sessionId: number, model: string | null): void {
-  execute('UPDATE sessions SET upstream_model = ? WHERE id = ?', [model, sessionId]);
+  execute('UPDATE sessions SET upstream_model = ? WHERE id = ?', [model ? model.toLowerCase() : model, sessionId]);
 }
 
 /** 删除会话及其所有关联调用 */
 export function deleteSession(sessionId: number): void {
   execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
   execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
-  toolNameCache.clear(); // sessions 是未注册工具的规范名来源，删除后缓存失效
 }
 
 // ── Tool Config ──
 
-/** 内置工具的规范名映射（小写 → 规范名） */
-const CANONICAL_TOOLS: Record<string, string> = {
+/** 工具名别名（小写 → 小写规范名）：仅处理内置别名，其余工具名小写即规范 */
+const TOOL_ALIASES: Record<string, string> = {
+  claude: 'claudecode',
+  chatgpt: 'codex',
+};
+
+/** 旧迁移 migrateToolCanonicalNames 专用的历史规范名映射（保留 CamelCase 目标，
+ *  旧迁移产出中间态规范名，随后由 migrateLowercaseNames 统一转小写） */
+const LEGACY_CANONICAL_TOOLS: Record<string, string> = {
   claudecode: 'ClaudeCode',
   claude: 'ClaudeCode',
   codex: 'Codex',
   chatgpt: 'Codex',
 };
 
-// ── 归一化解析缓存：热路径每次写入都会归一化工具/供应商名，缓存避免重复 LOWER() 查表 ──
-let toolNameCache = new Map<string, string>();    // 小写 → 规范名
-let providerNameCache = new Map<string, string>(); // 小写 → 规范名
-
-/** 清空归一化缓存（initDb 换库 / 增删改配置 / 迁移后调用） */
-export function invalidateNameCaches(): void {
-  toolNameCache.clear();
-  providerNameCache.clear();
-}
-
-/** 工具名归一化：内置工具名大小写不敏感映射为规范名（ClaudeCode / Codex，chatGPT → Codex）；
- *  自定义工具大小写不敏感查 tool_config，命中则返回库中规范名；
- *  未注册工具以 sessions 中首次出现的大小写为准（后续变体写入时收敛）；都无则原样返回。 */
+/** 工具名归一化：小写 + 内置别名（claude→claudecode、chatgpt→codex）。
+ *  存储不变量：库中所有工具名为小写，因此无需查表。 */
 export function normalizeToolName(tool: string): string {
   if (!tool) return tool;
   const lower = tool.toLowerCase();
-  const known = CANONICAL_TOOLS[lower];
-  if (known) return known;
-  const cached = toolNameCache.get(lower);
-  if (cached !== undefined) return cached;
-  const row = queryOne('SELECT tool FROM tool_config WHERE LOWER(tool) = ?', [lower]);
-  if (row) {
-    toolNameCache.set(lower, row.tool as string);
-    return row.tool as string;
-  }
-  // 未注册工具：以历史数据首次出现的大小写为准，避免同一工具因大小写分裂
-  const seen = queryOne('SELECT tool FROM sessions WHERE LOWER(tool) = ? LIMIT 1', [lower]);
-  const result = (seen?.tool as string) ?? tool;
-  toolNameCache.set(lower, result);
-  return result;
+  return TOOL_ALIASES[lower] ?? lower;
 }
 
-/** 供应商名归一化：大小写不敏感查 provider_config，命中则返回库中规范名，否则原样返回 */
-export function canonicalProviderName(provider: string): string {
+/** 供应商名归一化：统一小写（存储不变量：库中所有供应商名为小写） */
+export function normalizeProviderName(provider: string): string {
   if (!provider) return provider;
-  const lower = provider.toLowerCase();
-  const cached = providerNameCache.get(lower);
-  if (cached !== undefined) return cached;
-  const row = queryOne('SELECT provider FROM provider_config WHERE provider = ?', [provider])
-    ?? queryOne('SELECT provider FROM provider_config WHERE LOWER(provider) = ?', [lower]);
-  const result = (row?.provider as string) ?? provider;
-  providerNameCache.set(lower, result);
-  return result;
+  return provider.toLowerCase();
 }
 
 /** 裸 SQL 执行（带参数绑定；迁移事务内使用，避免 execute() 的落盘去抖副作用） */
@@ -660,7 +635,7 @@ export function migrateToolCanonicalNames(): void {
     // （旧版精确匹配插入可能遗留变体；先收敛可避免后续逐行改名互相覆盖）
     mergeProviderConfigVariants();
     // ── 工具维度：内置别名 ──
-    for (const [lower, canonical] of Object.entries(CANONICAL_TOOLS)) {
+    for (const [lower, canonical] of Object.entries(LEGACY_CANONICAL_TOOLS)) {
       if (lower === 'chatgpt') continue;  // 新增别名：历史 'chatgpt' 数据可能是自定义工具，不迁移
       runRaw('UPDATE sessions SET tool = ? WHERE LOWER(tool) = ? AND tool != ?', [canonical, lower, canonical]);
       runRaw('UPDATE calls SET tool = ? WHERE LOWER(tool) = ? AND tool != ?', [canonical, lower, canonical]);
@@ -671,7 +646,7 @@ export function migrateToolCanonicalNames(): void {
     const seenTools = new Set<string>();
     for (const tc of queryAll('SELECT tool FROM tool_config')) {
       const lower = (tc.tool as string).toLowerCase();
-      if (CANONICAL_TOOLS[lower] || seenTools.has(lower)) continue;  // 内置别名/已处理的变体跳过
+      if (LEGACY_CANONICAL_TOOLS[lower] || seenTools.has(lower)) continue;  // 内置别名/已处理的变体跳过
       seenTools.add(lower);
       mergeToolConfigVariants(lower);
       const canonical = queryOne('SELECT tool FROM tool_config WHERE LOWER(tool) = ?', [lower])!.tool as string;
@@ -691,7 +666,6 @@ export function migrateToolCanonicalNames(): void {
     }
     runRaw("INSERT OR REPLACE INTO metadata (key, value) VALUES ('tool_canonical_migrated', '1')");
     d.run('COMMIT');
-    invalidateNameCaches(); // 迁移可能改变规范名，缓存失效
     saveDb();
   } catch (err) {
     d.run('ROLLBACK');
@@ -815,16 +789,16 @@ export function getToolConfig(tool: string): Record<string, any> | null {
   return queryOne('SELECT * FROM tool_config WHERE LOWER(tool) = LOWER(?)', [tool]);
 }
 
-/** 更新工具级上游配置（upsert，工具名与供应商名大小写不敏感归一化） */
+/** 更新工具级上游配置（upsert，工具名 / 供应商名 / 模型名大小写不敏感归一化） */
 export function updateToolConfig(tool: string, upstreamProvider: string | null, upstreamModel: string | null): void {
   const name = normalizeToolName(tool);
-  const prov = upstreamProvider ? canonicalProviderName(upstreamProvider) : upstreamProvider;
+  const prov = upstreamProvider ? normalizeProviderName(upstreamProvider) : upstreamProvider;
+  const model = upstreamModel ? upstreamModel.toLowerCase() : upstreamModel;
   execute(
     `INSERT INTO tool_config (tool, upstream_provider, upstream_model) VALUES (?, ?, ?)
      ON CONFLICT(tool) DO UPDATE SET upstream_provider = excluded.upstream_provider, upstream_model = excluded.upstream_model`,
-    [name, prov, upstreamModel],
+    [name, prov, model],
   );
-  toolNameCache.clear(); // 工具配置变化 → 工具名解析缓存失效
 }
 
 // ── Stats ──
@@ -852,7 +826,7 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
      FROM daily_stats`;
   const conditions: string[] = [];
   const params: any[] = [];
-  if (provider) { conditions.push('provider = ?'); params.push(canonicalProviderName(provider)); }  // 入参归一化后等值比较
+  if (provider) { conditions.push('provider = ?'); params.push(normalizeProviderName(provider)); }  // 入参归一化后等值比较
   if (tool) { conditions.push('tool = ?'); params.push(normalizeToolName(tool)); }
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ` GROUP BY ${col} ORDER BY total_cost DESC`;
@@ -960,7 +934,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
     conditions.push(`((created_at_ms > 0 AND created_at_ms >= ?) OR (created_at_ms = 0 AND date >= ?))`);
     params.push(startMs, msToDateText(startMs));
   }
-  if (provider) { conditions.push('provider = ?'); params.push(canonicalProviderName(provider)); }  // 入参归一化后等值比较
+  if (provider) { conditions.push('provider = ?'); params.push(normalizeProviderName(provider)); }  // 入参归一化后等值比较
   if (tool) { conditions.push('tool = ?'); params.push(normalizeToolName(tool)); }
   sql += ' WHERE ' + conditions.join(' AND ');
   // GROUP BY
@@ -991,7 +965,7 @@ export function upsertDailyStat(
        uncached_input = uncached_input + excluded.uncached_input,
        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
        created_at_ms = CASE WHEN created_at_ms = 0 THEN excluded.created_at_ms ELSE created_at_ms END`,
-    [dateText, canonicalProviderName(provider), model, tool ? normalizeToolName(tool) : 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs],
+    [dateText, normalizeProviderName(provider), model.toLowerCase(), tool ? normalizeToolName(tool) : 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs],
   );
   saveDb();
 }
@@ -1017,16 +991,14 @@ export function clearAllData(): void {
   d.run('DELETE FROM provider_config');
   d.run('DELETE FROM daily_stats');
   d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','pricing','provider_config','daily_stats')");
-  invalidateNameCaches();
   saveDb();
 }
 
-/** 删除所有第三方供应商（保留内置 Anthropic 和 OpenAI） */
+/** 删除所有第三方供应商（保留内置 anthropic 和 openai） */
 export function deleteAllThirdPartyProviders(): number {
   const d = getDb();
   d.run("DELETE FROM provider_config WHERE LOWER(provider) NOT IN ('anthropic', 'openai')");
   const count = d.getRowsModified();
-  invalidateNameCaches();
   saveDb();
   return count;
 }
@@ -1039,14 +1011,13 @@ export function deleteAllSessions(): number {
   d.run('DELETE FROM sessions');
   // 重置 AUTOINCREMENT 计数器（与 clearAllData 同法，避免 DDL 重建导致约束漂移）
   d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls', 'sessions')");
-  invalidateNameCaches();
   saveDb();
   return count;
 }
 
-/** 初始化内置供应商（仅当不存在时） */
+/** 初始化内置供应商（仅当不存在时，存储不变量：供应商名小写） */
 export function initDefaultProviders(): void {
-  const defaults: string[] = ['Anthropic', 'OpenAI'];
+  const defaults: string[] = ['anthropic', 'openai'];
   for (const p of defaults) {
     execute(
       'INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, enabled) VALUES (?, ?, ?, 1)',
@@ -1069,6 +1040,8 @@ export function upsertPricing(
   currency?: string,
   isDefault?: boolean,
 ): number {
+  provider = normalizeProviderName(provider);
+  model = model.toLowerCase();
   const cur = currency || 'CNY';
   const def = isDefault ? 1 : 0;
   // sql.js 不支持 ON CONFLICT，用先查再插入/更新的方式（provider + model 大小写不敏感去重）
@@ -1116,8 +1089,8 @@ const OFFICIAL_ANTHROPIC_URLS: Record<string, string> = {
   anthropic: 'https://api.anthropic.com',
 };
 
-/** 内置供应商名称集合（不可删除、不可停用） */
-export const BUILTIN_PROVIDERS = new Set(['Anthropic', 'OpenAI']);
+/** 内置供应商名称集合（不可删除、不可停用；存储不变量：小写） */
+export const BUILTIN_PROVIDERS = new Set(['anthropic', 'openai']);
 
 /** 列出所有 provider 配置（内置供应商兜底官方 URL） */
 export function listProviderConfigs(): Record<string, any>[] {
@@ -1166,8 +1139,8 @@ export function updateProviderConfig(provider: string, data: { enabled?: boolean
   if (data.base_url !== undefined) { sets.push('base_url = ?'); vals.push(data.base_url); }
   if (data.base_url_anthropic !== undefined) { sets.push('base_url_anthropic = ?'); vals.push(data.base_url_anthropic); }
   if (sets.length === 0) return { ok: true };
-  // 大小写不敏感解析到规范行后按规范名更新（会话覆写存的是规范名，级联清理须一致）
-  const canonical = canonicalProviderName(provider);
+  // 大小写不敏感解析到小写名后按小写名更新（会话覆写存的是小写名，级联清理须一致）
+  const canonical = normalizeProviderName(provider);
   vals.push(canonical);
   execute(`UPDATE provider_config SET ${sets.join(', ')} WHERE provider = ?`, vals);
   // 停用时自动清除所有引用该供应商的会话上游覆写（provider + model）
@@ -1196,12 +1169,12 @@ export function addProviderConfig(provider: string, baseUrl: string, baseUrlAnth
     );
     return Number(existing.id);
   }
-  // 不存在同名（大小写不敏感）供应商 → 按新供应商插入
+  // 不存在同名（大小写不敏感）供应商 → 按新供应商插入（供应商名归一化为小写）
+  const name = normalizeProviderName(provider);
   const id = executeInsert(
     'INSERT INTO provider_config (provider, base_url, base_url_anthropic, api_key, enabled) VALUES (?, ?, ?, ?, 1) RETURNING id',
-    [provider, baseUrl, baseUrlAnthropic, apiKey],
+    [name, baseUrl, baseUrlAnthropic, apiKey],
   );
-  providerNameCache.clear(); // 新增供应商 → 供应商名解析缓存失效
   return id;
 }
 
@@ -1210,14 +1183,13 @@ export function deleteProviderConfig(provider: string): { ok: boolean; error?: s
   if (isBuiltinProvider(provider)) {
     return { ok: false, error: `内置供应商 "${provider}" 不可删除` };
   }
-  const canonical = canonicalProviderName(provider);
+  const canonical = normalizeProviderName(provider);
   execute('DELETE FROM provider_config WHERE provider = ?', [canonical]);
-  // 同时清除引用该供应商的会话上游覆写（按规范名匹配）
+  // 同时清除引用该供应商的会话上游覆写（按小写名匹配）
   const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
   if (cleared > 0) {
     console.log(`已清除 ${cleared} 个会话的 "${canonical}" 上游覆写`);
   }
-  providerNameCache.clear(); // 删除供应商 → 供应商名解析缓存失效
   return { ok: true };
 }
 

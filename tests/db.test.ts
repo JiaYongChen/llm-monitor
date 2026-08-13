@@ -21,7 +21,7 @@ describe('db', () => {
     const session = getSession(sid);
     expect(session).not.toBeNull();
     expect(session!.fingerprint).toBe('fp_test_123');
-    expect(session!.tool).toBe('ClaudeCode');
+    expect(session!.tool).toBe('claudecode');
     expect(session!.status).toBe('active');
   });
 
@@ -55,6 +55,22 @@ describe('db', () => {
     expect(call!.model).toBe('claude-sonnet-5');
   });
 
+  it('insertCall 模型名写入前小写化', () => {
+    const sid = upsertSession('fp_model_case', 'codex', '/v1/responses');
+    const rec: CallRecord = {
+      provider: 'openai', model: 'GPT-5-Mini', tool: 'codex', endpoint: '/v1/responses',
+      method: 'POST', target_url: 'https://api.openai.com/v1/responses', downstream_url: 'http://localhost:9400/codex/v1/responses', source_ip: '127.0.0.1',
+      status_code: 200, error_message: null, duration_ms: 100,
+      prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
+      cache_write_tokens: null, uncached_input: null,
+      input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+      request_body: null, response_body: null,
+      fingerprint: 'fp_model_case', source_port: 1112, session_id: sid,
+    };
+    const callId = insertCall(rec);
+    expect(getCall(callId)!.model).toBe('gpt-5-mini');
+  });
+
   it('listCalls 分页', () => {
     const sid = upsertSession('fp_page', 'codex', '/v1/chat/completions');
     for (let i = 0; i < 5; i++) {
@@ -86,10 +102,10 @@ describe('db', () => {
 
   it('getStats 聚合统计（从 daily_stats 读取）', () => {
     // stats 已改为从 daily_stats 表聚合，需先通过 upsertDailyStat 写入数据
-    // 写入侧供应商名归一化：'anthropic' → provider_config 规范名 'Anthropic'
+    // 写入侧供应商名归一化：'anthropic' → 小写存储 'anthropic'
     upsertDailyStat('2026-08-12', 'anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.03, 100, 50, 100, 0);
     const stats = getStats('provider');
-    const anthropic = stats.find((s: any) => s.key === 'Anthropic');
+    const anthropic = stats.find((s: any) => s.key === 'anthropic');
     expect(anthropic).toBeDefined();
     expect(anthropic!.count).toBeGreaterThanOrEqual(1);
   });
@@ -146,8 +162,8 @@ describe('db', () => {
   it('upsertDailyStat 新增记录', () => {
     upsertDailyStat('2026-08-12', 'OpenAI', 'gpt-4o', 'codex', 0.05, 100, 50, 80, 20);
     // 按完整主键查询，避免同日期其他用例（getStats/getDailyStats 写入）干扰行数断言
-    // upsertDailyStat 会归一化工具名：codex → Codex
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'Codex'");
+    // upsertDailyStat 会归一化工具名 / 供应商名：任意大小写 → 小写存储
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12' AND provider = 'openai' AND model = 'gpt-4o' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(1);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
@@ -161,7 +177,7 @@ describe('db', () => {
   it('upsertDailyStat 重复键累加', () => {
     upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.03, 50, 30, 40, 10);
     upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.02, 30, 20, 20, 5);
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'Codex'");
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'openai' AND model = 'gpt-4o' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(2);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
