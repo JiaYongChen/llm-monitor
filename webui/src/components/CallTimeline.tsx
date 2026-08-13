@@ -11,6 +11,18 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
   const { currency, rates } = useCurrency();
   return (
     <div>
+      {calls.length > 0 && (
+        <div className="flex items-center gap-3 px-5 py-2 sticky top-0 z-10 bg-white border-b border-[#e5e5ea]">
+          <span className="w-2 flex-shrink-0" />
+          <span className="text-[11px] font-medium w-36 flex-shrink-0 text-[#aeaeb2]" title="调用发生时间">时间</span>
+          <span className="text-[11px] font-medium w-10 text-center flex-shrink-0 text-[#aeaeb2]" title="HTTP 请求方法">方法</span>
+          <span className="text-[11px] font-medium flex-1 text-[#aeaeb2]" title="上游供应商">供应商</span>
+          <span className="text-[11px] font-medium min-w-[5rem] text-right flex-shrink-0 text-[#aeaeb2]" title="输入 tokens（↓ 未命中缓存 / ↻ 命中缓存）">输入 ↓ / ↻</span>
+          <span className="text-[11px] font-medium w-16 text-right flex-shrink-0 text-[#aeaeb2]" title="输出 tokens">输出 ↑</span>
+          <span className="text-[11px] font-medium w-14 text-right flex-shrink-0 text-[#aeaeb2]" title="请求耗时">耗时</span>
+          <span className="text-[11px] font-medium w-24 text-right flex-shrink-0 text-[#aeaeb2]" title="本次调用费用">费用</span>
+        </div>
+      )}
       {calls.map((c, i) => {
         const ok = c.status_code === 200;
         const sc = ok ? '#30b48b' : c.status_code === 429 ? '#e69900' : '#e03a3a';
