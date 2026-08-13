@@ -141,6 +141,8 @@ export async function initDb(dbPath?: string): Promise<void> {
       unit              TEXT    NOT NULL DEFAULT 'per_1M_tokens',
       currency          TEXT    NOT NULL DEFAULT 'CNY',
       effective_from    TEXT,
+      created_at        INTEGER NOT NULL DEFAULT 0,
+      updated_at        INTEGER NOT NULL DEFAULT 0,
       UNIQUE(provider, model, effective_from)
     )
   `);
@@ -152,7 +154,9 @@ export async function initDb(dbPath?: string): Promise<void> {
       base_url   TEXT    NOT NULL DEFAULT '',
       base_url_anthropic TEXT NOT NULL DEFAULT '',
       api_key    TEXT    NOT NULL DEFAULT '',
-      enabled    INTEGER NOT NULL DEFAULT 1
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -180,6 +184,13 @@ export async function initDb(dbPath?: string): Promise<void> {
   try { db.run(`ALTER TABLE sessions ADD COLUMN upstream_model TEXT`); } catch {}
   // 兼容已有库：添加 base_url_anthropic 列
   try { db.run(`ALTER TABLE provider_config ADD COLUMN base_url_anthropic TEXT`); } catch {}
+  // 兼容已有库：添加配置表时间戳列（存量行回填 0 = 未知）
+  try { db.run(`ALTER TABLE provider_config ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE provider_config ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE tool_config ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE tool_config ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE pricing ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE pricing ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 兼容已有库：添加 is_default 列
   try { db.run(`ALTER TABLE pricing ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 兼容已有库：添加 target_url、source_ip 列
@@ -194,7 +205,9 @@ export async function initDb(dbPath?: string): Promise<void> {
     CREATE TABLE IF NOT EXISTS tool_config (
       tool              TEXT PRIMARY KEY,
       upstream_provider TEXT,
-      upstream_model    TEXT
+      upstream_model    TEXT,
+      created_at        INTEGER NOT NULL DEFAULT 0,
+      updated_at        INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -738,7 +751,7 @@ export function migrateLowercaseNames(): void {
  *  规范行选择：内置供应商精确名优先，否则取首行（rowid 最小）；
  *  base_url / base_url_anthropic / api_key 空字段按 rowid 顺序由变体行补齐，enabled 跟随规范行。 */
 function mergeProviderConfigVariants(): void {
-  const rows = queryAll('SELECT rowid AS rid, provider, base_url, base_url_anthropic, api_key FROM provider_config ORDER BY rowid');
+  const rows = queryAll('SELECT rowid AS rid, provider, base_url, base_url_anthropic, api_key, created_at, updated_at FROM provider_config ORDER BY rowid');
   const groups = new Map<string, Record<string, any>[]>();
   for (const r of rows) {
     const k = (r.provider as string).toLowerCase();
@@ -757,8 +770,11 @@ function mergeProviderConfigVariants(): void {
       baseUrlAnthropic = baseUrlAnthropic || (r.base_url_anthropic as string) || '';
       apiKey = apiKey || (r.api_key as string) || '';
     }
-    runRaw('UPDATE provider_config SET base_url = ?, base_url_anthropic = ?, api_key = ? WHERE rowid = ?',
-      [baseUrl, baseUrlAnthropic, apiKey, survivor.rid]);
+    // 时间戳折叠：created_at 取组内最小非零值，updated_at 取组内最大值（全零组回填 0 = 未知）
+    const created = Math.min(...group.map(r => Number(r.created_at) || 0).filter(v => v > 0).concat(Infinity));
+    const updated = Math.max(...group.map(r => Number(r.updated_at) || 0));
+    runRaw('UPDATE provider_config SET base_url = ?, base_url_anthropic = ?, api_key = ?, created_at = ?, updated_at = ? WHERE rowid = ?',
+      [baseUrl, baseUrlAnthropic, apiKey, created === Infinity ? 0 : created, updated, survivor.rid]);
     for (const r of group) {
       if (r !== survivor) runRaw('DELETE FROM provider_config WHERE rowid = ?', [r.rid]);
     }
@@ -770,7 +786,7 @@ function mergeProviderConfigVariants(): void {
  *  upstream_provider / upstream_model 空字段按 rowid 顺序由变体行补齐。
  *  单行且与内置规范名不一致时也改名（历史 'codex' 行 → 'Codex'）。 */
 function mergeToolConfigVariants(lower: string, preferredCanonical?: string): void {
-  const variants = queryAll('SELECT rowid AS rid, tool, upstream_provider, upstream_model FROM tool_config WHERE LOWER(tool) = ? ORDER BY rowid', [lower]);
+  const variants = queryAll('SELECT rowid AS rid, tool, upstream_provider, upstream_model, created_at, updated_at FROM tool_config WHERE LOWER(tool) = ? ORDER BY rowid', [lower]);
   if (variants.length === 0) return;
   if (variants.length === 1) {
     if (preferredCanonical && variants[0].tool !== preferredCanonical) {
@@ -787,8 +803,11 @@ function mergeToolConfigVariants(lower: string, preferredCanonical?: string): vo
     mergedModel = mergedModel ?? ((v.upstream_model as string | null) || null);
   }
   const targetName = preferredCanonical ?? (survivor.tool as string);
-  runRaw('UPDATE tool_config SET tool = ?, upstream_provider = ?, upstream_model = ? WHERE rowid = ?',
-    [targetName, mergedProvider, mergedModel, survivor.rid]);
+  // 时间戳折叠：created_at 取组内最小非零值，updated_at 取组内最大值（全零组回填 0 = 未知）
+  const created = Math.min(...variants.map(v => Number(v.created_at) || 0).filter(v => v > 0).concat(Infinity));
+  const updated = Math.max(...variants.map(v => Number(v.updated_at) || 0));
+  runRaw('UPDATE tool_config SET tool = ?, upstream_provider = ?, upstream_model = ?, created_at = ?, updated_at = ? WHERE rowid = ?',
+    [targetName, mergedProvider, mergedModel, created === Infinity ? 0 : created, updated, survivor.rid]);
   for (const v of variants) {
     if (v !== survivor) runRaw('DELETE FROM tool_config WHERE rowid = ?', [v.rid]);
   }
@@ -796,11 +815,14 @@ function mergeToolConfigVariants(lower: string, preferredCanonical?: string): vo
 
 /** pricing 供应商变体归一：改名到规范名；与规范行同 model+effective_from 冲突时删除变体行（规范行定价优先） */
 function mergePricingProviderVariants(lower: string, canonical: string): void {
-  const rows = queryAll('SELECT rowid AS rid, model, effective_from FROM pricing WHERE LOWER(provider) = ? AND provider != ?', [lower, canonical]);
+  const rows = queryAll('SELECT rowid AS rid, model, effective_from, created_at, updated_at FROM pricing WHERE LOWER(provider) = ? AND provider != ?', [lower, canonical]);
   for (const row of rows) {
-    const conflict = queryOne('SELECT 1 AS one FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
+    const conflict = queryOne('SELECT rowid AS rid FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
       [canonical, row.model, row.effective_from]);
     if (conflict) {
+      // 冲突删除前先把变体行时间戳折叠进规范行（created_at 取最小非零，updated_at 取最大）
+      runRaw('UPDATE pricing SET created_at = MIN(created_at, ?), updated_at = MAX(updated_at, ?) WHERE rowid = ?',
+        [Number(row.created_at) || 0, Number(row.updated_at) || 0, conflict.rid]);
       runRaw('DELETE FROM pricing WHERE rowid = ?', [row.rid]);
     } else {
       runRaw('UPDATE pricing SET provider = ? WHERE rowid = ?', [canonical, row.rid]);
@@ -900,10 +922,11 @@ export function updateToolConfig(tool: string, upstreamProvider: string | null, 
   const name = normalizeToolName(tool);
   const prov = upstreamProvider ? normalizeProviderName(upstreamProvider) : upstreamProvider;
   const model = upstreamModel ? upstreamModel.toLowerCase() : upstreamModel;
+  const now = Date.now();
   execute(
-    `INSERT INTO tool_config (tool, upstream_provider, upstream_model) VALUES (?, ?, ?)
-     ON CONFLICT(tool) DO UPDATE SET upstream_provider = excluded.upstream_provider, upstream_model = excluded.upstream_model`,
-    [name, prov, model],
+    `INSERT INTO tool_config (tool, upstream_provider, upstream_model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(tool) DO UPDATE SET upstream_provider = excluded.upstream_provider, upstream_model = excluded.upstream_model, updated_at = excluded.updated_at`,
+    [name, prov, model, now, now],
   );
 }
 
@@ -1165,14 +1188,15 @@ export function upsertPricing(
     // 默认条目只更新价格和币种，不覆盖 is_default 标记
     const keepDefault = existing.is_default ? 1 : def;
     execute(
-      'UPDATE pricing SET input_price = ?, cache_input_price = ?, output_price = ?, currency = ?, is_default = ? WHERE id = ?',
-      [inputPrice, cacheInputPrice, outputPrice, cur, keepDefault, existing.id],
+      'UPDATE pricing SET input_price = ?, cache_input_price = ?, output_price = ?, currency = ?, is_default = ?, updated_at = ? WHERE id = ?',
+      [inputPrice, cacheInputPrice, outputPrice, cur, keepDefault, Date.now(), existing.id],
     );
     return Number(existing.id);
   }
+  const now = Date.now();
   return executeInsert(
-    'INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, currency, is_default) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
-    [provider, model, inputPrice, cacheInputPrice, outputPrice, cur, def],
+    'INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+    [provider, model, inputPrice, cacheInputPrice, outputPrice, cur, def, now, now],
   );
 }
 
@@ -1245,6 +1269,7 @@ export function updateProviderConfig(provider: string, data: { enabled?: boolean
   if (data.base_url !== undefined) { sets.push('base_url = ?'); vals.push(data.base_url); }
   if (data.base_url_anthropic !== undefined) { sets.push('base_url_anthropic = ?'); vals.push(data.base_url_anthropic); }
   if (sets.length === 0) return { ok: true };
+  sets.push('updated_at = ?'); vals.push(Date.now());
   // 大小写不敏感解析到小写名后按小写名更新（会话覆写存的是小写名，级联清理须一致）
   const canonical = normalizeProviderName(provider);
   vals.push(canonical);
@@ -1270,16 +1295,17 @@ export function addProviderConfig(provider: string, baseUrl: string, baseUrlAnth
   if (existing) {
     // 既有自定义供应商 → 更新配置，保持其启用/停用状态（不强制启用）
     execute(
-      'UPDATE provider_config SET base_url = ?, base_url_anthropic = ?, api_key = ? WHERE id = ?',
-      [baseUrl, baseUrlAnthropic, apiKey, existing.id],
+      'UPDATE provider_config SET base_url = ?, base_url_anthropic = ?, api_key = ?, updated_at = ? WHERE id = ?',
+      [baseUrl, baseUrlAnthropic, apiKey, Date.now(), existing.id],
     );
     return Number(existing.id);
   }
   // 不存在同名（大小写不敏感）供应商 → 按新供应商插入（供应商名归一化为小写）
   const name = normalizeProviderName(provider);
+  const now = Date.now();
   const id = executeInsert(
-    'INSERT INTO provider_config (provider, base_url, base_url_anthropic, api_key, enabled) VALUES (?, ?, ?, ?, 1) RETURNING id',
-    [name, baseUrl, baseUrlAnthropic, apiKey],
+    'INSERT INTO provider_config (provider, base_url, base_url_anthropic, api_key, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?) RETURNING id',
+    [name, baseUrl, baseUrlAnthropic, apiKey, now, now],
   );
   return id;
 }
