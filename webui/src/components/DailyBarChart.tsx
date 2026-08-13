@@ -36,7 +36,7 @@ const ZERO_ROW: DailyData = {
   total_cache_read_tokens: 0,
 };
 
-export default function DailyBarChart({ data, range, tz, modelData }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[] }) {
+export default function DailyBarChart({ data, range, tz, modelData, groupLabel = '模型分布' }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[]; groupLabel?: string }) {
   // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
@@ -124,7 +124,7 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
         <>
           {/* 模型分布（最前） */}
           <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">模型分布</h4>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">{groupLabel}</h4>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={modelSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
