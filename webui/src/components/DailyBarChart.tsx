@@ -122,7 +122,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     <div className="space-y-6">
       {modelSeries ? (
         <>
-          {/* 模型分布（最前） */}
+          {/* 分布堆叠图（最前） */}
           <div>
             <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">{groupLabel}</h4>
             <ResponsiveContainer width="100%" height={220}>
