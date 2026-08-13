@@ -20,7 +20,7 @@ export default function CallTimeline({ calls }: { calls: any[] }) {
             className="flex items-center gap-3 px-5 py-2.5 hover:bg-[#f5f5f7] transition-colors group text-sm"
             style={{ textDecoration: 'none', color: 'inherit', borderBottom: i === calls.length - 1 ? 'none' : '1px solid #f0f0f4' }}>
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sc }} />
-            <span className="text-xs font-mono w-14 flex-shrink-0 text-[#aeaeb2]">{formatTime(c.created_at, 'time')}</span>
+            <span className="text-xs font-mono w-36 flex-shrink-0 text-[#aeaeb2]">{formatTime(c.created_at)}</span>
             <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium w-10 text-center flex-shrink-0 bg-[#f0f0f4] text-[#6e6e73]">{c.method}</span>
             <span className="text-xs flex-1 truncate font-mono text-[#6e6e73]">{displayName(c.provider)}</span>
             {hasTokens ? (
