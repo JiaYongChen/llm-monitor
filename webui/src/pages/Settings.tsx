@@ -9,6 +9,7 @@ import { Switch } from '../components/ui/switch';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Plus, Trash2, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCurrency, CURRENCIES, providerColor, type CurrencyKey } from '../lib/currency';
+import { capitalizeFirst } from '../lib/utils';
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -187,7 +188,7 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
           <div className={`flex-1 min-w-0 ${!enabled ? 'opacity-40' : ''}`}>
             <div className="flex items-center gap-2">
               <div className="w-[140px] flex-shrink-0 flex items-center gap-2">
-                <span className="text-sm font-semibold truncate">{provider}</span>
+                <span className="text-sm font-semibold truncate">{capitalizeFirst(provider)}</span>
                 <Badge variant="secondary" className="text-[10px] font-mono flex-shrink-0">{prices.length} 个定价</Badge>
               </div>
               <div className="text-xs text-[#6e6e73] leading-normal min-w-0 space-y-1.5">
@@ -287,7 +288,7 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
           <Dialog open={showAddPrice} onClose={() => { setShowAddPrice(false); setNewModel({ model: '', outPrice: '', inPrice: '', cachePrice: '', currency: 'CNY' }); }}>
             <DialogHeader>
               <DialogTitle>添加模型定价</DialogTitle>
-              <DialogDescription>为「{provider}」添加新的模型定价规则。</DialogDescription>
+              <DialogDescription>为「{capitalizeFirst(provider)}」添加新的模型定价规则。</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="flex items-end gap-2">

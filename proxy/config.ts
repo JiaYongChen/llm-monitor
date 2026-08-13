@@ -35,8 +35,18 @@ const WEBUI_PORT = resolvePort('--webui-port', 9401);
 const SESSION_TIMEOUT_SEC = 180;
 const AUTO_CLEANUP_DAYS = 0;
 
+/** 是否处于调试模式：--debug / --dev（开发模式）/ LLM_MONITOR_DEBUG=1（每次调用实时判定，便于测试切换） */
+function isDebug(): boolean {
+  return process.argv.includes('--debug') || process.argv.includes('--dev') || process.env.LLM_MONITOR_DEBUG === '1';
+}
+
+/** 调试日志：仅调试模式输出，默认静默（用于 [proxy] 请求转发等诊断信息） */
+function debugLog(...args: any[]): void {
+  if (isDebug()) console.log(...args);
+}
+
 function ensureDataDir(): void {
   mkdirSync(DATA_DIR, { recursive: true });
 }
 
-export { PORT, WEBUI_PORT, DATA_DIR, DB_PATH, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, ensureDataDir };
+export { PORT, WEBUI_PORT, DATA_DIR, DB_PATH, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, ensureDataDir, isDebug, debugLog };

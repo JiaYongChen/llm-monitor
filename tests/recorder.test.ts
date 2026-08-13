@@ -43,8 +43,8 @@ describe('recorder', () => {
     expect(calls[0].prompt_tokens).toBe(500);
     expect(calls[0].cache_read_tokens).toBe(200);
 
-    // 验证 daily_stats 通过 recorder 真实路径累加
-    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'anthropic'");
+    // 验证 daily_stats 通过 recorder 真实路径累加（供应商名写入时归一化为规范名 'Anthropic'）
+    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'Anthropic'");
     expect(stats.length).toBe(1);
     expect(stats[0].call_count).toBe(1);
     expect(stats[0].output_tokens).toBe(300);

@@ -86,9 +86,10 @@ describe('db', () => {
 
   it('getStats 聚合统计（从 daily_stats 读取）', () => {
     // stats 已改为从 daily_stats 表聚合，需先通过 upsertDailyStat 写入数据
+    // 写入侧供应商名归一化：'anthropic' → provider_config 规范名 'Anthropic'
     upsertDailyStat('2026-08-12', 'anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.03, 100, 50, 100, 0);
     const stats = getStats('provider');
-    const anthropic = stats.find((s: any) => s.key === 'anthropic');
+    const anthropic = stats.find((s: any) => s.key === 'Anthropic');
     expect(anthropic).toBeDefined();
     expect(anthropic!.count).toBeGreaterThanOrEqual(1);
   });
@@ -145,7 +146,8 @@ describe('db', () => {
   it('upsertDailyStat 新增记录', () => {
     upsertDailyStat('2026-08-12', 'OpenAI', 'gpt-4o', 'codex', 0.05, 100, 50, 80, 20);
     // 按完整主键查询，避免同日期其他用例（getStats/getDailyStats 写入）干扰行数断言
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'codex'");
+    // upsertDailyStat 会归一化工具名：codex → Codex
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'Codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(1);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
@@ -159,7 +161,7 @@ describe('db', () => {
   it('upsertDailyStat 重复键累加', () => {
     upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.03, 50, 30, 40, 10);
     upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.02, 30, 20, 20, 5);
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'codex'");
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'OpenAI' AND model = 'gpt-4o' AND tool = 'Codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(2);
     expect(rows[0].total_cost).toBeCloseTo(0.05);

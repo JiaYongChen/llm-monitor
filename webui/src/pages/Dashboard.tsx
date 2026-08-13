@@ -8,14 +8,15 @@ import { Activity, Zap, Layers } from 'lucide-react';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
 import { useCurrency, formatCost, CURRENCIES, PROVIDER_COLORS } from '../lib/currency';
+import { capitalizeFirst, lookupCi } from '../lib/utils';
 
 /** 工具侧边栏图标颜色映射 */
 const TOOL_COLORS: Record<string, string> = {
-  ClaudeCode: '#d97706', codex: '#16a34a',
+  ClaudeCode: '#d97706', Codex: '#16a34a',
 };
 /** 工具显示名称映射 */
 const TOOL_DISPLAY: Record<string, string> = {
-  ClaudeCode: 'ClaudeCode', codex: 'Codex',
+  ClaudeCode: 'ClaudeCode', Codex: 'Codex',
 };
 /** 供应商显示名称映射 */
 const PROVIDER_DISPLAY: Record<string, string> = {
@@ -36,14 +37,15 @@ export default function Dashboard() {
   const { data: toolConfigs } = useQuery({ queryKey: ['tool-configs'], queryFn: () => api.listToolConfigs() });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
   const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: () => api.listPricing() });
-  const toolConfig = (toolConfigs as any[])?.find((t: any) => t.tool === tool);
+  // 工具名大小写不敏感匹配（URL 参数可能为任意大小写）
+  const toolConfig = (toolConfigs as any[])?.find((t: any) => tool && t.tool.toLowerCase() === tool.toLowerCase());
 
-  /** 根据当前筛选状态决定标题文本和颜色 */
-  const pageTitle = provider ? (PROVIDER_DISPLAY[provider] || provider) : tool ? (TOOL_DISPLAY[tool] || tool) : '总览';
+  /** 根据当前筛选状态决定标题文本和颜色（映射表查找大小写不敏感） */
+  const pageTitle = provider ? (lookupCi(PROVIDER_DISPLAY, provider) || capitalizeFirst(provider)) : tool ? (lookupCi(TOOL_DISPLAY, tool) || capitalizeFirst(tool)) : '总览';
   const titleColor = provider
-    ? (PROVIDER_COLORS[provider] || OVERVIEW_COLOR)
+    ? (lookupCi(PROVIDER_COLORS, provider) || OVERVIEW_COLOR)
     : tool
-      ? (TOOL_COLORS[tool] || OVERVIEW_COLOR)
+      ? (lookupCi(TOOL_COLORS, tool) || OVERVIEW_COLOR)
       : OVERVIEW_COLOR;
 
   const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
@@ -83,8 +85,9 @@ export default function Dashboard() {
 
       {/* 工具级上游配置（仅在筛选到具体工具时显示） */}
       {tool && providers && (() => {
-        // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, codex→OpenAI）
-        const toolBuiltin = tool === 'ClaudeCode' ? 'Anthropic' : tool === 'codex' ? 'OpenAI' : null;
+        // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, Codex→OpenAI；大小写不敏感）
+        const toolLower = (tool || '').toLowerCase();
+        const toolBuiltin = toolLower === 'claudecode' ? 'Anthropic' : toolLower === 'codex' ? 'OpenAI' : null;
         const enabledProviders = (providers as any[]).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
         const currentUpstream = toolConfig?.upstream_provider || '';
         const currentModel = toolConfig?.upstream_model || '';
@@ -118,18 +121,18 @@ export default function Dashboard() {
                 qc.invalidateQueries({ queryKey: ['tool-configs'] });
               }}
             >
-              <option value="">跟随请求路径（{tool}）</option>
+              <option value="">跟随请求路径（{capitalizeFirst(tool)}）</option>
               {enabledProviders.map((p: any) => (
-                <option key={p.provider} value={p.provider}>{p.provider}</option>
+                <option key={p.provider} value={p.provider}>{capitalizeFirst(p.provider)}</option>
               ))}
             </select>
             {currentUpstream && (() => {
               const up = (providers as any[]).find((p: any) => p.provider === currentUpstream);
               const officialUrls: Record<string, string> = { Anthropic: 'https://api.anthropic.com', OpenAI: 'https://api.openai.com' };
-              const baseUrl = (tool === 'ClaudeCode' && up?.base_url_anthropic)
+              const baseUrl = (toolLower === 'claudecode' && up?.base_url_anthropic)
                 ? up.base_url_anthropic
                 : (up?.base_url || officialUrls[currentUpstream] || '');
-              return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream} — <span className="font-mono">{baseUrl}</span></span>;
+              return <span className="text-xs text-[#30b48b]">转发到 {capitalizeFirst(currentUpstream)} — <span className="font-mono">{baseUrl}</span></span>;
             })()}
           </div>
           <div className="flex items-center gap-3">
@@ -144,6 +147,7 @@ export default function Dashboard() {
                   qc.invalidateQueries({ queryKey: ['tool-configs'] });
                 }}
               >
+                {/* 模型 ID 保持原样，不做首字母大写 */}
                 {models.map((m: string) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
@@ -214,7 +218,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} />
+          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} groupBy={costGroupBy} />
         </CardContent>
       </Card>
 

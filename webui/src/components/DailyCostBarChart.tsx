@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useCurrency, formatCost } from '../lib/currency';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
+import { capitalizeFirst } from '../lib/utils';
 
 const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#14b8a6'];
 
@@ -12,13 +13,14 @@ interface DailyCostRow {
   total_cost: number;
 }
 
-export default function DailyCostBarChart({ data, range, tz }: { data: DailyCostRow[]; range: string; tz: number }) {
+export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: DailyCostRow[]; range: string; tz: number; groupBy?: string }) {
   const { currency, rates } = useCurrency();
   // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
 
   // 按 category 和 date 组织数据 → 宽表格式：{ date, CatA: cost, CatB: cost, ... }
   const chartData = useMemo(() => {
-    const categories = [...new Set(data.map(d => d.category).filter(Boolean))];
+    // 先用 || '' 兜底再 filter：filter(Boolean) 无类型收窄能力，直接 map 会残留 undefined 推断
+    const categories = [...new Set(data.map(d => d.category || '').filter(Boolean))];
     const byDate = new Map<string, Record<string, number>>();
     for (const d of data) {
       if (!d.category) continue;
@@ -62,7 +64,8 @@ export default function DailyCostBarChart({ data, range, tz }: { data: DailyCost
         <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => formatCost(v, currency, rates)} />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {chartData.categories.map((cat, i) => (
-          <Bar key={cat} dataKey={cat} name={cat} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />
+          // 模型维度保持 ID 原样；工具/供应商维度首字母大写
+          <Bar key={cat} dataKey={cat} name={groupBy === 'model' ? cat : capitalizeFirst(cat)} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} stackId="cost" />
         ))}
       </BarChart>
     </ResponsiveContainer>

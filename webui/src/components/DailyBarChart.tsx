@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
+import { capitalizeFirst } from '../lib/utils';
 
 const COLORS = {
   output: '#5e5ce6',
@@ -131,6 +132,7 @@ export default function DailyBarChart({ data, range, tz, modelData }: { data: Da
                 <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                 <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
+                {/* 模型 ID 保持原样，不做首字母大写 */}
                 {modelNames.map((model, i) => (
                   <Bar key={model} dataKey={model} name={model} fill={MODEL_COLORS[i % MODEL_COLORS.length]} stackId="model" />
                 ))}

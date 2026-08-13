@@ -4,22 +4,32 @@ import { useMemo } from 'react';
 import * as api from '../api/client';
 
 import { providerColor } from '../lib/currency';
+import { capitalizeFirst, lookupCi } from '../lib/utils';
 
 /** 工具显示名称映射 */
 const TOOL_DISPLAY: Record<string, string> = {
-  ClaudeCode: 'ClaudeCode', codex: 'Codex',
+  ClaudeCode: 'ClaudeCode', Codex: 'Codex',
 };
 
 /** 已知工具的元数据（图标、颜色） */
 const KNOWN_TOOLS: Record<string, { l: string; c: string }> = {
   'ClaudeCode': { l: 'C', c: '#d97706' },
-  'codex': { l: 'X', c: '#16a34a' },
+  'Codex': { l: 'X', c: '#16a34a' },
 };
 const DEFAULT_META = { l: '?', c: '#9ca3af' };
 
+/** 已知工具元数据查找（大小写不敏感） */
+function knownMeta(tool: string): { l: string; c: string } | undefined {
+  if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool];
+  const lower = tool.toLowerCase();
+  const hit = Object.keys(KNOWN_TOOLS).find(k => k.toLowerCase() === lower);
+  return hit ? KNOWN_TOOLS[hit] : undefined;
+}
+
 /** 生成工具图标的 HSL 色值（用于未知工具的动态颜色） */
 function toolColor(tool: string): string {
-  if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool].c;
+  const meta = knownMeta(tool);
+  if (meta) return meta.c;
   // 基于名称生成确定性颜色
   let hash = 0;
   for (let i = 0; i < tool.length; i++) hash = ((hash << 5) - hash) + tool.charCodeAt(i);
@@ -28,8 +38,7 @@ function toolColor(tool: string): string {
 }
 
 function toolMeta(tool: string): { l: string; c: string } {
-  if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool];
-  return { l: tool.slice(0, 2).toUpperCase(), c: toolColor(tool) };
+  return knownMeta(tool) ?? { l: tool.slice(0, 2).toUpperCase(), c: toolColor(tool) };
 }
 
 export default function Sidebar() {
@@ -92,7 +101,7 @@ export default function Sidebar() {
                 className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedTool === tool ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
               >
                 <div className="w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0" style={{ background: m.c }}>{m.l}</div>
-                <span className="truncate">{TOOL_DISPLAY[tool] || tool}</span>
+                <span className="truncate">{lookupCi(TOOL_DISPLAY, tool) || capitalizeFirst(tool)}</span>
               </button>
             );
           })}
@@ -110,7 +119,7 @@ export default function Sidebar() {
               className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedProvider === p.provider ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
             >
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: providerColor(p.provider) }} />
-              <span className="truncate">{p.provider}</span>
+              <span className="truncate">{capitalizeFirst(p.provider)}</span>
             </button>
           ))}
         </div>
@@ -125,7 +134,7 @@ export default function Sidebar() {
             <div key={tool} className="mb-3">
               <div className="flex items-center gap-2 pl-7 pr-3 mb-1">
                 <div className="w-4 h-4 rounded flex items-center justify-center text-[8px] font-bold text-white" style={{ background: m.c }}>{m.l}</div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">{TOOL_DISPLAY[tool] || tool}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">{lookupCi(TOOL_DISPLAY, tool) || capitalizeFirst(tool)}</span>
               </div>
               {ss?.slice(0, 20).map((s: any) => (
                 <Link key={s.id} to={loc.pathname === `/sessions/${s.id}` ? '#' : `/sessions/${s.id}`}

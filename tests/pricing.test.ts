@@ -19,6 +19,11 @@ describe('pricing', () => {
     expect(p?.input_price).toBe(15);
   });
 
+  it('前缀匹配大小写不敏感（provider 与 model）', () => {
+    const p = matchPricing('ANTHROPIC', 'Claude-Opus-5-20260101', SAMPLE);
+    expect(p?.input_price).toBe(15);
+  });
+
   it('无匹配返回 undefined', () => {
     expect(matchPricing('unknown', 'x', SAMPLE)).toBeUndefined();
   });

@@ -5,7 +5,8 @@ export function matchPricing(provider: string, model: string, allPricing: Pricin
   const candidates = allPricing
     .filter(p => p.provider.toLowerCase() === provider.toLowerCase())
     .sort((a, b) => b.model.length - a.model.length); // 最长前缀优先
-  return candidates.find(p => model.startsWith(p.model));
+  const lowerModel = model.toLowerCase();
+  return candidates.find(p => lowerModel.startsWith(p.model.toLowerCase()));
 }
 
 export function calculateCost(

@@ -1,5 +1,5 @@
 import { useCurrency, formatCost } from '../lib/currency';
-import { formatTime } from '../lib/utils';
+import { formatTime, capitalizeFirst } from '../lib/utils';
 import { extractThinking } from '@/shared/extractThinking';
 
 function pj(raw: string | null): string {
@@ -48,8 +48,8 @@ export default function CallDetailPanel({ call }: { call: any }) {
       <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm p-5">
         <h3 className="text-sm font-semibold text-[#1d1d1f] mb-3">基本信息</h3>
         <div className="grid grid-cols-1 gap-x-6">
-          <KV label="供应商" value={call.provider || ''} />
-          <KV label="模型" value={call.model || ''} mono />
+          <KV label="供应商" value={capitalizeFirst(call.provider)} />
+          <KV label="模型" value={call.model} mono />
           <KV label="状态" value={
             ok ? `200 OK` : call.error_message ? `${call.status_code} ${call.error_message}` : `${call.status_code}`
           } mono />

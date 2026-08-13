@@ -52,8 +52,8 @@ export async function forwardStream(
   // 诊断：上游返回错误状态码时记录（用 clone 避免消费原始 body）
   if (res.status >= 400) {
     res.clone().text()
-      .then(body => console.log(`[proxy] ⚠ 上游错误 status=${res.status} | ${body.slice(0, 300)}`))
-      .catch(() => console.log(`[proxy] ⚠ 上游错误 status=${res.status} | (无法读取响应体)`));
+      .then(body => console.warn(`[proxy] ⚠ 上游错误 status=${res.status} | ${body.slice(0, 300)}`))
+      .catch(() => console.warn(`[proxy] ⚠ 上游错误 status=${res.status} | (无法读取响应体)`));
   }
 
   const reader = res.body!.getReader();
@@ -101,7 +101,7 @@ export async function forwardStream(
       const text = buildCleanResponseBody(raw) ?? raw;
       // 诊断：流异常结束时记录原因
       if (streamError) {
-        console.log(`[proxy] ⚠ 流异常结束 | ${streamError} | 已接收 ${chunks.length} 个分块 ${raw.length} 字节 | ${durationMs}ms`);
+        console.warn(`[proxy] ⚠ 流异常结束 | ${streamError} | 已接收 ${chunks.length} 个分块 ${raw.length} 字节 | ${durationMs}ms`);
       }
       return { status, json: null, text, durationMs };
     },
@@ -241,10 +241,10 @@ export function buildCleanResponseBody(raw: string): string | null {
   // 诊断：检测到 Responses API 事件但缺少关键数据时输出详情
   if (!hasRespUsage && respText.length === 0 && respThinking.length === 0) {
     if (respModel) {
-      console.log(`[proxy] ⚠ Responses API 检测到 response.created（模型=${respModel}）但无后续 delta/completed 事件 — 流可能被提前取消`);
+      console.warn(`[proxy] ⚠ Responses API 检测到 response.created（模型=${respModel}）但无后续 delta/completed 事件 — 流可能被提前取消`);
     }
   } else if (!hasRespUsage) {
-    console.log(`[proxy] ⚠ Responses API 有文本（${respText.length} 段）但缺少 usage（response.completed 未收到或格式不符）`);
+    console.warn(`[proxy] ⚠ Responses API 有文本（${respText.length} 段）但缺少 usage（response.completed 未收到或格式不符）`);
   }
   if (respText.length > 0 || respThinking.length > 0 || hasRespUsage) {
     return JSON.stringify({
@@ -300,6 +300,6 @@ export function buildCleanResponseBody(raw: string): string | null {
   }
 
   // 三种格式均未匹配 → 输出前 300 字符供诊断
-  console.log(`[proxy] ⚠ buildCleanResponseBody 未匹配任何格式 | 首 300 字符: ${raw.slice(0, 300).replace(/\n/g, '\\n')}`);
+  console.warn(`[proxy] ⚠ buildCleanResponseBody 未匹配任何格式 | 首 300 字符: ${raw.slice(0, 300).replace(/\n/g, '\\n')}`);
   return null;
 }

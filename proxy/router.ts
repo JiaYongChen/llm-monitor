@@ -12,7 +12,7 @@ import { getOrCreateSession, computeFingerprint, extractConversationSeed } from 
 import { randomUUID } from 'node:crypto';
 import {
   listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
-  listToolConfigs, getToolConfig, updateToolConfig,
+  listToolConfigs, getToolConfig, updateToolConfig, normalizeToolName,
   listCalls as dbListCalls, getCall as dbGetCall, getStats, getDailyStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
@@ -20,7 +20,7 @@ import {
   listProviderConfigs, updateProviderConfig, getProviderConfig,
   addProviderConfig, deleteProviderConfig, getSetting, setSetting,
 } from './db.js';
-import { PORT, DATA_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS } from './config.js';
+import { PORT, DATA_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, debugLog } from './config.js';
 import { getRates, getRatesUpdatedAt, refreshRates } from './rates.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -107,8 +107,9 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
   app.post('/proxy/sessions/start', async (req, reply) => {
     const { tool } = req.body as any;
     if (!tool) return reply.status(400).send({ error: 'tool 参数必填' });
-    const id = createPendingSession(tool);
-    return { id, tool, status: 'pending' };
+    const name = normalizeToolName(tool);
+    const id = createPendingSession(name);
+    return { id, tool: name, status: 'pending' };
   });
 
   // 动态路由：/* 匹配所有非 /api 路径
@@ -135,9 +136,9 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const bodyModel = hasBody ? (request.body as any)?.model || '?' : null;
       const bodyStream = hasBody ? (request.body as any)?.stream ?? false : null;
       if (hasBody) {
-        console.log(`[proxy] ▶ ${request.url} model=${bodyModel} stream=${bodyStream} port=${remotePort}`);
+        debugLog(`[proxy] ▶ ${request.url} model=${bodyModel} stream=${bodyStream} port=${remotePort}`);
       } else {
-        console.log(`[proxy] ▶ ${request.url} (no body) port=${remotePort}`);
+        debugLog(`[proxy] ▶ ${request.url} (no body) port=${remotePort}`);
       }
 
       const segments = rawPath.split('/').filter(Boolean);
@@ -154,30 +155,29 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
 
       // 首段作为工具名匹配（大小写不敏感），再映射到供应商
       const rawTool = segments[0];
-      const canonicalTool = (() => {
-        const lower = rawTool.toLowerCase();
-        if (lower === 'claudecode' || lower === 'claude') return 'ClaudeCode';
-        if (lower === 'codex') return 'codex';
-        return rawTool;  // 保持原样，后续从 tool_config 查找
-      })();
+      const canonicalTool = normalizeToolName(rawTool);
       const toolConfig = getToolConfig(canonicalTool);
 
       // 向后兼容旧格式 /anthropic → ClaudeCode，/openai → codex
       const lowerRaw = rawTool.toLowerCase();
+      // 内置工具即使无 tool_config 行也走默认供应商映射（全新安装可直接使用）
+      const isBuiltinTool = canonicalTool === 'ClaudeCode' || canonicalTool === 'Codex';
       providerConfig = getProviderConfig(provider);
       if (!toolConfig && (lowerRaw === 'anthropic' || lowerRaw === 'openai')) {
-        const compatTool = lowerRaw === 'anthropic' ? 'ClaudeCode' : 'codex';
+        const compatTool = lowerRaw === 'anthropic' ? 'ClaudeCode' : 'Codex';
         tool = compatTool;
         provider = lowerRaw === 'anthropic' ? 'Anthropic' : 'OpenAI';
         providerConfig = getProviderConfig(provider);
         hasProviderPrefix = true;
         remaining = segments.slice(1).join('/') || '';
-      } else if (toolConfig) {
+      } else if (toolConfig || (isBuiltinTool && !providerConfig)) {
         // 策略 1：首段匹配已知工具名 → 映射到该工具的默认上游供应商
+        // 内置工具无 tool_config 行且存在同名供应商时让位于供应商路径（策略 2），避免自定义同名供应商被遮蔽；
+        // 有 tool_config 行时工具路径仍优先（显式配置视为用户意图）
         hasProviderPrefix = true;
         tool = canonicalTool;
-        const upstream = toolConfig.upstream_provider
-          || (tool === 'ClaudeCode' ? 'Anthropic' : tool === 'codex' ? 'OpenAI' : 'unknown');
+        const upstream = toolConfig?.upstream_provider
+          || (tool === 'ClaudeCode' ? 'Anthropic' : tool === 'Codex' ? 'OpenAI' : 'unknown');
         provider = upstream;
         providerConfig = getProviderConfig(upstream);
         remaining = segments.slice(1).join('/') || '';
@@ -185,7 +185,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         // 策略 2：首段是供应商名（向后兼容其他自定义供应商路径）
         hasProviderPrefix = true;
         provider = providerConfig.provider;
-        tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'codex' : provider;
+        tool = provider === 'Anthropic' ? 'ClaudeCode' : provider === 'OpenAI' ? 'Codex' : provider;
         remaining = segments.slice(1).join('/') || '';
       } else {
         return reply.status(400).send({
@@ -229,11 +229,13 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const isStream = bodyObj?.stream === true;
 
       // 上游覆盖优先级：会话 > 工具 > URL 路径默认
+      // 供应商名统一取 provider_config 中的规范名（大小写不敏感）
+      const canonicalProvider = (name: string) => getProviderConfig(name)?.provider || name;
       let upstreamProvider = provider;
       try {
         const session = getSession(sessionId);
         if (session?.upstream_provider) {
-          upstreamProvider = session.upstream_provider;
+          upstreamProvider = canonicalProvider(session.upstream_provider);
           if (session?.upstream_model && request.body != null) {
             bodyObj.model = session.upstream_model;
             request.body = bodyObj;
@@ -243,7 +245,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
           // 会话未设 → 回退到工具级配置
           const tc = getToolConfig(tool);
           if (tc?.upstream_provider) {
-            upstreamProvider = tc.upstream_provider;
+            upstreamProvider = canonicalProvider(tc.upstream_provider);
             if (tc.upstream_model && request.body != null) {
               bodyObj.model = tc.upstream_model;
               request.body = bodyObj;
@@ -252,6 +254,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
           }
         }
       } catch (e: any) {
+        // 异常诊断日志不受 debug 开关控制：覆盖失败意味着请求可能发往错误的上游
         console.warn(`[proxy] ⚠ 上游覆盖失败: ${e?.message || e}`);
       }
       // provider 记录实际转发目标，非原始路径识别值
@@ -273,7 +276,7 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         request.body = bodyObj;
         model = bodyObj.model || model;
         actualRemaining = converted.path.replace(/^\//, '');
-        console.log(`[proxy] 🔄 格式转换: ${sourceFormat} → ${targetFormat} | 路径: ${remaining} → ${actualRemaining}`);
+        debugLog(`[proxy] 🔄 格式转换: ${sourceFormat} → ${targetFormat} | 路径: ${remaining} → ${actualRemaining}`);
         // 转换后路径已变，重新获取上游 URL
         config = getConfiguredUpstream(upstreamProvider, tool, `/${actualRemaining}`);
         upstream = config.base_url;
@@ -299,7 +302,7 @@ function joinUrlPath(base: string, path: string): string {
       }
       const targetUrl = actualRemaining ? joinUrlPath(upstream, actualRemaining) : upstream;
 
-      console.log(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
+      debugLog(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
 
       // 覆盖 CLI 工具的伪 token：只要面板配置了 key（不限于 sk- 前缀，兼容智谱 GLM 等格式）就注入
       if (config.api_key) {
@@ -330,14 +333,14 @@ function joinUrlPath(base: string, path: string): string {
           const thinking = extractThinking(result.text);
           if (thinking) console.log(formatThinkingFull(thinking));
         });
-        console.log(`[proxy] ◀ stream 已建立 | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
+        debugLog(`[proxy] ◀ stream 已建立 | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
         let responseStream = stream;
         if (convert) {
           responseStream = stream.pipeThrough(createResponseTransform(targetFormat, sourceFormat));
         }
         // 上游 model 与下游不一致时，应答中还原为下游工具请求的 model
         if (model !== downstreamModel) {
-          console.log(`[proxy] 🔄 应答 model 还原: ${model} → ${downstreamModel} req=${reqId}`);
+          debugLog(`[proxy] 🔄 应答 model 还原: ${model} → ${downstreamModel} req=${reqId}`);
           responseStream = responseStream.pipeThrough(createModelReplaceTransform(model, downstreamModel));
         }
         return reply.type('text/event-stream').send(responseStream);
@@ -346,7 +349,7 @@ function joinUrlPath(base: string, path: string): string {
         let responseText = convert ? convertResponse(result.text, targetFormat, sourceFormat) : result.text;
         // 上游 model 与下游不一致时，应答中还原为下游工具请求的 model
         if (model !== downstreamModel) {
-          console.log(`[proxy] 🔄 应答 model 还原: ${model} → ${downstreamModel} req=${reqId}`);
+          debugLog(`[proxy] 🔄 应答 model 还原: ${model} → ${downstreamModel} req=${reqId}`);
           responseText = replaceModelInJson(responseText, model, downstreamModel);
         }
         if (_enqueueRef) {
@@ -362,7 +365,7 @@ function joinUrlPath(base: string, path: string): string {
         }
         const thinking = extractThinking(result.text);
         if (thinking) console.log(formatThinkingFull(thinking));
-        console.log(`[proxy] ◀ status=${result.status} | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
+        debugLog(`[proxy] ◀ status=${result.status} | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
         return reply.status(result.status).header('content-type', 'application/json').send(responseText);
       }
     },
@@ -510,8 +513,12 @@ function _registerApiRoutes(app: FastifyInstance): void {
   app.post('/api/providers', async (req, reply) => {
     const { provider, base_url, base_url_anthropic, api_key } = req.body as any;
     if (!provider) return reply.status(400).send({ error: 'provider name required' });
-    const id = addProviderConfig(provider, base_url || '', base_url_anthropic || '', api_key || '');
-    return { id };
+    try {
+      const id = addProviderConfig(provider, base_url || '', base_url_anthropic || '', api_key || '');
+      return { id };
+    } catch (err) {
+      return reply.status(400).send({ error: (err as Error).message });
+    }
   });
   app.delete('/api/providers/:provider', async (req, reply) => {
     const result = deleteProviderConfig((req.params as any).provider);

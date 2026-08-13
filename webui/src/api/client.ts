@@ -8,7 +8,15 @@ async function fetchJson(url: string, init?: RequestInit): Promise<any> {
     headers: hasBody ? { 'Content-Type': 'application/json', ...init?.headers } : init?.headers,
     ...init,
   });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    // 优先使用服务端返回的 error 消息（如「供应商已存在」），兜底状态码
+    let msg = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) msg = body.error;
+    } catch {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 

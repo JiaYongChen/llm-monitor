@@ -1,14 +1,14 @@
 import { useCurrency, formatCost } from '../lib/currency';
-import { formatTime } from '../lib/utils';
+import { formatTime, capitalizeFirst } from '../lib/utils';
 
-/** 供应商名称展示映射 */
+/** 供应商名称展示映射（键为小写） */
 const PROVIDER_DISPLAY: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
 };
 
 function providerLabel(raw: string): string {
-  return PROVIDER_DISPLAY[raw] || raw.charAt(0).toUpperCase() + raw.slice(1);
+  return PROVIDER_DISPLAY[(raw || '').toLowerCase()] || capitalizeFirst(raw);
 }
 
 function fmtTokens(n: number | null | undefined): string {

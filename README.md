@@ -27,8 +27,10 @@ npx tsx proxy/main.ts --port 9400 --webui-port 9401
 # 一键启动（自动预创建会话并锁定，同终端复用同一会话）
 npm link                           # 一次性注册命令
 llm-monitor ClaudeCode             # 通过代理启动 ClaudeCode
-llm-monitor codex                  # 通过代理启动 Codex
+llm-monitor codex                  # 通过代理启动 Codex（chatgpt 为 Codex 的别名）
 ```
+
+> 工具名大小写不敏感，统一归一化为规范名存储（ClaudeCode / Codex）；`chatgpt` 作为 Codex 的别名。
 
 ### 代理 Base URL
 
@@ -48,16 +50,16 @@ forced_login_method = "api"
 
 [model_providers.LLM-Monitor]
 name = "LLM-Monitor"
-base_url = "http://localhost:9400/codex"
+base_url = "http://localhost:9400/Codex"
 experimental_bearer_token = "llm-monitor"
 wire_api = "responses"
 ```
 ```toml
 # 含会话锁定（同终端复用）：
-base_url = "http://localhost:9400/s/<id>/codex"
+base_url = "http://localhost:9400/s/<id>/Codex"
 ```
 
-> URL 路径以工具名作前缀，大小写不敏感。脚本使用 `/s/<id>/` 嵌入会话 ID，同终端所有请求归入同一会话。`llm-monitor codex` 启动脚本会自动写入 `config.toml`。
+> URL 路径以工具名作前缀，大小写不敏感。脚本使用 `/s/<id>/` 嵌入会话 ID，同终端所有请求归入同一会话。`llm-monitor codex` 启动脚本会自动写入 `config.toml`（合并写入：保留用户已有配置，仅更新代理 section 的 base_url）。
 
 ## 功能
 
@@ -71,7 +73,7 @@ base_url = "http://localhost:9400/s/<id>/codex"
 ### 会话管理
 - **指纹识别**：SHA256(provider + 首条消息种子) → 同一聊天自动归属同一会话
 - **自动标签**：新建会话自动提取首条用户消息作为标签
-- **工具标识**：URL 工具名前缀反向识别（`/ClaudeCode/*` → ClaudeCode，`/codex/*` → codex）
+- **工具标识**：URL 工具名前缀反向识别（`/ClaudeCode/*` → ClaudeCode，`/Codex/*` → Codex），大小写不敏感并归一化为规范名
 - 工具级上游配置：Dashboard 可设置每个工具的默认上游供应商和模型，新会话自动继承
 - 会话级上游覆盖：会话详情页可单独覆盖供应商和模型
 

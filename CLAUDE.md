@@ -10,8 +10,9 @@ LLM Monitor — 本地 LLM API 调用监控工具。通过代理拦截 CLI 工�
 
 ```bash
 npm install
-npm run dev              # 开发模式：代理 :9400 + 面板 :9401（Vite HMR 挂载在 :9401）
+npm run dev              # 开发模式：代理 :9400 + 面板 :9401（Vite HMR 挂载在 :9401），开发模式自动输出 [proxy] 诊断日志
 npm run dev -- --port 8400 --webui-port 8401  # 自定义端口（CLI 参数）
+npm run dev -- --debug   # 显式调试模式：输出 [proxy] 请求转发诊断日志（也可用环境变量 LLM_MONITOR_DEBUG=1；生产模式默认静默）
 npm run build            # 生产构建（前端 vite build → dist/web）
 npm test                 # 运行全部测试（vitest run）
 npx vitest --watch       # 交互式测试
@@ -27,7 +28,10 @@ npx tsx proxy/main.ts    # 生产模式启动（需先 build，可加 --port --w
 npm link                    # 一次性注册全局命令
 llm-monitor ClaudeCode      # 启动 ClaudeCode（当前目录）
 llm-monitor codex ./project # 启动 Codex（指定目录）
+llm-monitor chatgpt         # chatGPT 为 Codex 的别名
 ```
+
+- 工具名大小写不敏感：`claude`/`claudeCode` → 规范名 `ClaudeCode`，`codex`/`chatGPT` → 规范名 `Codex`
 
 - Windows：`scripts/start-tool.cmd` → `start-tool.ps1`
 - macOS/Linux：`scripts/start-tool`（bash）
@@ -65,7 +69,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `proxy/pricing.ts` | 定价匹配（最长模型前缀匹配）+ 费用计算（非 CNY 币种自动汇率换算为 CNY 存储） |
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
 | `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + upsertDailyStat + updateSessionStats |
-| `proxy/db.ts` | sql.js 数据库全部操作：建表（schema v3）、CRUD、daily_stats 累加、统计聚合、Settings、Provider Config、Tool Config |
+| `proxy/db.ts` | sql.js 数据库全部操作：建表（schema v3）、CRUD、daily_stats 累加、统计聚合、Settings、Provider Config、Tool Config；`normalizeToolName` / `canonicalProviderName` 工具/供应商名归一化（大小写不敏感 → 规范名），`migrateToolCanonicalNames` 启动时一次性迁移历史数据（metadata 门控 + 事务） |
 | `proxy/thinking-preview.ts` | 终端思考输出格式化：分隔线包围 + `[think]` 独立前缀标签 |
 | `proxy/config.ts` | CLI 参数解析（--port / --webui-port）+ 目录常量（DATA_DIR=~/.llm-monitor） |
 | `shared/extractThinking.ts` | 思考提取函数：兼容流式干净结构 / Anthropic 原始 / OpenAI 原始三种响应形态，前后端共用 |
@@ -113,7 +117,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 ## 工具级配置
 
-`tool_config` 表存储每个工具（ClaudeCode / codex）的默认上游供应商和模型。新建会话时自动继承工具级配置，会话详情页可单独覆盖。
+`tool_config` 表存储每个工具（ClaudeCode / Codex）的默认上游供应商和模型。新建会话时自动继承工具级配置，会话详情页可单独覆盖。
 
 ## Token 归一化
 
@@ -145,3 +149,5 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - `/api/*` 路由注册在 WebUI 端口的独立 Fastify 实例上，通配路由在代理端口，两个端口隔离确保 API 不被代理拦截
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
 - 清空全部会话（`deleteAllSessions`）会同时重置 AUTOINCREMENT ID，清空全部数据（`clearAllData`）同步清空统计
+- 工具 / 供应商 / 模型名匹配全部大小写不敏感：工具名与供应商名写入前归一化为规范名（`normalizeToolName` / `canonicalProviderName`；ClaudeCode / Codex，chatGPT→Codex）；与内置供应商（Anthropic/OpenAI）仅大小写不同的新增请求提示「已存在」而非插入新行；定价匹配模型前缀大小写不敏感；前端仅工具/供应商名首字母大写（`capitalizeFirst`），模型 ID 保持原样
+- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/daily_stats 变体）

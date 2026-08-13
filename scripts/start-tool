@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 通过 llm-monitor 代理启动 Claude Code / Codex CLI 工具
-# 用法: llm-monitor <ClaudeCode|codex> [项目目录] [--port 9400]
+# 用法: llm-monitor <ClaudeCode|Codex|ChatGPT> [项目目录] [--port 9400]
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --port)
       PORT="${2:-9400}"
-      [[ $# -ge 2 ]] && shift 2 || { echo "用法: llm-monitor <ClaudeCode|codex> [项目目录] [--port 9400]"; exit 1; }
+      [[ $# -ge 2 ]] && shift 2 || { echo "用法: llm-monitor <ClaudeCode|Codex|ChatGPT> [项目目录] [--port 9400]"; exit 1; }
       ;;
     -*)
       echo "未知选项: $1"
@@ -31,13 +31,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 标准化工具名
-if [[ "$TOOL" == "Claude" ]]; then
-  TOOL="ClaudeCode"
-fi
+# 标准化工具名（大小写不敏感；ChatGPT 视为 Codex）
+case "$(printf '%s' "$TOOL" | tr '[:upper:]' '[:lower:]')" in
+  claude|claudecode) TOOL="ClaudeCode" ;;
+  codex|chatgpt)     TOOL="Codex" ;;
+esac
 
-if [[ "$TOOL" != "ClaudeCode" && "$TOOL" != "codex" ]]; then
-  echo "用法: llm-monitor <ClaudeCode|codex> [项目目录]"
+if [[ "$TOOL" != "ClaudeCode" && "$TOOL" != "Codex" ]]; then
+  echo "用法: llm-monitor <ClaudeCode|Codex|ChatGPT> [项目目录]"
   exit 1
 fi
 
@@ -83,17 +84,20 @@ case "$TOOL" in
     cd "$PROJECT"
     claude
     ;;
-  codex)
+  Codex)
     # Codex 不支持 OPENAI_BASE_URL 环境变量，只能通过 config.toml 配置
     CODEX_HOME="$HOME/.codex"
     CONFIG_PATH="$CODEX_HOME/config.toml"
     mkdir -p "$CODEX_HOME"
     if [[ -n "$SESSION_ID" ]]; then
-      BASE_URL="http://localhost:$PORT/s/$SESSION_ID/codex"
+      BASE_URL="http://localhost:$PORT/s/$SESSION_ID/Codex"
     else
-      BASE_URL="http://localhost:$PORT/codex"
+      BASE_URL="http://localhost:$PORT/Codex"
     fi
-    cat > "$CONFIG_PATH" << TOML
+    # 写入策略：不覆盖原有内容 — 代理 section 缺失时追加，base_url 每次都更新
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+      # 配置文件不存在 → 写入完整代理配置
+      cat > "$CONFIG_PATH" << TOML
 model_provider = "LLM-Monitor"
 preferred_auth_method = "apikey"
 forced_login_method = "api"
@@ -104,7 +108,53 @@ base_url = "$BASE_URL"
 experimental_bearer_token = "llm-monitor"
 wire_api = "responses"
 TOML
-    echo -e "${GRAY}  已写入 Codex 代理配置: $CONFIG_PATH${NC}"
+      echo -e "${GRAY}  已写入 Codex 代理配置: $CONFIG_PATH${NC}"
+    elif grep -q '^[[:space:]]*\[model_providers\.LLM-Monitor\]' "$CONFIG_PATH"; then
+      # 代理 section 已存在 → 仅更新该 section 内的 base_url，不动其他内容
+      # （表头探测容忍前导空白：TOML 允许缩进的 [section] 标题）
+      TMP_FILE="$(mktemp)"
+      if awk '/^[[:space:]]*\[model_providers\.LLM-Monitor\]/{f=1;next} f&&/^[[:space:]]*\[/{f=0} f&&/^[[:space:]]*base_url[[:space:]]*=/{found=1} END{exit !found}' "$CONFIG_PATH"; then
+        # section 内已有 base_url → 原地替换（仅限本 section，避免误伤其他供应商的同名键）
+        awk -v url="$BASE_URL" '
+          /^[[:space:]]*\[model_providers\.LLM-Monitor\]/ { insec=1 }
+          insec && /^[[:space:]]*\[/ && !/^[[:space:]]*\[model_providers\.LLM-Monitor\]/ { insec=0 }
+          insec && /^[[:space:]]*base_url[[:space:]]*=/ { print "base_url = \"" url "\""; next }
+          { print }
+        ' "$CONFIG_PATH" > "$TMP_FILE"
+      else
+        # section 内缺少 base_url → 在 section 标题行后插入
+        awk -v url="$BASE_URL" '
+          { print }
+          /^[[:space:]]*\[model_providers\.LLM-Monitor\]/ { print "base_url = \"" url "\"" }
+        ' "$CONFIG_PATH" > "$TMP_FILE"
+      fi
+      mv "$TMP_FILE" "$CONFIG_PATH"
+      echo -e "${GRAY}  Codex 配置已存在，仅更新 base_url（保留原有内容）${NC}"
+    else
+      # 无代理 section → 末尾追加；顶层 model_provider 缺失时插入文件顶部（TOML 顶层键须在 [section] 之前）
+      if ! grep -Eq '^[[:space:]]*model_provider[[:space:]]*=' "$CONFIG_PATH"; then
+        TMP_FILE="$(mktemp)"
+        if head -c 3 "$CONFIG_PATH" | od -An -tx1 | grep -q 'ef bb bf'; then
+          # 文件带 UTF-8 BOM → 新行插在 BOM 之后，保持 BOM 位于文件开头（TOML 仅允许 BOM 在首字节）
+          printf '\xEF\xBB\xBFmodel_provider = "LLM-Monitor"\n\n' > "$TMP_FILE"
+          tail -c +4 "$CONFIG_PATH" >> "$TMP_FILE"
+        else
+          printf 'model_provider = "LLM-Monitor"\n\n' | cat - "$CONFIG_PATH" > "$TMP_FILE"
+        fi
+        mv "$TMP_FILE" "$CONFIG_PATH"
+      elif ! grep -Eq "^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*[\"']LLM-Monitor[\"']" "$CONFIG_PATH"; then
+        echo -e "${YELLOW}  ⚠ 配置顶层 model_provider 未指向 LLM-Monitor，如需走代理请手动切换${NC}"
+      fi
+      cat >> "$CONFIG_PATH" << TOML
+
+[model_providers.LLM-Monitor]
+name = "LLM-Monitor"
+base_url = "$BASE_URL"
+experimental_bearer_token = "llm-monitor"
+wire_api = "responses"
+TOML
+      echo -e "${GRAY}  已在 Codex 配置末尾追加 LLM-Monitor 代理 section（保留原有内容）${NC}"
+    fi
     echo -e "${GRAY}    base_url = $BASE_URL${NC}"
     echo -e "${GRAY}  启动 Codex...${NC}"
     cd "$PROJECT"

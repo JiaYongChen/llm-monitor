@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { useCurrency, formatCost } from '../lib/currency';
-import { formatTime } from '../lib/utils';
+import { formatTime, capitalizeFirst } from '../lib/utils';
 import CallTimeline from '../components/CallTimeline';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
@@ -27,8 +27,9 @@ export default function SessionDetail() {
   const cacheHitTokens = callsList.reduce((sum: number, c: any) => sum + (c.cache_read_tokens || 0), 0);
   const outputTokens = callsList.reduce((sum: number, c: any) => sum + (c.output_tokens || 0), 0);
 
-  // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, codex→OpenAI）
-  const toolBuiltin = s.tool === 'ClaudeCode' ? 'Anthropic' : s.tool === 'codex' ? 'OpenAI' : null;
+  // 工具本身对应的内置供应商无需覆写（ClaudeCode→Anthropic, Codex→OpenAI；大小写不敏感）
+  const toolLower = (s.tool || '').toLowerCase();
+  const toolBuiltin = toolLower === 'claudecode' ? 'Anthropic' : toolLower === 'codex' ? 'OpenAI' : null;
   const enabledProviders = (providers || []).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
   const enabledProviderNames = new Set(enabledProviders.map((p: any) => p.provider));
   // 如果当前上游已被停用，自动切回跟随请求
@@ -53,7 +54,7 @@ export default function SessionDetail() {
             <h1 className="text-lg font-bold text-[#1d1d1f]">{s.label || `会话 #${s.id}`}</h1>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${s.status === 'active' ? 'bg-[#e6f7f1] text-[#30b48b]' : 'bg-[#f0f0f4] text-[#aeaeb2]'}`}>{s.status === 'active' ? '活跃中' : '已结束'}</span>
           </div>
-          <div className="text-xs text-[#aeaeb2] mt-1 space-x-4"><span className="capitalize">{s.tool}</span><span>{formatTime(s.first_call_at)}</span><span>  </span><span>{formatTime(s.last_call_at)}</span></div>
+          <div className="text-xs text-[#aeaeb2] mt-1 space-x-4"><span>{capitalizeFirst(s.tool)}</span><span>{formatTime(s.first_call_at)}</span><span>  </span><span>{formatTime(s.last_call_at)}</span></div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={async () => { const l = window.prompt('名称:', s.label || ''); if (l) { await api.renameSession(s.id, l); qc.invalidateQueries({ queryKey: ['session', sessionId] }); qc.invalidateQueries({ queryKey: ['sessions'] }); } }} className="btn btn-ghost">重命名</button>
@@ -85,18 +86,18 @@ export default function SessionDetail() {
               qc.invalidateQueries({ queryKey: ['session', sessionId] });
             }}
           >
-            <option value="">跟随请求路径（{s.tool}）</option>
+            <option value="">跟随请求路径（{capitalizeFirst(s.tool)}）</option>
             {enabledProviders.map((p: any) => (
-              <option key={p.provider} value={p.provider}>{p.provider}</option>
+              <option key={p.provider} value={p.provider}>{capitalizeFirst(p.provider)}</option>
             ))}
           </select>
           {currentUpstream && (() => {
             const officialUrls: Record<string, string> = { Anthropic: 'https://api.anthropic.com', OpenAI: 'https://api.openai.com' };
             const up = (providers || []).find((p: any) => p.provider === currentUpstream);
-            const baseUrl = (s.tool === 'ClaudeCode' && up?.base_url_anthropic)
+            const baseUrl = (toolLower === 'claudecode' && up?.base_url_anthropic)
               ? up.base_url_anthropic
               : (up?.base_url || officialUrls[currentUpstream] || '');
-            return <span className="text-xs text-[#30b48b]">转发到 {currentUpstream} — <span className="font-mono">{baseUrl}</span></span>;
+            return <span className="text-xs text-[#30b48b]">转发到 {capitalizeFirst(currentUpstream)} — <span className="font-mono">{baseUrl}</span></span>;
           })()}
         </div>
         <div className="flex items-center gap-3">
@@ -111,6 +112,7 @@ export default function SessionDetail() {
                 qc.invalidateQueries({ queryKey: ['session', sessionId] });
               }}
             >
+              {/* 模型 ID 保持原样，不做首字母大写 */}
               {models.map((m: string) => (
                 <option key={m} value={m}>{m}</option>
               ))}

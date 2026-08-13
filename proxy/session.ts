@@ -4,11 +4,11 @@ import { upsertSession, getSession, activateSession } from './db.js';
 
 // ── Provider → 工具名映射 ──
 
-/** 通过 URL 中的 provider 确定工具名称 */
+/** 通过 URL 中的 provider 确定工具名称（大小写不敏感） */
 export function toolFromProvider(provider: string): string {
-  switch (provider) {
+  switch (provider.toLowerCase()) {
     case 'anthropic': return 'ClaudeCode';
-    case 'openai':    return 'codex';
+    case 'openai':    return 'Codex';
     default:          return provider;
   }
 }
@@ -57,9 +57,9 @@ function getMessageArrays(body: any): any[] {
   return sources;
 }
 
-/** 从请求 body 中提取会话标签（首条用户消息前 40 字）。
+/** 从请求 body 中提取会话标签（首条用户消息前 40 字），无用户消息时返回 null。
  *  兼容 Chat Completions API（messages 数组）和 Responses API（input 数组）。 */
-function extractSessionLabel(body: any): string {
+function extractSessionLabel(body: any): string | null {
   try {
     for (const msgs of getMessageArrays(body)) {
       const text = extractUserText(msgs);
