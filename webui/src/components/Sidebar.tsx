@@ -5,6 +5,7 @@ import * as api from '../api/client';
 
 import { providerColor } from '../lib/currency';
 import { displayName } from '../lib/display';
+import { collectTools } from '../lib/utils';
 
 /** 已知工具的元数据（图标、颜色） */
 const KNOWN_TOOLS: Record<string, { l: string; c: string }> = {
@@ -55,15 +56,11 @@ export default function Sidebar() {
     return aBuiltin - bBuiltin || a.provider.localeCompare(b.provider);
   }) || [];
 
-  /** 动态计算所有出现过的工具（含已知工具的预设顺序） */
-  const allTools = useMemo(() => {
-    const seen = new Set<string>();
-    // 先加入已知工具（保持固定顺序）
-    for (const t of Object.keys(KNOWN_TOOLS)) seen.add(t);
-    // 再加入数据库中实际存在的未知工具
-    sessions?.forEach((s: any) => seen.add(s.tool));
-    return [...seen];
-  }, [sessions]);
+  /** 动态计算所有出现过的工具（含已知工具的预设顺序；大小写不敏感去重） */
+  const allTools = useMemo(
+    () => collectTools(Object.keys(KNOWN_TOOLS), sessions?.map((s: any) => s.tool) ?? []),
+    [sessions],
+  );
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams();

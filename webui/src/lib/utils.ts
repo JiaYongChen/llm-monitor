@@ -5,6 +5,22 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** 合并已知工具与数据库中出现的工具：按小写键去重，保留首次出现的形态（已知工具优先且保持顺序）。
+ *  存储层工具名统一小写，但代码内常量（如 KNOWN_TOOLS）可能保留 CamelCase —— 去重必须大小写不敏感。 */
+export function collectTools(knownTools: string[], sessionTools: (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  const add = (t: string) => {
+    const key = t.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(t);
+  };
+  for (const t of knownTools) add(t);
+  for (const t of sessionTools) if (t) add(t);
+  return result;
+}
+
 /** 映射表大小写不敏感查找：先精确匹配，未命中再按小写匹配（用于 TOOL_DISPLAY / TOOL_COLORS 等） */
 export function lookupCi(map: Record<string, string>, key: string | null | undefined): string | undefined {
   if (!key) return undefined;
