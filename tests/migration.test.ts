@@ -250,6 +250,40 @@ describe('migrateLowercaseNames 小写迁移', () => {
     expect(rows[0].model).toBe('lc-ts-model');
   });
 
+  it('pricing 供应商维度冲突折叠时间戳：created 取最小非零（排除 0），updated 取最大', () => {
+    clearLowerGate();
+    const d = getDb();
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
+           VALUES ('openai', 'fold-ts-prov', 1, 0.5, 2, 100, 200)`);
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
+           VALUES ('OPENAI', 'fold-ts-prov', 9, 4.5, 18, 0, 400)`);
+
+    migrateLowercaseNames();
+
+    const rows = queryAll(`SELECT * FROM pricing WHERE LOWER(provider) = 'openai' AND model = 'fold-ts-prov'`);
+    expect(rows).toHaveLength(1);
+    // 保留行 created=100（非零）不被变体行 0 覆盖；updated 取最大值 400
+    expect(rows[0].created_at).toBe(100);
+    expect(rows[0].updated_at).toBe(400);
+  });
+
+  it('pricing 模型维度冲突折叠时间戳：变体行真实时间戳合入保留行', () => {
+    clearLowerGate();
+    const d = getDb();
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
+           VALUES ('openai', 'fold-ts-model', 1, 0.5, 2, 0, 0)`);
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
+           VALUES ('openai', 'FOLD-TS-MODEL', 9, 4.5, 18, 150, 50)`);
+
+    migrateLowercaseNames();
+
+    const rows = queryAll(`SELECT * FROM pricing WHERE provider = 'openai' AND model = 'fold-ts-model'`);
+    expect(rows).toHaveLength(1);
+    // 变体行 created=150 合入保留行（排除 0），updated 取最大 50
+    expect(rows[0].created_at).toBe(150);
+    expect(rows[0].updated_at).toBe(50);
+  });
+
   it('单次执行门控：已迁移则跳过', () => {
     clearLowerGate();
     migrateLowercaseNames();

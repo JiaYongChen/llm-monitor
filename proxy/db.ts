@@ -813,16 +813,27 @@ function mergeToolConfigVariants(lower: string, preferredCanonical?: string): vo
   }
 }
 
+/** 折叠一组 (created_at, updated_at) 值：created 取最小非零（全 0 → 0 = 未知），updated 取最大 */
+function foldTimestamps(vals: Array<[number, number]>): [number, number] {
+  const created = Math.min(...vals.map(([c]) => c || 0).filter(v => v > 0).concat(Infinity));
+  const updated = Math.max(...vals.map(([, u]) => u || 0));
+  return [created === Infinity ? 0 : created, updated];
+}
+
 /** pricing 供应商变体归一：改名到规范名；与规范行同 model+effective_from 冲突时删除变体行（规范行定价优先） */
 function mergePricingProviderVariants(lower: string, canonical: string): void {
   const rows = queryAll('SELECT rowid AS rid, model, effective_from, created_at, updated_at FROM pricing WHERE LOWER(provider) = ? AND provider != ?', [lower, canonical]);
   for (const row of rows) {
-    const conflict = queryOne('SELECT rowid AS rid FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
+    const conflict = queryOne('SELECT rowid AS rid, created_at, updated_at FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
       [canonical, row.model, row.effective_from]);
     if (conflict) {
-      // 冲突删除前先把变体行时间戳折叠进规范行（created_at 取最小非零，updated_at 取最大）
-      runRaw('UPDATE pricing SET created_at = MIN(created_at, ?), updated_at = MAX(updated_at, ?) WHERE rowid = ?',
-        [Number(row.created_at) || 0, Number(row.updated_at) || 0, conflict.rid]);
+      // 冲突删除前先把变体行时间戳折叠进规范行（created 取最小非零排除 0，updated 取最大）
+      const [created, updated] = foldTimestamps([
+        [Number(conflict.created_at) || 0, Number(conflict.updated_at) || 0],
+        [Number(row.created_at) || 0, Number(row.updated_at) || 0],
+      ]);
+      runRaw('UPDATE pricing SET created_at = ?, updated_at = ? WHERE rowid = ?',
+        [created, updated, conflict.rid]);
       runRaw('DELETE FROM pricing WHERE rowid = ?', [row.rid]);
     } else {
       runRaw('UPDATE pricing SET provider = ? WHERE rowid = ?', [canonical, row.rid]);
@@ -831,14 +842,21 @@ function mergePricingProviderVariants(lower: string, canonical: string): void {
 }
 
 /** pricing 模型维度变体合并：LOWER(model) 与既有行冲突时删除变体行（规范行优先），否则改名为小写。
- *  与供应商维度策略一致。 */
+ *  与供应商维度策略一致（冲突时时间戳折叠进保留行）。 */
 function mergePricingModelVariants(): void {
-  const rows = queryAll('SELECT rowid AS rid, provider, model, effective_from FROM pricing WHERE model != LOWER(model)');
+  const rows = queryAll('SELECT rowid AS rid, provider, model, effective_from, created_at, updated_at FROM pricing WHERE model != LOWER(model)');
   for (const row of rows) {
     const lowerModel = (row.model as string).toLowerCase();
-    const conflict = queryOne('SELECT 1 AS one FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
+    const conflict = queryOne('SELECT rowid AS rid, created_at, updated_at FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
       [row.provider, lowerModel, row.effective_from]);
     if (conflict) {
+      // 冲突删除前先把变体行时间戳折叠进保留行（与供应商维度一致）
+      const [created, updated] = foldTimestamps([
+        [Number(conflict.created_at) || 0, Number(conflict.updated_at) || 0],
+        [Number(row.created_at) || 0, Number(row.updated_at) || 0],
+      ]);
+      runRaw('UPDATE pricing SET created_at = ?, updated_at = ? WHERE rowid = ?',
+        [created, updated, conflict.rid]);
       runRaw('DELETE FROM pricing WHERE rowid = ?', [row.rid]);
     } else {
       runRaw('UPDATE pricing SET model = ? WHERE rowid = ?', [lowerModel, row.rid]);
@@ -1094,7 +1112,7 @@ export function upsertDailyStat(
        uncached_input = uncached_input + excluded.uncached_input,
        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
        created_at_ms = CASE WHEN created_at_ms = 0 THEN excluded.created_at_ms ELSE created_at_ms END`,
-    [dateText, normalizeProviderName(provider), model.toLowerCase(), tool ? normalizeToolName(tool) : 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs],
+    [dateText, normalizeProviderName(provider), model ? model.toLowerCase() : 'unknown', tool ? normalizeToolName(tool) : 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs],
   );
   saveDb();
 }

@@ -184,4 +184,10 @@ describe('db', () => {
     expect(rows[0].prompt_tokens).toBe(80);
     expect(rows[0].output_tokens).toBe(50);
   });
+
+  it('upsertDailyStat model 为空值时回退 unknown 不抛错', () => {
+    upsertDailyStat('2026-08-13', 'OpenAI', null as any, 'codex', 0.01, 10, 5, 8, 2);
+    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'openai' AND model = 'unknown' AND tool = 'codex'");
+    expect(rows).toHaveLength(1);
+  });
 });
