@@ -171,6 +171,25 @@ export async function initDb(dbPath?: string): Promise<void> {
     db.run('INSERT OR IGNORE INTO provider_config (provider, base_url, api_key, enabled) VALUES (?, ?, ?, 1)', [p, '', '']);
   }
 
+  // hourly_stats 统计表 — 纯 UTC 小时毫秒主键，写入端零时区；天级/小时级标签在查询端按 tzOffset 重算
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hourly_stats (
+      hour_ms    INTEGER NOT NULL,
+      provider   TEXT    NOT NULL,
+      model      TEXT    NOT NULL,
+      tool       TEXT    NOT NULL,
+      call_count INTEGER NOT NULL DEFAULT 0,
+      total_cost REAL    NOT NULL DEFAULT 0,
+      prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+      output_tokens     INTEGER NOT NULL DEFAULT 0,
+      uncached_input    INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (hour_ms, provider, model, tool)
+    )
+  `);
+
   // 索引
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_calls_session ON calls(session_id)',
@@ -179,6 +198,7 @@ export async function initDb(dbPath?: string): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_calls_fingerprint ON calls(fingerprint)',
     'CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions(tool)',
     'CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)',
+    'CREATE INDEX IF NOT EXISTS idx_hourly_provider ON hourly_stats(provider)',
   ];
   for (const idx of indexes) {
     db.run(idx);
@@ -215,27 +235,6 @@ export async function initDb(dbPath?: string): Promise<void> {
       updated_at        INTEGER NOT NULL DEFAULT 0
     )
   `);
-
-  // daily_stats 统计表 — 独立于迁移版本，无条件建表，防止 schema 版本异常时缺失
-  db.run(`
-    CREATE TABLE IF NOT EXISTS daily_stats (
-      date              TEXT    NOT NULL,
-      provider          TEXT    NOT NULL,
-      model             TEXT    NOT NULL,
-      tool              TEXT    NOT NULL,
-      call_count        INTEGER NOT NULL DEFAULT 0,
-      total_cost        REAL    NOT NULL DEFAULT 0,
-      prompt_tokens     INTEGER NOT NULL DEFAULT 0,
-      output_tokens     INTEGER NOT NULL DEFAULT 0,
-      uncached_input    INTEGER NOT NULL DEFAULT 0,
-      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-      created_at_ms     INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (date, provider, model, tool)
-    )
-  `);
-
-  // 兼容已有库：添加 created_at_ms 列（列已存在则忽略）
-  try { db.run(`ALTER TABLE daily_stats ADD COLUMN created_at_ms INTEGER NOT NULL DEFAULT 0`); } catch {}
 
   // 类别颜色：色板静态数据表（改颜色只改此表，不动代码；theme 为未来主题预留）
   db.run(`
@@ -276,31 +275,36 @@ export async function initDb(dbPath?: string): Promise<void> {
 
   // v2 → v3：从 calls 表回填已有数据到 daily_stats（仅首次升级执行）
   // 使用 INSERT OR IGNORE + 事务包装确保幂等：升级中断后重启不会触发主键冲突
+  // 临时措施：daily_stats 已由 hourly_stats 替换，全新库此块会因表不存在报错 → 整体 try-catch 包裹（Task 6 迁移机制化时移除）
   if (storedVersion < 3) {
-    db.run('BEGIN');
     try {
-      db.run(`
-        INSERT OR IGNORE INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at_ms)
-        SELECT
-          strftime('%Y-%m-%d', (created_at + 28800000) / 1000, 'unixepoch') as date,  -- UTC+8 与 recorder 一致
-          provider, model, COALESCE(tool, 'unknown') as tool,
-          COUNT(*) as call_count,
-          SUM(total_cost) as total_cost,
-          SUM(COALESCE(prompt_tokens, 0)) as prompt_tokens,
-          SUM(COALESCE(output_tokens, 0)) as output_tokens,
-          SUM(COALESCE(uncached_input, 0)) as uncached_input,
-          SUM(COALESCE(cache_read_tokens, 0)) as cache_read_tokens,
-          MIN(created_at) as created_at_ms
-        FROM calls
-        GROUP BY date, provider, model, tool
-      `);
+      db.run('BEGIN');
+      try {
+        db.run(`
+          INSERT OR IGNORE INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at_ms)
+          SELECT
+            strftime('%Y-%m-%d', (created_at + 28800000) / 1000, 'unixepoch') as date,  -- UTC+8 与 recorder 一致
+            provider, model, COALESCE(tool, 'unknown') as tool,
+            COUNT(*) as call_count,
+            SUM(total_cost) as total_cost,
+            SUM(COALESCE(prompt_tokens, 0)) as prompt_tokens,
+            SUM(COALESCE(output_tokens, 0)) as output_tokens,
+            SUM(COALESCE(uncached_input, 0)) as uncached_input,
+            SUM(COALESCE(cache_read_tokens, 0)) as cache_read_tokens,
+            MIN(created_at) as created_at_ms
+          FROM calls
+          GROUP BY date, provider, model, tool
+        `);
 
-      db.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)", ['3']);
-      db.run('COMMIT');
-      console.log('数据库已升级到 schema v3（新增 daily_stats 统计表，已回填历史数据）');
-    } catch (err) {
-      db.run('ROLLBACK');
-      throw err;
+        db.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)", ['3']);
+        db.run('COMMIT');
+        console.log('数据库已升级到 schema v3（新增 daily_stats 统计表，已回填历史数据）');
+      } catch (err) {
+        db.run('ROLLBACK');
+        throw err;
+      }
+    } catch {
+      // 全新库无 daily_stats 表：回填块跳过（Task 6 迁移机制化后移除本层包裹）
     }
   }
 
@@ -886,7 +890,7 @@ function formatModelName(model: string): string {
     .replace(/-(\d+)-(\d+)$/, '-$1.$2');
 }
 
-/** 聚合统计（从 daily_stats 表查询，不受删除操作影响） */
+/** 聚合统计（从 hourly_stats 上卷，不受删除操作影响） */
 export function getStats(groupBy: string, provider?: string, tool?: string): Record<string, any>[] {
   const aggs = `SUM(call_count) as count,
      SUM(total_cost) as total_cost,
@@ -895,11 +899,11 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
      SUM(cache_read_tokens) as total_cache_read_tokens,
      SUM(uncached_input) as total_uncached_input`;
 
-  // daily_stats 自带 tool 列，无需 JOIN sessions
+  // hourly_stats 自带 tool 列，无需 JOIN sessions
   const validCols: Record<string, string> = { provider: 'provider', model: 'model', tool: 'tool' };
   const col = validCols[groupBy] || 'provider';
   let sql = `SELECT ${col} as key, ${aggs}
-     FROM daily_stats`;
+     FROM hourly_stats`;
   const conditions: string[] = [];
   const params: any[] = [];
   if (provider) { conditions.push('provider = ?'); params.push(normalizeProviderName(provider)); }  // 入参归一化后等值比较
@@ -930,26 +934,18 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
   return results;
 }
 
-/** 将 UTC 毫秒时间戳转为 YYYY-MM-DD 日期文本（时间戳为 UTC 午夜，直接用 UTC 分量避免本地时区偏移） */
-function msToDateText(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
-
 /**
- * 时间统计：按范围 + 粒度聚合（从 daily_stats 表查询，不受删除操作影响）。
+ * 时间统计：按范围 + 粒度聚合（从 hourly_stats 上卷，不受删除操作影响）。
  * range: '7d'|'14d'|'30d'|'60d' → 按天，最近 N 天
- *        'today'|'yesterday'      → 按天（daily_stats 为天级粒度，暂无小时数据）
- *        'thisMonth'|'lastMonth'  → 按天
- * tzOffset: 时区偏移小时数（默认 8 = UTC+8）
- * 返回格式与原来一致：date 为日期文本，分组时附带 category 列
+ *        'today'|'yesterday'      → 按小时（date 标签 'YYYY-MM-DD HH:00'）
+ *        'thisMonth'|'lastMonth'|'thisQuarter'|'lastQuarter'|'thisYear'|'lastYear' → 按天
+ * tzOffset: 时区偏移小时数（默认 8 = UTC+8）；hour_ms 为纯 UTC 小时边界，标签在查询端重算
+ * 返回结构与旧版一致：date 为标签文本，分组时附带 category 列
  */
 export function getDailyStats(range: string, provider?: string, tool?: string, groupBy?: string, tzOffset = 8): Record<string, any>[] {
   const now = new Date();
   let startMs: number;
   let endMs: number | null = null;
-  // 基于 UTC 时间加上时区偏移得到目标时区的"今天"（与前端 fillDateRange 同法），
-  // 确保窗口边界与 daily_stats.date（目标时区日期）一致，避免跨时区时丢数据
   const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + tzOffset * 3600000);
   const tzMidnightMs = (daysOffset = 0) => Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate() + daysOffset);
 
@@ -965,7 +961,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
     case '14d':
     case '30d':
     case '60d':
-      startMs = tzMidnightMs(-(parseInt(range) - 1));  // 与前端 fillDateRange 标签数对齐：7d → today-6
+      startMs = tzMidnightMs(-(parseInt(range) - 1));
       break;
     case 'thisMonth':
       startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
@@ -991,7 +987,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
       endMs = Date.UTC(utcNow.getFullYear(), 0, 1);
       break;
     default:
-      startMs = tzMidnightMs(-30);  // 与前端 fillDateRange 的 fallback 30d 一致
+      startMs = tzMidnightMs(-30);
   }
 
   const aggs = `SUM(call_count) as count,
@@ -1000,36 +996,33 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
      SUM(uncached_input) as total_uncached_input,
      SUM(cache_read_tokens) as total_cache_read_tokens`;
 
-  // 分组列：支持 tool / provider / model 三种维度（daily_stats 自带 tool 列，无需 JOIN）
+  const isHourly = range === 'today' || range === 'yesterday';
+  const tzSeconds = tzOffset * 3600;
+  // 标签在查询端按 tzOffset 重算：小时级 'YYYY-MM-DD HH:00'，天级 'YYYY-MM-DD'
+  const labelExpr = isHourly
+    ? `strftime('%Y-%m-%d %H:00', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`
+    : `strftime('%Y-%m-%d', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`;
+
   let groupCol = '';
   if (groupBy === 'tool') groupCol = 'tool as category,';
   else if (groupBy === 'provider') groupCol = 'provider as category,';
   else if (groupBy === 'model') groupCol = 'model as category,';
 
-  // 使用 created_at_ms（epoch 毫秒）做时区无关的范围过滤；当 created_at_ms 尚未写入（=0）时回退到 date 列比较
-  // 在 SELECT 中按 tzOffset 动态计算目标时区的日期文本（保持与前端 fillDateRange 的标签一致）
-  // CASE WHEN：存量行 created_at_ms=0 回退到 date 列，避免输出 1970-01-01
-  const tzSeconds = tzOffset * 3600;
-  const dateExpr = `CASE WHEN created_at_ms > 0 THEN strftime('%Y-%m-%d', (created_at_ms / 1000) + ${tzSeconds}, 'unixepoch') ELSE date END`;
-
-  let sql = `SELECT ${groupCol} ${dateExpr} as date, ${aggs}
-     FROM daily_stats`;
+  let sql = `SELECT ${groupCol} ${labelExpr} as date, ${aggs}
+     FROM hourly_stats`;
   const conditions: string[] = [];
   const params: any[] = [];
-
-  // 优先用 created_at_ms 过滤（时区无关），created_at_ms=0 时回退到 date 列兼容旧数据
-  // 注意：整个 OR 条件外加括号，否则 AND 优先级高于 OR 会导致后续 provider/tool 过滤只作用于 created_at_ms=0 分支
+  // hour_ms 为纯 UTC 小时边界，startMs/endMs 均为整点毫秒，直接数值比较
   if (endMs != null) {
-    conditions.push(`((created_at_ms > 0 AND created_at_ms >= ? AND created_at_ms < ?) OR (created_at_ms = 0 AND date >= ? AND date < ?))`);
-    params.push(startMs, endMs, msToDateText(startMs), msToDateText(endMs));
+    conditions.push('hour_ms >= ? AND hour_ms < ?');
+    params.push(startMs, endMs);
   } else {
-    conditions.push(`((created_at_ms > 0 AND created_at_ms >= ?) OR (created_at_ms = 0 AND date >= ?))`);
-    params.push(startMs, msToDateText(startMs));
+    conditions.push('hour_ms >= ?');
+    params.push(startMs);
   }
-  if (provider) { conditions.push('provider = ?'); params.push(normalizeProviderName(provider)); }  // 入参归一化后等值比较
+  if (provider) { conditions.push('provider = ?'); params.push(normalizeProviderName(provider)); }
   if (tool) { conditions.push('tool = ?'); params.push(normalizeToolName(tool)); }
   sql += ' WHERE ' + conditions.join(' AND ');
-  // GROUP BY
   const groupParts = ['date'];
   if (groupBy === 'tool' || groupBy === 'provider' || groupBy === 'model') groupParts.push('category');
   sql += ' GROUP BY ' + groupParts.join(', ');
@@ -1037,27 +1030,31 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
   return queryAll(sql, params);
 }
 
-/** 累加每日统计（upsert），独立于 calls 表，删除操作不影响。
- *  @param createdAtMs 调用发生时的 epoch 毫秒时间戳，用于时区无关的范围查询 */
-export function upsertDailyStat(
-  dateText: string, provider: string, model: string, tool: string | null,
+/** 累加小时统计（upsert），独立于 calls 表，删除操作不影响。
+ *  hour_ms 由 createdAtMs 纯整数运算得出（UTC 小时边界），写入端零时区。 */
+export function upsertHourlyStat(
+  provider: string, model: string, tool: string | null,
   cost: number, promptTokens: number, outputTokens: number,
   uncachedInput: number, cacheReadTokens: number,
   createdAtMs: number = Date.now(),
 ): void {
+  const hourMs = Math.floor(createdAtMs / 3600000) * 3600000;
+  const now = Date.now();
   const d = getDb();
   d.run(
-    `INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at_ms)
-     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(date, provider, model, tool) DO UPDATE SET
+    `INSERT INTO hourly_stats (hour_ms, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(hour_ms, provider, model, tool) DO UPDATE SET
        call_count = call_count + 1,
        total_cost = total_cost + excluded.total_cost,
        prompt_tokens = prompt_tokens + excluded.prompt_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
        uncached_input = uncached_input + excluded.uncached_input,
        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
-       created_at_ms = CASE WHEN created_at_ms = 0 THEN excluded.created_at_ms ELSE created_at_ms END`,
-    [dateText, normalizeProviderName(provider), model ? model.toLowerCase() : 'unknown', tool ? normalizeToolName(tool) : 'unknown', cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs],
+       created_at = CASE WHEN created_at = 0 THEN excluded.created_at ELSE created_at END,
+       updated_at = excluded.updated_at`,
+    [hourMs, normalizeProviderName(provider), model ? model.toLowerCase() : 'unknown', tool ? normalizeToolName(tool) : 'unknown',
+     cost, promptTokens, outputTokens, uncachedInput, cacheReadTokens, createdAtMs, now],
   );
   saveDb();
 }

@@ -2,7 +2,7 @@
 import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
-import { insertCall, updateSessionStats, listPricing, upsertDailyStat } from './db.js';
+import { insertCall, updateSessionStats, listPricing, upsertHourlyStat } from './db.js';
 import { writeBody } from './db-body.js';
 import { registerCategoryColor } from './colors.js';
 import { getRates } from './rates.js';
@@ -117,18 +117,11 @@ function processRecord(record: CallRecord): void {
     updateSessionStats(record.session_id, record.total_cost, totalTokens);
   }
 
-  // 6. 累加每日统计（独立于 calls 表，删除操作不影响）
-  // 所有请求（含失败调用）无条件入 daily_stats，保持与 calls 表调用次数口径一致
-  // 使用 epoch 时间戳 + tzOffset 计算日期归属，与 getDailyStats 的查询逻辑一致
-  {
-    const tzOffset = 8; // 默认 UTC+8，后续可改为从配置读取
-    const tzDate = new Date(now + tzOffset * 3600000);
-    const dateText = `${tzDate.getUTCFullYear()}-${String(tzDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tzDate.getUTCDate()).padStart(2, '0')}`;
-    upsertDailyStat(
-      dateText, record.provider, record.model, record.tool || 'unknown',
-      record.total_cost, record.prompt_tokens || 0, record.output_tokens || 0,
-      record.uncached_input || 0, record.cache_read_tokens || 0,
-      now,
-    );
-  }
+  // 6. 累加小时统计（独立于 calls 表，删除操作不影响；hour_ms 由 createdAtMs 整数运算得出，写入端零时区）
+  upsertHourlyStat(
+    record.provider, record.model, record.tool || 'unknown',
+    record.total_cost, record.prompt_tokens || 0, record.output_tokens || 0,
+    record.uncached_input || 0, record.cache_read_tokens || 0,
+    now,
+  );
 }

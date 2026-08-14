@@ -5,7 +5,7 @@ import {
   getToolConfig, updateToolConfig, listToolConfigs, listSessions, listCalls,
   getStats, getDailyStats, upsertPricing, listPricing, addProviderConfig,
   listProviderConfigs, updateSessionUpstream, normalizeToolName, insertCall,
-  upsertDailyStat, getDb, updateProviderConfig,
+  upsertHourlyStat, getDb, updateProviderConfig,
   deleteProviderConfig, getProviderConfig, normalizeProviderName,
 } from '../proxy/db.js';
 import { toolFromProvider } from '../proxy/session.js';
@@ -226,8 +226,9 @@ describe('查询过滤大小写不敏感', () => {
   });
 
   it('getStats 按 model 分组时大小写变体合并为同一条目', () => {
-    upsertDailyStat('2026-08-13', 'Zhipu', 'GLM-4-Air', 'ClaudeCode', 0.1, 10, 5, 8, 2);
-    upsertDailyStat('2026-08-13', 'Zhipu', 'glm-4-air', 'ClaudeCode', 0.2, 20, 10, 16, 4);
+    // 同一 hour_ms 内两次调用（模型大小写变体归一化后合并为同一行）
+    upsertHourlyStat('Zhipu', 'GLM-4-Air', 'ClaudeCode', 0.1, 10, 5, 8, 2, Date.UTC(2026, 7, 13, 4));
+    upsertHourlyStat('Zhipu', 'glm-4-air', 'ClaudeCode', 0.2, 20, 10, 16, 4, Date.UTC(2026, 7, 13, 4));
     const stats = getStats('model', 'Zhipu');
     const glm = stats.filter((s: any) => s.key.toLowerCase() === 'glm-4-air');
     expect(glm).toHaveLength(1);
@@ -235,7 +236,7 @@ describe('查询过滤大小写不敏感', () => {
   });
 
   it('getStats / getDailyStats 按 tool 过滤大小写不敏感', () => {
-    upsertDailyStat('2026-08-13', 'Anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.1, 100, 50, 80, 20);
+    upsertHourlyStat('Anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.1, 100, 50, 80, 20, Date.UTC(2026, 7, 13, 4));
     const stats = getStats('tool', undefined, 'CLAUDECODE');
     expect(stats.length).toBeGreaterThan(0);
     const daily = getDailyStats('30d', undefined, 'claudecode');

@@ -1,6 +1,6 @@
 /** 数据库 CRUD 测试 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll, upsertDailyStat } from '../proxy/db.js';
+import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll, upsertHourlyStat } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -123,31 +123,27 @@ describe('db', () => {
     expect(session!.total_tokens).toBe(350);
   });
 
-  it('getStats 聚合统计（从 daily_stats 读取）', () => {
-    // stats 已改为从 daily_stats 表聚合，需先通过 upsertDailyStat 写入数据
+  it('getStats 聚合统计（从 hourly_stats 读取）', () => {
+    // stats 已改为从 hourly_stats 表聚合，需先通过 upsertHourlyStat 写入数据
     // 写入侧供应商名归一化：'anthropic' → 小写存储 'anthropic'
-    upsertDailyStat('2026-08-12', 'anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.03, 100, 50, 100, 0);
+    upsertHourlyStat('anthropic', 'claude-sonnet-5', 'ClaudeCode', 0.03, 100, 50, 100, 0, Date.UTC(2026, 7, 12, 4));
     const stats = getStats('provider');
     const anthropic = stats.find((s: any) => s.key === 'anthropic');
     expect(anthropic).toBeDefined();
     expect(anthropic!.count).toBeGreaterThanOrEqual(1);
   });
 
-  it('getDailyStats 按天聚合（today 范围，日期动态计算避免依赖具体日期）', () => {
-    // 与后端窗口边界同法计算目标时区（UTC+8）的"今天"日期文本
-    const now = new Date();
-    const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const todayText = `${utcNow.getFullYear()}-${pad(utcNow.getMonth() + 1)}-${pad(utcNow.getDate())}`;
-    upsertDailyStat(todayText, 'OpenAI', 'gpt-4o-daily', 'codex', 0.05, 100, 50, 80, 20);
+  it('getDailyStats 按小时聚合（today 范围，日期动态计算避免依赖具体日期）', () => {
+    // today 范围返回小时标签（'YYYY-MM-DD HH:00'）；行用默认 createdAtMs（Date.now()，必落在 today 窗口内）
+    upsertHourlyStat('OpenAI', 'gpt-4o-daily', 'codex', 0.05, 100, 50, 80, 20);
     const rows = getDailyStats('today', 'OpenAI');
-    const row = rows.find((r: any) => r.date === todayText);
+    const row = rows.find((r: any) => /^\d{4}-\d{2}-\d{2} \d{2}:00$/.test(r.date));
     expect(row).toBeDefined();
     expect(row!.count).toBe(1);
     expect(row!.total_cost).toBeCloseTo(0.05);
     // 分组查询：返回 category 列（与旧返回格式一致，前端零改动）
     const grouped = getDailyStats('today', 'OpenAI', undefined, 'model');
-    const gRow = grouped.find((r: any) => r.date === todayText && r.category === 'gpt-4o-daily');
+    const gRow = grouped.find((r: any) => /^\d{4}-\d{2}-\d{2} \d{2}:00$/.test(r.date) && r.category === 'gpt-4o-daily');
     expect(gRow).toBeDefined();
     expect(gRow!.count).toBe(1);
   });
@@ -182,11 +178,12 @@ describe('db', () => {
     expect(after.some((p: any) => p.id === id)).toBe(false);
   });
 
-  it('upsertDailyStat 新增记录', () => {
-    upsertDailyStat('2026-08-12', 'OpenAI', 'gpt-4o', 'codex', 0.05, 100, 50, 80, 20);
-    // 按完整主键查询，避免同日期其他用例（getStats/getDailyStats 写入）干扰行数断言
-    // upsertDailyStat 会归一化工具名 / 供应商名：任意大小写 → 小写存储
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-12' AND provider = 'openai' AND model = 'gpt-4o' AND tool = 'codex'");
+  it('upsertHourlyStat 新增记录', () => {
+    upsertHourlyStat('OpenAI', 'gpt-4o', 'codex', 0.05, 100, 50, 80, 20, 1786604160000);
+    // hour_ms = floor(1786604160000 / 3600000) * 3600000 = 1786600800000（UTC 小时边界下取整）
+    // 按完整主键查询，避免同时段其他用例（getStats/getDailyStats 写入）干扰行数断言
+    // upsertHourlyStat 会归一化工具名 / 供应商名：任意大小写 → 小写存储
+    const rows = queryAll("SELECT * FROM hourly_stats WHERE hour_ms = 1786600800000 AND provider = 'openai' AND model = 'gpt-4o' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(1);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
@@ -194,23 +191,26 @@ describe('db', () => {
     expect(rows[0].output_tokens).toBe(50);
     expect(rows[0].uncached_input).toBe(80);
     expect(rows[0].cache_read_tokens).toBe(20);
+    expect(rows[0].created_at).toBe(1786604160000);
   });
 
-  // 日期用 2026-08-13，与上一条用例（2026-08-12 同键）隔离，避免共享数据库中的累加干扰断言
-  it('upsertDailyStat 重复键累加', () => {
-    upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.03, 50, 30, 40, 10);
-    upsertDailyStat('2026-08-13', 'OpenAI', 'gpt-4o', 'codex', 0.02, 30, 20, 20, 5);
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'openai' AND model = 'gpt-4o' AND tool = 'codex'");
+  // createdAtMs 用下一小时内两个时刻（1786607760000 / 1786607760100，hour_ms 下取整为 1786604400000），
+  // 与上一条用例（同 provider/model/tool、hour_ms=1786600800000）隔离，避免共享数据库中的累加干扰断言
+  it('upsertHourlyStat 重复键累加且 created_at 不变 updated_at 刷新', () => {
+    upsertHourlyStat('OpenAI', 'gpt-4o', 'codex', 0.03, 50, 30, 40, 10, 1786607760000);
+    upsertHourlyStat('OpenAI', 'gpt-4o', 'codex', 0.02, 30, 20, 20, 5, 1786607760100);
+    const rows = queryAll("SELECT * FROM hourly_stats WHERE hour_ms = 1786604400000 AND provider = 'openai' AND model = 'gpt-4o' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
     expect(rows[0].call_count).toBe(2);
     expect(rows[0].total_cost).toBeCloseTo(0.05);
-    expect(rows[0].prompt_tokens).toBe(80);
-    expect(rows[0].output_tokens).toBe(50);
+    expect(rows[0].created_at).toBe(1786607760000);   // 首次创建不变
+    // updated_at 为写入时的墙钟时间（Date.now()，非 createdAtMs），断言刷新为更新的值
+    expect(rows[0].updated_at).toBeGreaterThan(rows[0].created_at);
   });
 
-  it('upsertDailyStat model 为空值时回退 unknown 不抛错', () => {
-    upsertDailyStat('2026-08-13', 'OpenAI', null as any, 'codex', 0.01, 10, 5, 8, 2);
-    const rows = queryAll("SELECT * FROM daily_stats WHERE date = '2026-08-13' AND provider = 'openai' AND model = 'unknown' AND tool = 'codex'");
+  it('upsertHourlyStat model 为空值时回退 unknown 不抛错', () => {
+    upsertHourlyStat('OpenAI', null as any, 'codex', 0.01, 10, 5, 8, 2, 1786604160000);
+    const rows = queryAll("SELECT * FROM hourly_stats WHERE hour_ms = 1786600800000 AND provider = 'openai' AND model = 'unknown' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
   });
 });

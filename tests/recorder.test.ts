@@ -44,10 +44,11 @@ describe('recorder', () => {
     expect(calls[0].prompt_tokens).toBe(500);
     expect(calls[0].cache_read_tokens).toBe(200);
 
-    // 验证 daily_stats 通过 recorder 真实路径累加（供应商名写入时小写存储 'anthropic'）
-    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'anthropic'");
+    // 验证 hourly_stats 通过 recorder 真实路径累加（供应商名写入时小写存储 'anthropic'）
+    const stats = queryAll("SELECT * FROM hourly_stats WHERE provider = 'anthropic'");
     expect(stats.length).toBe(1);
     expect(stats[0].call_count).toBe(1);
+    expect(stats[0].hour_ms).toBeDefined();  // hour_ms 由 createdAtMs 整数运算得出（UTC 小时边界）
     expect(stats[0].output_tokens).toBe(300);
     expect(stats[0].uncached_input).toBe(400);  // prompt_tokens(500) - cache_write(100)
     expect(stats[0].cache_read_tokens).toBe(200);
@@ -87,15 +88,15 @@ describe('recorder', () => {
     expect(calls[0].output_tokens).toBe(100);
     expect(calls[0].total_cost).toBeGreaterThan(0);
 
-    // 验证 daily_stats 通过 recorder 真实路径累加（供应商名小写存储 'deepseek'）
-    const stats = queryAll("SELECT * FROM daily_stats WHERE provider = 'deepseek'");
+    // 验证 hourly_stats 通过 recorder 真实路径累加（供应商名小写存储 'deepseek'）
+    const stats = queryAll("SELECT * FROM hourly_stats WHERE provider = 'deepseek'");
     expect(stats.length).toBe(1);
     expect(stats[0].call_count).toBe(1);
     expect(stats[0].output_tokens).toBe(100);
   });
 
-  it('★ daily_stats tool 归一化：空 tool 自动兜底 unknown', async () => {
-    // 构造 tool 为空字符串的记录，验证 upsertDailyStat 内部归一化
+  it('★ hourly_stats tool 归一化：空 tool 自动兜底 unknown', async () => {
+    // 构造 tool 为空字符串的记录，验证 upsertHourlyStat 内部归一化
     const record: CallRecord = {
       provider: 'anthropic', model: 'claude-sonnet-5', tool: '',  // 空 tool
       endpoint: '/v1/messages', method: 'POST',
@@ -114,11 +115,12 @@ describe('recorder', () => {
     enqueueRecord(record);
     await new Promise(r => setTimeout(r, 300));
 
-    const stats = queryAll("SELECT * FROM daily_stats WHERE tool = 'unknown'");
+    const stats = queryAll("SELECT * FROM hourly_stats WHERE tool = 'unknown'");
     expect(stats.length).toBe(1);
     expect(stats[0].call_count).toBe(1);
+    expect(stats[0].hour_ms).toBeDefined();
     // tool 为 NULL 的行不应存在
-    const nullStats = queryAll('SELECT * FROM daily_stats WHERE tool IS NULL');
+    const nullStats = queryAll('SELECT * FROM hourly_stats WHERE tool IS NULL');
     expect(nullStats.length).toBe(0);
   });
 });
