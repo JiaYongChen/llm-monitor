@@ -14,6 +14,22 @@ import { displayName } from '../lib/display';
 /** 总览图标颜色（侧边栏激活态紫色） */
 const OVERVIEW_COLOR = '#5e5ce6';
 
+/** 时间范围档位（分段按钮组顺序即展示顺序；value 与后端 getDailyStats / 前端 fillDateRange 的 range 契约一致） */
+const DAILY_RANGES = [
+  { value: 'yesterday', label: '昨天' },
+  { value: 'today', label: '今天' },
+  { value: '7d', label: '7 天' },
+  { value: '14d', label: '14 天' },
+  { value: '30d', label: '30 天' },
+  { value: '60d', label: '60 天' },
+  { value: 'thisMonth', label: '本月' },
+  { value: 'lastMonth', label: '上月' },
+  { value: 'thisQuarter', label: '本季度' },
+  { value: 'lastQuarter', label: '上季度' },
+  { value: 'thisYear', label: '本年' },
+  { value: 'lastYear', label: '去年' },
+];
+
 export default function Dashboard() {
   const { currency, rates } = useCurrency();
   const sym = CURRENCIES[currency].symbol;
@@ -179,26 +195,25 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* 时间范围（页面级筛选：费用分布与 Token 用量共用） */}
+      <div className="flex items-center justify-center">
+        <div className="inline-flex items-center gap-0.5 bg-[#e9e9ee] rounded-lg p-1">
+          {DAILY_RANGES.map(r => (
+            <button
+              key={r.value}
+              onClick={() => setDailyRange(r.value)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${dailyRange === r.value ? 'bg-white text-[#1d1d1f] font-medium shadow-sm' : 'text-[#6e6e73] hover:text-[#1d1d1f]'}`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 费用分布（时间筛选与 Token 用量共用） */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle className="text-base">费用分布</CardTitle>
-          <div className="flex items-center gap-2">
-            <select
-              className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-              value={dailyRange}
-              onChange={e => setDailyRange(e.target.value)}
-            >
-              <option value="yesterday">昨天</option>
-              <option value="today">今天</option>
-              <option value="7d">7 天</option>
-              <option value="14d">14 天</option>
-              <option value="30d">30 天</option>
-              <option value="60d">60 天</option>
-              <option value="thisMonth">本月</option>
-              <option value="lastMonth">上月</option>
-            </select>
-          </div>
         </CardHeader>
         <CardContent>
           <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind={groupBy} />
