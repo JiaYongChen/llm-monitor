@@ -5,12 +5,9 @@ import { sortByPresetOrder } from './utils';
 
 export type CategoryKind = 'tool' | 'provider' | 'model';
 
-/** /api/colors 返回结构（色板 + 两池注册表） */
-export interface CategoryColors {
-  palette: { idx: number; color: string }[];
-  tools: Record<string, number>;
-  providers: Record<string, number>;
-}
+/** /api/colors 返回结构（色板 + 两池注册表）。
+ *  直接从 api.fetchColors 的返回类型提取——单一来源，client.ts 改结构时此处自动跟随，无副本漂移。 */
+export type CategoryColors = Awaited<ReturnType<typeof api.fetchColors>>;
 
 /** 拉取类别颜色注册数据（同 queryKey 多处调用共享缓存，零重复请求） */
 export function useCategoryColors() {
