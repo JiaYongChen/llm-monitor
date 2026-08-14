@@ -547,12 +547,14 @@ function _registerApiRoutes(app: FastifyInstance): void {
     session_timeout_sec: SESSION_TIMEOUT_SEC,
     auto_cleanup_days: AUTO_CLEANUP_DAYS,
     currency: getSetting('currency') || 'CNY',
+    timezone: getSetting('timezone') || '8',
     rates: getRates(),
     rates_updated_at: getRatesUpdatedAt(),
   }));
   app.put('/api/config', async (req) => {
-    const { currency } = req.body as any;
+    const { currency, timezone } = req.body as any;
     if (currency) setSetting('currency', currency);
+    if (timezone !== undefined) setSetting('timezone', String(timezone));
     return { ok: true };
   });
 
