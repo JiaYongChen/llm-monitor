@@ -7,7 +7,7 @@
  *  如必须插入，请先为该测试自建前置状态或调整清表重跑的位置。 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { initDb, closeDb, queryAll, getDb, upsertSession, addProviderConfig } from '../proxy/db.js';
-import { seedPalette, registerCategoryColor, migrateCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
+import { seedPalette, registerCategoryColor, migrateCategoryColors, getCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
 import { enqueueRecord, startRecorder, stopRecorder } from '../proxy/recorder.js';
 import type { CallRecord } from '../shared/types.js';
 import { createTempDb } from './setup.js';
@@ -62,13 +62,41 @@ describe('运行时注册 registerCategoryColor', () => {
     expect(registerCategoryColor('provider', 'glm')).toBe(3);
   });
 
-  it('32 色位全占后循环复用 idx0', () => {
+  it('32 色位全占后循环复用（避开内置锚点 0/1）', () => {
     // 前置：再注册 32 个新名字必占满全部色位（与既有占用无关，自包含）
     for (let i = 0; i < PALETTE_SIZE; i++) {
       registerCategoryColor('tool', `t-${String(i).padStart(2, '0')}`);
     }
-    // 此刻 0~31 全占 → 下一个循环复用 idx0
-    expect(registerCategoryColor('tool', 'overflow-tool')).toBe(0);
+    // 此刻 0~31 全占 → 下一个按名称哈希映射到 [2,31]，不与内置锚点 codex(0)/claudecode(1) 撞色
+    const idx = registerCategoryColor('tool', 'overflow-tool');
+    expect(idx).toBeGreaterThanOrEqual(2);
+    expect(idx).toBeLessThan(PALETTE_SIZE);
+  });
+
+  it('空名与 unknown 不注册（返回 -1 且不落库）', () => {
+    expect(registerCategoryColor('tool', '')).toBe(-1);
+    expect(registerCategoryColor('provider', '')).toBe(-1);
+    expect(registerCategoryColor('tool', 'unknown')).toBe(-1);
+    expect(registerCategoryColor('provider', 'UNKNOWN')).toBe(-1); // 归一化后判断
+    expect(queryAll("SELECT * FROM category_colors WHERE name = 'unknown'").length).toBe(0);
+    expect(queryAll("SELECT * FROM category_colors WHERE name = ''").length).toBe(0);
+  });
+});
+
+describe('注册表查询 getCategoryColors', () => {
+  it('特殊名称 __proto__ 不被原型污染吞掉', () => {
+    registerCategoryColor('provider', '__proto__');
+    const colors = getCategoryColors();
+    expect(colors.providers['__proto__']).toBeGreaterThanOrEqual(0);
+    expect(Object.keys(colors.providers)).toContain('__proto__');
+  });
+
+  it('色板表为空时兜底返回种子色值（查询不依赖已种子数据）', () => {
+    const d = getDb();
+    d.run("DELETE FROM color_palette WHERE theme = 'light'");
+    const colors = getCategoryColors();
+    expect(colors.palette.length).toBe(PALETTE_SIZE);
+    expect(colors.palette[0]).toEqual({ idx: 0, color: '#1f77b4' });
   });
 });
 

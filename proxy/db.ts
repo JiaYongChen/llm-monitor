@@ -408,7 +408,7 @@ export function queryAll(sql: string, params?: any[]): Record<string, any>[] {
 }
 
 /** 执行 SELECT 查询，返回第一行 */
-function queryOne(sql: string, params?: any[]): Record<string, any> | null {
+export function queryOne(sql: string, params?: any[]): Record<string, any> | null {
   const d = getDb();
   const stmt = d.prepare(sql);
   if (params) stmt.bind(params);
