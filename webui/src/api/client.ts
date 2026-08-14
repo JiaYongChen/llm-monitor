@@ -159,7 +159,7 @@ export async function getConfig() {
   return fetchJson('/config');
 }
 
-export async function updateConfig(data: { currency: string }) {
+export async function updateConfig(data: { currency?: string; timezone?: string }) {
   return fetchJson('/config', { method: 'PUT', body: JSON.stringify(data) });
 }
 

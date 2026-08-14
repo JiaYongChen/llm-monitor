@@ -42,7 +42,9 @@ export default function Dashboard() {
   const groupBy = provider ? 'model' : tool ? 'provider' : 'tool';
   const { data: stats } = useQuery({ queryKey: ['stats', groupBy, provider, tool], queryFn: () => api.getStats(groupBy, provider, tool), refetchInterval: 5000 });
   const [dailyRange, setDailyRange] = useState('30d');
-  const [dailyTz, setDailyTz] = useState(8);
+  // 时区为全局设置（设置页维护，metadata 持久化）；CurrencyProvider 已用同一 queryKey，共享缓存零重复请求
+  const { data: config } = useQuery({ queryKey: ['config'], queryFn: api.getConfig });
+  const dailyTz = Number(config?.timezone ?? 8);
   const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, undefined, dailyTz), refetchInterval: 60000 });
   const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, 'model', dailyTz), enabled: !!provider, refetchInterval: 60000 });
   // 费用分布：与 Token 用量共用同一时间筛选（dailyRange/dailyTz）
@@ -195,14 +197,6 @@ export default function Dashboard() {
               <option value="60d">60 天</option>
               <option value="thisMonth">本月</option>
               <option value="lastMonth">上月</option>
-            </select>
-            <select
-              className="text-sm border border-[#e5e5ea] rounded-lg px-2 py-1 bg-white text-[#6e6e73] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-              value={dailyTz}
-              onChange={e => setDailyTz(Number(e.target.value))}
-            >
-              <option value={0}>UTC+0</option>
-              <option value={8}>UTC+8</option>
             </select>
           </div>
         </CardHeader>
