@@ -137,17 +137,22 @@ function ThinkingCard({ thinking }: { thinking: string }) {
 
 function CodeBlock({ title, raw }: { title: string; raw: string | null }) {
   const text = pj(raw);
+  // raw 为 null 时显示降级文案（文件缺失/已清理），空字符串仍显示 (空)
 
   return (
     <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
       <div className="flex items-center gap-2 px-5 py-3 border-b border-[#f0f0f4]">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5e5ce6" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
         <span className="text-sm font-semibold text-[#1d1d1f]">{title}</span>
-        <span className="text-[10px] font-mono text-[#aeaeb2]">{text.length} B</span>
+        <span className="text-[10px] font-mono text-[#aeaeb2]">{raw == null ? '—' : `${text.length} B`}</span>
       </div>
-      <div className="mx-[10px] mb-[10px] mt-2 p-4 max-h-64 overflow-y-auto scrollbar-visible bg-[#f0f0f4] rounded-lg">
-        <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap text-[#6e6e73]">{text}</pre>
-      </div>
+      {raw == null ? (
+        <p className="text-xs text-[#aeaeb2] px-5 py-4">body 不可用（文件缺失或已清理）</p>
+      ) : (
+        <div className="mx-[10px] mb-[10px] mt-2 p-4 max-h-64 overflow-y-auto scrollbar-visible bg-[#f0f0f4] rounded-lg">
+          <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap text-[#6e6e73]">{text}</pre>
+        </div>
+      )}
     </div>
   );
 }

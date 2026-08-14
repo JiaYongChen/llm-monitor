@@ -1,9 +1,9 @@
-/** 日期序列工具：为图表生成指定范围和时区的完整日期（天级）序列 */
+/** 日期序列工具：为图表生成指定范围和时区的完整日期序列（小时级/天级） */
 
 /**
  * 生成指定范围和时区的完整日期序列。
  * 基于 UTC 时间加上时区偏移得到目标时区的"今天"（与后端 getDailyStats 窗口同法）。
- * - today / yesterday：按天（daily_stats 为天级粒度，各返回 1 个 "YYYY-MM-DD" 标签）
+ * - today / yesterday：按小时（后端 getDailyStats 返回 'YYYY-MM-DD HH:00' 小时标签，各 24 个）
  * - thisMonth / lastMonth / N d：按天（"YYYY-MM-DD"）
  */
 export function fillDateRange(range: string, tz: number): string[] {
@@ -15,15 +15,14 @@ export function fillDateRange(range: string, tz: number): string[] {
   // 辅助：返回目标时区当天的午夜
   const tzMidnight = (daysOffset = 0) => new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate() + daysOffset);
 
-  if (range === 'today') {
-    // daily_stats 为天级粒度（后端今日数据聚合为一个 YYYY-MM-DD 行），只返回今天一个天级标签
-    const start = tzMidnight();
-    return [`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`];
-  }
-  if (range === 'yesterday') {
-    // 同理，yesterday 只返回昨天一个天级标签
-    const start = tzMidnight(-1);
-    return [`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`];
+  if (range === 'today' || range === 'yesterday') {
+    // 短范围按小时展示：后端 getDailyStats 返回 'YYYY-MM-DD HH:00' 小时标签
+    const start = tzMidnight(range === 'today' ? 0 : -1);
+    const labels: string[] = [];
+    for (let h = 0; h < 24; h++) {
+      labels.push(`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())} ${pad(h)}:00`);
+    }
+    return labels;
   }
   if (range === 'thisMonth') {
     const start = new Date(utcNow.getFullYear(), utcNow.getMonth(), 1);

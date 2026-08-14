@@ -37,7 +37,8 @@ const ZERO_ROW: DailyData = {
 };
 
 export default function DailyBarChart({ data, range, tz, modelData, groupLabel = '模型分布', categoryKind = 'model' }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[]; groupLabel?: string; categoryKind?: CategoryKind }) {
-  // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
+  // 短范围（today/yesterday）后端返回小时标签，X 轴按 HH:00 展示；其余范围按天（MM-DD）
+  const isHourly = range === 'today' || range === 'yesterday';
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
     for (const d of data) map.set(d.date, d);
@@ -136,7 +137,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={modelSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                 <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                 <Legend
@@ -172,7 +173,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
                     <ResponsiveContainer width="100%" height={200}>
                       <LineChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} allowDecimals={false} axisLine={false} tickLine={false} />
                         <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 12 }} formatter={(v: number) => [v.toLocaleString(), '请求数']} labelFormatter={(d: string) => d} />
                         <Line type="monotone" dataKey="count" name="调用次数" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
@@ -188,7 +189,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={md} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                         <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                         {tokenTypes.map(tt => (
@@ -214,7 +215,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} allowDecimals={false} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e5ea', fontSize: 12 }} formatter={(v: number) => [v.toLocaleString(), '请求数']} labelFormatter={(d: string) => d} />
                   <Line type="monotone" dataKey="count" name="调用次数" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
@@ -229,7 +230,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={filledData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d, isHourly)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#aeaeb2' }} tickFormatter={fmtTokens} axisLine={false} tickLine={false} />
                   <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                   {tokenTypes.map(tt => (

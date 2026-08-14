@@ -1,4 +1,4 @@
-/** fillDateRange 季度/年度序列测试 — 日期动态计算（UTC+8 同法），任意时刻可跑 */
+/** fillDateRange 序列测试（小时级 today/yesterday + 季度/年度）— 日期动态计算（UTC+8 同法），任意时刻可跑 */
 import { describe, it, expect } from 'vitest';
 import { fillDateRange } from '../webui/src/lib/dates';
 
@@ -8,6 +8,23 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 const quarterStartMonth = Math.floor(utcNow.getMonth() / 3) * 3;
+
+describe('fillDateRange 小时级（today/yesterday）', () => {
+  it('today 返回 24 个小时标签（YYYY-MM-DD HH:00）', () => {
+    const labels = fillDateRange('today', 8);
+    expect(labels).toHaveLength(24);
+    expect(labels[0]).toMatch(/^\d{4}-\d{2}-\d{2} 00:00$/);
+    expect(labels[23]).toMatch(/^\d{4}-\d{2}-\d{2} 23:00$/);
+    expect(labels[0].slice(0, 10)).toBe(fmt(utcNow));
+  });
+
+  it('yesterday 返回 24 个小时标签', () => {
+    const labels = fillDateRange('yesterday', 8);
+    expect(labels).toHaveLength(24);
+    expect(labels[0]).toMatch(/^\d{4}-\d{2}-\d{2} 00:00$/);
+    expect(labels[0].slice(0, 10)).toBe(fmt(new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate() - 1)));
+  });
+});
 
 describe('fillDateRange 季度/年度', () => {
   it('thisQuarter：首日 = 季度首日，末日 = 今天', () => {
