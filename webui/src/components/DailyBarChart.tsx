@@ -3,7 +3,8 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
-import { sortByPresetOrder, categoryColorMap } from '../lib/utils';
+import { sortByPresetOrder } from '../lib/utils';
+import { useCategoryColors, buildCategoryColorMap, type CategoryKind } from '../lib/colors';
 
 const COLORS = {
   output: '#5e5ce6',
@@ -35,7 +36,7 @@ const ZERO_ROW: DailyData = {
   total_cache_read_tokens: 0,
 };
 
-export default function DailyBarChart({ data, range, tz, modelData, groupLabel = '模型分布' }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[]; groupLabel?: string }) {
+export default function DailyBarChart({ data, range, tz, modelData, groupLabel = '模型分布', categoryKind = 'model' }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[]; groupLabel?: string; categoryKind?: CategoryKind }) {
   // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
@@ -49,8 +50,12 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     [modelData],
   );
 
-  // 类别 → 颜色：由类别名唯一决定（与费用分布图一致）
-  const colorMap = useMemo(() => categoryColorMap(seriesModels), [seriesModels]);
+  const { data: colors } = useCategoryColors();
+  // 类别 → 颜色：tool/provider 由注册表决定（跨图表一致），model 与未注册类别字母序循环色板
+  const colorMap = useMemo(
+    () => (colors ? buildCategoryColorMap(seriesModels, categoryKind, colors) : new Map<string, string>()),
+    [seriesModels, categoryKind, colors],
+  );
 
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;

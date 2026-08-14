@@ -4,7 +4,8 @@ import { useCurrency, formatCost } from '../lib/currency';
 import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
-import { sortByPresetOrder, categoryColorMap } from '../lib/utils';
+import { sortByPresetOrder } from '../lib/utils';
+import { useCategoryColors, buildCategoryColorMap, type CategoryKind } from '../lib/colors';
 
 interface DailyCostRow {
   date: string;
@@ -12,7 +13,7 @@ interface DailyCostRow {
   total_cost: number;
 }
 
-export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: DailyCostRow[]; range: string; tz: number; groupBy?: string }) {
+export default function DailyCostBarChart({ data, range, tz, groupBy, categoryKind = 'model' }: { data: DailyCostRow[]; range: string; tz: number; groupBy?: string; categoryKind?: CategoryKind }) {
   const { currency, rates } = useCurrency();
   // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
 
@@ -50,8 +51,12 @@ export default function DailyCostBarChart({ data, range, tz, groupBy }: { data: 
     chartData.categories.some(cat => (r[cat] || 0) > 0)
   );
 
-  // 类别 → 颜色：由类别名唯一决定（与 Token 用量分布图一致）
-  const colorMap = useMemo(() => categoryColorMap(chartData.categories), [chartData.categories]);
+  const { data: colors } = useCategoryColors();
+  // 类别 → 颜色：tool/provider 由注册表决定（跨图表一致），model 与未注册类别字母序循环色板
+  const colorMap = useMemo(
+    () => (colors ? buildCategoryColorMap(chartData.categories, categoryKind, colors) : new Map<string, string>()),
+    [chartData.categories, categoryKind, colors],
+  );
 
   if (!hasData) return (
     <p className="text-sm text-gray-500 text-center py-8">暂无数据</p>
