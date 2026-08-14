@@ -299,12 +299,13 @@ export async function initDb(dbPath?: string): Promise<void> {
     }
   }
 
-  // 类别颜色：色板种子（动态 import 避免与 colors.ts 循环依赖；失败降级警告，不影响启动）
+  // 类别颜色：色板种子 + 注册迁移（动态 import 避免与 colors.ts 循环依赖；失败降级警告，不影响启动）
   try {
     const colorsMod = await import('./colors.js');
     colorsMod.seedPalette();
+    colorsMod.migrateCategoryColors();
   } catch (err) {
-    console.error(`[db] ⚠ 色板种子失败（不影响启动）: ${(err as Error).message}`);
+    console.error(`[db] ⚠ 颜色注册初始化失败（不影响启动）: ${(err as Error).message}`);
   }
 
   saveDb();

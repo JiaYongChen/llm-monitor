@@ -1,7 +1,7 @@
 /** 类别颜色注册系统测试 — 色板种子 / 注册 / 迁移 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, closeDb, queryAll } from '../proxy/db.js';
-import { seedPalette, registerCategoryColor, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
+import { initDb, closeDb, queryAll, getDb, upsertSession, addProviderConfig } from '../proxy/db.js';
+import { seedPalette, registerCategoryColor, migrateCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
 import { createTempDb } from './setup.js';
 
 const tmp = createTempDb();
@@ -61,5 +61,48 @@ describe('运行时注册 registerCategoryColor', () => {
     }
     // 此刻 0~31 全占 → 下一个循环复用 idx0
     expect(registerCategoryColor('tool', 'overflow-tool')).toBe(0);
+  });
+});
+
+describe('启动迁移 migrateCategoryColors', () => {
+  it('内置 4 类固定色位（initDb 已自动执行迁移）', () => {
+    // 注意：Task 2 的测试可能已注册额外类别，按名断言而非全表 toEqual
+    const tools = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'tool'");
+    const providers = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'provider'");
+    expect(tools.find(r => r.name === 'codex')?.color_idx).toBe(0);
+    expect(tools.find(r => r.name === 'claudecode')?.color_idx).toBe(1);
+    expect(providers.find(r => r.name === 'openai')?.color_idx).toBe(0);
+    expect(providers.find(r => r.name === 'anthropic')?.color_idx).toBe(1);
+  });
+
+  it('metadata 门控幂等：重跑不产生重复行', () => {
+    migrateCategoryColors();
+    expect(queryAll("SELECT * FROM category_colors WHERE name = 'codex'").length).toBe(1);
+  });
+
+  it('历史名称按字母序注册（门控重置 + 清注册表后重跑）', async () => {
+    const d = getDb();
+    d.run('DELETE FROM category_colors');
+    d.run("DELETE FROM metadata WHERE key = 'colors_migrated'");
+    // 造历史数据（工具 kimi/glm/zebra-tool + 供应商 deepseek）
+    upsertSession('fp_kimi', 'kimi', '/v1/chat/completions');
+    upsertSession('fp_glm', 'glm', '/v1/chat/completions');
+    upsertSession('fp_zebra', 'zebra-tool', '/v1/messages');
+    addProviderConfig('deepseek', 'https://api.deepseek.com', '', '');
+    migrateCategoryColors();
+    const tools = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'tool' ORDER BY color_idx");
+    expect(tools).toEqual([
+      { name: 'codex', color_idx: 0 },
+      { name: 'claudecode', color_idx: 1 },
+      { name: 'glm', color_idx: 2 },
+      { name: 'kimi', color_idx: 3 },
+      { name: 'zebra-tool', color_idx: 4 },
+    ]);
+    const providers = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'provider' ORDER BY color_idx");
+    expect(providers).toEqual([
+      { name: 'openai', color_idx: 0 },
+      { name: 'anthropic', color_idx: 1 },
+      { name: 'deepseek', color_idx: 2 },
+    ]);
   });
 });

@@ -63,3 +63,65 @@ export function registerCategoryColor(kind: 'tool' | 'provider', name: string): 
   saveDb();
   return idx;
 }
+
+/** 内置类别固定色位（与注册池无关的静态约定）：tool 池 codex→0、claudecode→1；provider 池 openai→0、anthropic→1 */
+const BUILTIN_COLOR_IDX: Array<[kind: 'tool' | 'provider', name: string, idx: number]> = [
+  ['tool', 'codex', 0],
+  ['tool', 'claudecode', 1],
+  ['provider', 'openai', 0],
+  ['provider', 'anthropic', 1],
+];
+
+/** 事务内插入（INSERT OR IGNORE：内置固定色位不覆盖已有注册） */
+function insertInTx(d: Database, kind: string, name: string, idx: number): void {
+  d.run('INSERT OR IGNORE INTO category_colors (kind, name, color_idx, created_at) VALUES (?, ?, ?, ?)', [kind, name, idx, Date.now()]);
+}
+
+/** 收集名称（跳过空值与 'unknown'——未识别工具不占色位） */
+function addName(set: Set<string>, name: unknown): void {
+  if (name && name !== 'unknown') set.add(String(name));
+}
+
+/** 启动迁移：内置固定色位 + 历史名称字母序注册。单次执行（metadata 门控 colors_migrated），
+ *  事务包裹失败回滚。扫描五表（calls/sessions/daily_stats/tool_config/provider_config）收集已出现名称。 */
+export function migrateCategoryColors(): void {
+  if (getSetting('colors_migrated') === '1') return;
+  const d = getDb();
+  d.run('BEGIN');
+  try {
+    // 1. 内置类别固定色位
+    for (const [kind, name, idx] of BUILTIN_COLOR_IDX) {
+      insertInTx(d, kind, name, idx);
+    }
+    // 2. 五表扫描收集（名称已由既往迁移统一小写）
+    const tools = new Set<string>();
+    const providers = new Set<string>();
+    for (const r of queryAll('SELECT DISTINCT tool AS name FROM sessions')) addName(tools, r.name);
+    for (const r of queryAll('SELECT DISTINCT tool AS name FROM calls')) addName(tools, r.name);
+    for (const r of queryAll('SELECT DISTINCT tool AS name FROM daily_stats')) addName(tools, r.name);
+    for (const r of queryAll('SELECT DISTINCT tool AS name FROM tool_config')) addName(tools, r.name);
+    for (const r of queryAll('SELECT DISTINCT provider AS name FROM provider_config')) addName(providers, r.name);
+    for (const r of queryAll('SELECT DISTINCT provider AS name FROM calls')) addName(providers, r.name);
+    for (const r of queryAll('SELECT DISTINCT provider AS name FROM daily_stats')) addName(providers, r.name);
+    for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM sessions')) addName(providers, r.name);
+    for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM tool_config')) addName(providers, r.name);
+    for (const r of queryAll('SELECT DISTINCT provider AS name FROM pricing')) addName(providers, r.name);
+    // 3. 其余名称按字母序注册（最小空位）
+    for (const name of [...tools].sort((a, b) => a.localeCompare(b))) {
+      if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['tool', name])) {
+        insertInTx(d, 'tool', name, nextFreeIdx(d, 'tool'));
+      }
+    }
+    for (const name of [...providers].sort((a, b) => a.localeCompare(b))) {
+      if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['provider', name])) {
+        insertInTx(d, 'provider', name, nextFreeIdx(d, 'provider'));
+      }
+    }
+    d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('colors_migrated', '1')");
+    d.run('COMMIT');
+    saveDb();
+  } catch (err) {
+    d.run('ROLLBACK');
+    throw err;
+  }
+}
