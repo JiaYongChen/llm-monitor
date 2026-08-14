@@ -13,7 +13,7 @@ interface DailyCostRow {
   total_cost: number;
 }
 
-export default function DailyCostBarChart({ data, range, tz, groupBy, categoryKind = 'model' }: { data: DailyCostRow[]; range: string; tz: number; groupBy?: string; categoryKind?: CategoryKind }) {
+export default function DailyCostBarChart({ data, range, tz, categoryKind = 'model' }: { data: DailyCostRow[]; range: string; tz: number; categoryKind?: CategoryKind }) {
   const { currency, rates } = useCurrency();
   // daily_stats 为天级粒度，today/yesterday 与其余 range 一样按天渲染（X 轴显示 MM-DD）
 

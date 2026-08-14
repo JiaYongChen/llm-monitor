@@ -12,8 +12,6 @@ const KNOWN_TOOLS: Record<string, { l: string }> = {
   'claudecode': { l: 'C' },
   'codex': { l: 'X' },
 };
-const DEFAULT_META = { l: '?' };
-
 /** 已知工具元数据查找（大小写不敏感） */
 function knownMeta(tool: string): { l: string } | undefined {
   if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool];

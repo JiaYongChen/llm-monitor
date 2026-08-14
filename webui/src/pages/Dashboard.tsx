@@ -38,19 +38,19 @@ export default function Dashboard() {
       ? (categoryColor(tool, 'tool', colors) || OVERVIEW_COLOR)
       : OVERVIEW_COLOR;
 
-  const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
-  const { data: stats } = useQuery({ queryKey: ['stats', statsGroupBy, provider, tool], queryFn: () => api.getStats(statsGroupBy, provider, tool), refetchInterval: 5000 });
+  // 统计/图表分组维度与图表类别取色维度（三视图统一：总览→tool、工具页→provider、供应商页→model）
+  const groupBy = provider ? 'model' : tool ? 'provider' : 'tool';
+  const { data: stats } = useQuery({ queryKey: ['stats', groupBy, provider, tool], queryFn: () => api.getStats(groupBy, provider, tool), refetchInterval: 5000 });
   const [dailyRange, setDailyRange] = useState('30d');
   const [dailyTz, setDailyTz] = useState(8);
   const { data: dailyStats } = useQuery({ queryKey: ['dailyStats', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, undefined, dailyTz), refetchInterval: 60000 });
   const { data: dailyModelStats } = useQuery({ queryKey: ['dailyStatsModel', provider, tool, dailyRange, dailyTz], queryFn: () => api.getDailyStats(provider, tool, dailyRange, 'model', dailyTz), enabled: !!provider, refetchInterval: 60000 });
   // 费用分布：与 Token 用量共用同一时间筛选（dailyRange/dailyTz）
-  const costGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
   // provider 视图下与模型分布查询 URL 完全一致 → 直接复用 dailyModelStats，避免重复请求
   const { data: costDailyStats } = useQuery({
-    queryKey: ['dailyCostStats', provider, tool, costGroupBy, dailyRange, dailyTz],
-    queryFn: () => api.getDailyStats(provider, tool, dailyRange, costGroupBy, dailyTz),
-    enabled: !(provider && costGroupBy === 'model'),
+    queryKey: ['dailyCostStats', provider, tool, groupBy, dailyRange, dailyTz],
+    queryFn: () => api.getDailyStats(provider, tool, dailyRange, groupBy, dailyTz),
+    enabled: !(provider && groupBy === 'model'),
     refetchInterval: 60000,
   });
   const costDailyData = provider ? dailyModelStats : costDailyStats;
@@ -207,7 +207,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} groupBy={costGroupBy} categoryKind={provider ? 'model' : tool ? 'provider' : 'tool'} />
+          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind={groupBy} />
         </CardContent>
       </Card>
 
@@ -224,7 +224,7 @@ export default function Dashboard() {
               tz={dailyTz}
               modelData={costDailyData}
               groupLabel={provider ? '模型分布' : tool ? '供应商分布' : '工具分布'}
-              categoryKind={provider ? 'model' : tool ? 'provider' : 'tool'}
+              categoryKind={groupBy}
             />
           </CardContent>
         </Card>

@@ -41,15 +41,6 @@ export function sortByPresetOrder(names: string[]): string[] {
   });
 }
 
-/** 映射表大小写不敏感查找：先精确匹配，未命中再按小写匹配 */
-export function lookupCi(map: Record<string, string>, key: string | null | undefined): string | undefined {
-  if (!key) return undefined;
-  if (map[key]) return map[key];
-  const lower = key.toLowerCase();
-  const hit = Object.keys(map).find(k => k.toLowerCase() === lower);
-  return hit ? map[hit] : undefined;
-}
-
 /** 将 Unix 毫秒时间戳转为 UTC+8 显示字符串 */
 export function formatTime(ts: number | string | null | undefined, fmt: 'full' | 'time' = 'full'): string {
   if (ts == null || ts === '') return '--';
