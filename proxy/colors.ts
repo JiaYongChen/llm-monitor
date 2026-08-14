@@ -56,7 +56,7 @@ function invalidateRegistryCache(): void {
 
 /** 该 kind 已占用的色位集合中找最小未占 idx；全占（32 个）则按名称哈希映射到 [2,31]，
  *  避开内置锚点 codex/openai(0) 与 claudecode/anthropic(1)——池满属于极端情况，但撞色不应撞到最高可见度类别。 */
-function nextFreeIdx(d: Database, kind: string, name: string): number {
+function nextFreeIdx(kind: string, name: string): number {
   const used = new Set(
     queryAll('SELECT color_idx FROM category_colors WHERE kind = ?', [kind]).map(r => Number(r.color_idx)),
   );
@@ -77,7 +77,7 @@ export function registerCategoryColor(kind: 'tool' | 'provider', name: string): 
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
   const d = getDb();
-  const idx = nextFreeIdx(d, kind, normalized);
+  const idx = nextFreeIdx(kind, normalized);
   d.run('INSERT INTO category_colors (kind, name, color_idx, created_at) VALUES (?, ?, ?, ?)', [kind, normalized, idx, Date.now()]);
   cache.set(key, idx);
   saveDb();
@@ -133,12 +133,12 @@ export function migrateCategoryColors(): void {
     // 3. 其余名称按字母序注册（最小空位）
     for (const name of [...tools].sort((a, b) => a.localeCompare(b))) {
       if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['tool', name])) {
-        insertInTx(d, 'tool', name, nextFreeIdx(d, 'tool', name));
+        insertInTx(d, 'tool', name, nextFreeIdx('tool', name));
       }
     }
     for (const name of [...providers].sort((a, b) => a.localeCompare(b))) {
       if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['provider', name])) {
-        insertInTx(d, 'provider', name, nextFreeIdx(d, 'provider', name));
+        insertInTx(d, 'provider', name, nextFreeIdx('provider', name));
       }
     }
     d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('colors_migrated', '1')");
