@@ -25,6 +25,8 @@ export interface CallRecord {
   fingerprint: string;
   source_port: number | null;
   session_id: number | null;
+  /** 调用归属时间戳（recorder 写入时统一取一次 now，body 文件名 / created_at / hour_ms 同源） */
+  created_at?: number;
 }
 
 /** 数据库中完整的调用记录 */
@@ -45,7 +47,7 @@ export interface Session {
   first_call_at: number | null;
   last_call_at: number | null;
   first_endpoint: string | null;
-  status: 'active' | 'ended';
+  status: 'active' | 'ended' | 'pending';
   created_at: number;
   upstream_provider: string | null;
   upstream_model?: string | null;
