@@ -167,3 +167,10 @@ export async function updateConfig(data: { currency: string }) {
 export async function refreshRates() {
   return fetchJson('/rates/refresh', { method: 'POST' });
 }
+
+// ── Colors ──
+
+/** 类别颜色注册数据（色板 + 工具/供应商色位映射） */
+export async function fetchColors(): Promise<{ palette: { idx: number; color: string }[]; tools: Record<string, number>; providers: Record<string, number> }> {
+  return fetchJson('/colors');
+}

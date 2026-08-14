@@ -125,3 +125,17 @@ export function migrateCategoryColors(): void {
     throw err;
   }
 }
+
+/** 查询颜色注册数据：色板（light 主题）+ 工具/供应商两池注册表（name → 色位） */
+export function getCategoryColors(): { palette: { idx: number; color: string }[]; tools: Record<string, number>; providers: Record<string, number> } {
+  const palette = queryAll('SELECT idx, color FROM color_palette WHERE theme = ? ORDER BY idx', [PALETTE_THEME])
+    .map(r => ({ idx: Number(r.idx), color: String(r.color) }));
+  const tools: Record<string, number> = {};
+  const providers: Record<string, number> = {};
+  for (const r of queryAll('SELECT kind, name, color_idx FROM category_colors ORDER BY id')) {
+    const idx = Number(r.color_idx);
+    if (r.kind === 'tool') tools[String(r.name)] = idx;
+    else providers[String(r.name)] = idx;
+  }
+  return { palette, tools, providers };
+}

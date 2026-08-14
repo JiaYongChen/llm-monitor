@@ -22,6 +22,7 @@ import {
 } from './db.js';
 import { PORT, DATA_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, debugLog } from './config.js';
 import { getRates, getRatesUpdatedAt, refreshRates } from './rates.js';
+import { getCategoryColors } from './colors.js';
 import type { CallRecord } from '../shared/types.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -375,6 +376,9 @@ function joinUrlPath(base: string, path: string): string {
 // ── /api/* 查询路由 ──
 
 function _registerApiRoutes(app: FastifyInstance): void {
+  // 类别颜色（色板 + 工具/供应商注册表）
+  app.get('/api/colors', async () => getCategoryColors());
+
   // Sessions
   app.get('/api/sessions', async (req) => {
     const q = req.query as any;
