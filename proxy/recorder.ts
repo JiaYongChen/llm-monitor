@@ -86,8 +86,13 @@ function processRecord(record: CallRecord): void {
   }
 
   // 3. 类别颜色注册：首次出现的工具/供应商自动占位（'unknown' 不注册，名称归一化在函数内完成）
-  if (record.tool && record.tool !== 'unknown') registerCategoryColor('tool', record.tool);
-  if (record.provider) registerCategoryColor('provider', record.provider);
+  //    注册失败不影响调用记录入库（与计费同风格：非关键步骤抛错容忍）
+  try {
+    if (record.tool && record.tool !== 'unknown') registerCategoryColor('tool', record.tool);
+    if (record.provider) registerCategoryColor('provider', record.provider);
+  } catch (err) {
+    console.error('类别颜色注册失败（不影响入库）:', err);
+  }
 
   // 4. 写入数据库
   insertCall(record);
