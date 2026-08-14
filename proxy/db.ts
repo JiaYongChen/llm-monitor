@@ -10,11 +10,16 @@ import { ensureDataDir, DB_PATH } from './config.js';
 import { deleteSessionBodies, moveSessionBodies, clearAllBodies, bodyFilePath } from './db-body.js';
 import type { CallRecord } from '../shared/types.js';
 import { initSqlJsCore, setDb, getSql, setCurrentDbPath, getDb, saveDb, closeDb, queryAll, queryOne, execute, executeInsert, startSaveSafetyNet } from './db-core.js';
-import { runMigrations, migrateToolCanonicalNames, migrateLowercaseNames, BUILTIN_PROVIDERS } from './db-migrations.js';
+import { runMigrations, migrateToolCanonicalNames, migrateLowercaseNames } from './db-migrations.js';
+import { normalizeToolName, normalizeProviderName, getToolConfig } from './db-config.js';
 
-// 兼容旧引用：统一从 db-core / db-migrations re-export（router/recorder/测试 import 路径不变）
+// 兼容旧引用：统一从 db-core / db-migrations / db-config re-export（router/recorder/测试 import 路径不变）
 export { getDb, saveDb, closeDb, queryAll, queryOne } from './db-core.js';
 export { BUILTIN_PROVIDERS, migrateToolCanonicalNames, migrateLowercaseNames, runMigrations } from './db-migrations.js';
+// 兼容旧引用：配置 CRUD 与名称归一化统一从 db-config re-export
+export { normalizeToolName, normalizeProviderName, listToolConfigs, getToolConfig, updateToolConfig,
+  listPricing, upsertPricing, deletePricing, listProviderConfigs, getProviderConfig, updateProviderConfig,
+  addProviderConfig, deleteProviderConfig, getSetting, setSetting } from './db-config.js';
 
 // ── 初始化 ──
 
@@ -170,6 +175,7 @@ export async function initDb(dbPath?: string): Promise<void> {
     'CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at)',
     'CREATE INDEX IF NOT EXISTS idx_calls_model ON calls(model)',
     'CREATE INDEX IF NOT EXISTS idx_calls_fingerprint ON calls(fingerprint)',
+    'CREATE INDEX IF NOT EXISTS idx_calls_tool ON calls(tool)',
     'CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions(tool)',
     'CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)',
     'CREATE INDEX IF NOT EXISTS idx_hourly_provider ON hourly_stats(provider)',
@@ -296,20 +302,14 @@ export function insertCall(r: CallRecord): number {
   );
 }
 
-/** 列出调用记录 */
+/** 列出调用记录（tool 过滤按 calls.tool 直查，v4 迁移已回填历史 NULL） */
 export function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0): Record<string, any>[] {
   let sql = 'SELECT c.* FROM calls c';
   const conditions: string[] = [];
   const params: any[] = [];
-
-  if (tool) {
-    sql = 'SELECT c.* FROM calls c JOIN sessions s ON c.session_id = s.id';
-    conditions.push('s.tool = ?');  // 入参归一化后等值比较（可走索引）
-    params.push(normalizeToolName(tool));
-  }
+  if (tool) { conditions.push('c.tool = ?'); params.push(normalizeToolName(tool)); }
   if (sessionId != null) { conditions.push('c.session_id = ?'); params.push(sessionId); }
   if (provider) { conditions.push('c.provider = ?'); params.push(normalizeProviderName(provider)); }
-
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
   sql += ' ORDER BY c.created_at DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
@@ -321,11 +321,7 @@ export function countCalls(sessionId?: number, provider?: string, tool?: string)
   let sql = 'SELECT COUNT(*) AS cnt FROM calls c';
   const conditions: string[] = [];
   const params: any[] = [];
-  if (tool) {
-    sql = 'SELECT COUNT(*) AS cnt FROM calls c JOIN sessions s ON c.session_id = s.id';
-    conditions.push('s.tool = ?');
-    params.push(normalizeToolName(tool));
-  }
+  if (tool) { conditions.push('c.tool = ?'); params.push(normalizeToolName(tool)); }
   if (sessionId != null) { conditions.push('c.session_id = ?'); params.push(sessionId); }
   if (provider) { conditions.push('c.provider = ?'); params.push(normalizeProviderName(provider)); }
   if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
@@ -490,53 +486,6 @@ export function deleteSession(sessionId: number): void {
   execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
   execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
   deleteSessionBodies(sessionId);   // 先 DB 后文件：附属清理失败不影响主数据
-}
-
-// ── Tool Config ──
-
-/** 工具名别名（小写 → 小写规范名）：仅处理内置别名，其余工具名小写即规范 */
-const TOOL_ALIASES: Record<string, string> = {
-  claude: 'claudecode',
-  chatgpt: 'codex',
-};
-
-/** 工具名归一化：小写 + 内置别名（claude→claudecode、chatgpt→codex）。
- *  存储不变量：库中所有工具名为小写，因此无需查表。 */
-export function normalizeToolName(tool: string): string {
-  if (!tool) return tool;
-  const lower = tool.toLowerCase();
-  return TOOL_ALIASES[lower] ?? lower;
-}
-
-/** 供应商名归一化：统一小写（存储不变量：库中所有供应商名为小写） */
-export function normalizeProviderName(provider: string): string {
-  if (!provider) return provider;
-  return provider.toLowerCase();
-}
-
-/** 列出所有工具配置 */
-export function listToolConfigs(): Record<string, any>[] {
-  return queryAll('SELECT * FROM tool_config', []);
-}
-
-/** 获取单个工具的配置（大小写不敏感） */
-export function getToolConfig(tool: string): Record<string, any> | null {
-  const row = queryOne('SELECT * FROM tool_config WHERE tool = ?', [tool]);
-  if (row) return row;
-  return queryOne('SELECT * FROM tool_config WHERE LOWER(tool) = LOWER(?)', [tool]);
-}
-
-/** 更新工具级上游配置（upsert，工具名 / 供应商名 / 模型名大小写不敏感归一化） */
-export function updateToolConfig(tool: string, upstreamProvider: string | null, upstreamModel: string | null): void {
-  const name = normalizeToolName(tool);
-  const prov = upstreamProvider ? normalizeProviderName(upstreamProvider) : upstreamProvider;
-  const model = upstreamModel ? upstreamModel.toLowerCase() : upstreamModel;
-  const now = Date.now();
-  execute(
-    `INSERT INTO tool_config (tool, upstream_provider, upstream_model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(tool) DO UPDATE SET upstream_provider = excluded.upstream_provider, upstream_model = excluded.upstream_model, updated_at = excluded.updated_at`,
-    [name, prov, model, now, now],
-  );
 }
 
 // ── Stats ──
@@ -782,185 +731,3 @@ export function initDefaultProviders(): void {
   }
 }
 
-// ── Pricing CRUD ──
-
-/** 列出定价 */
-export function listPricing(): Record<string, any>[] {
-  return queryAll('SELECT * FROM pricing ORDER BY id');
-}
-
-/** 新增或更新定价 */
-export function upsertPricing(
-  provider: string, model: string,
-  inputPrice: number, cacheInputPrice: number, outputPrice: number,
-  currency?: string,
-  isDefault?: boolean,
-): number {
-  provider = normalizeProviderName(provider);
-  model = model.toLowerCase();
-  const cur = currency || 'CNY';
-  const def = isDefault ? 1 : 0;
-  // sql.js 不支持 ON CONFLICT，用先查再插入/更新的方式（provider + model 大小写不敏感去重）
-  let existing = queryOne(
-    'SELECT id, is_default FROM pricing WHERE provider = ? AND model = ? AND effective_from IS NULL',
-    [provider, model],
-  );
-  if (!existing) {
-    existing = queryOne(
-      'SELECT id, is_default FROM pricing WHERE LOWER(provider) = LOWER(?) AND LOWER(model) = LOWER(?) AND effective_from IS NULL',
-      [provider, model],
-    );
-  }
-  if (existing) {
-    // 默认条目只更新价格和币种，不覆盖 is_default 标记
-    const keepDefault = existing.is_default ? 1 : def;
-    execute(
-      'UPDATE pricing SET input_price = ?, cache_input_price = ?, output_price = ?, currency = ?, is_default = ?, updated_at = ? WHERE id = ?',
-      [inputPrice, cacheInputPrice, outputPrice, cur, keepDefault, Date.now(), existing.id],
-    );
-    return Number(existing.id);
-  }
-  const now = Date.now();
-  return executeInsert(
-    'INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-    [provider, model, inputPrice, cacheInputPrice, outputPrice, cur, def, now, now],
-  );
-}
-
-/** 删除定价（默认条目不可删除） */
-export function deletePricing(pricingId: number): { ok: boolean; error?: string } {
-  const row = queryOne('SELECT is_default FROM pricing WHERE id = ?', [pricingId]);
-  if (!row) return { ok: false, error: '定价不存在' };
-  if (row.is_default) return { ok: false, error: '默认定价不可删除' };
-  execute('DELETE FROM pricing WHERE id = ?', [pricingId]);
-  return { ok: true };
-}
-
-// ── Provider Config CRUD ──
-
-const OFFICIAL_URLS: Record<string, string> = {
-  anthropic: 'https://api.anthropic.com',
-  openai: 'https://api.openai.com',
-};
-const OFFICIAL_ANTHROPIC_URLS: Record<string, string> = {
-  anthropic: 'https://api.anthropic.com',
-};
-
-/** 列出所有 provider 配置（内置供应商兜底官方 URL） */
-export function listProviderConfigs(): Record<string, any>[] {
-  const rows = queryAll('SELECT * FROM provider_config ORDER BY provider');
-  return rows.map(row => ({
-    ...row,
-    base_url: row.base_url || OFFICIAL_URLS[row.provider] || '',
-    base_url_anthropic: row.base_url_anthropic || OFFICIAL_ANTHROPIC_URLS[row.provider] || '',
-  }));
-}
-
-/** 获取单个 provider 的配置（大小写不敏感，base_url 为空时返回官方地址） */
-export function getProviderConfig(provider: string): { provider: string; base_url: string; base_url_anthropic: string; api_key: string; enabled: boolean } | null {
-  // 先精确匹配，再大小写不敏感匹配
-  let row = queryOne('SELECT * FROM provider_config WHERE provider = ?', [provider]);
-  if (!row) {
-    row = queryOne('SELECT * FROM provider_config WHERE LOWER(provider) = LOWER(?)', [provider]);
-  }
-  if (!row) return null;
-  const resolved = row.provider || provider;
-  const defaultUrl = OFFICIAL_URLS[resolved] || OFFICIAL_URLS[resolved.toLowerCase()] || '';
-  return {
-    provider: resolved,
-    base_url: row.base_url || defaultUrl,
-    base_url_anthropic: row.base_url_anthropic || '',
-    api_key: row.api_key || '',
-    enabled: row.enabled === 1,
-  };
-}
-
-/** 内置供应商检查（大小写不敏感） */
-function isBuiltinProvider(provider: string): boolean {
-  return [...BUILTIN_PROVIDERS].some(b => b.toLowerCase() === provider.toLowerCase());
-}
-
-/** 更新 provider 配置（内置供应商不允许停用；供应商名大小写不敏感定位规范行） */
-export function updateProviderConfig(provider: string, data: { enabled?: boolean; api_key?: string; base_url?: string; base_url_anthropic?: string }): { ok: boolean; error?: string } {
-  // 内置供应商不允许停用（大小写不敏感）
-  if (data.enabled === false && isBuiltinProvider(provider)) {
-    return { ok: false, error: `内置供应商 "${provider}" 不可停用` };
-  }
-  const sets: string[] = [];
-  const vals: any[] = [];
-  if (data.enabled !== undefined) { sets.push('enabled = ?'); vals.push(data.enabled ? 1 : 0); }
-  if (data.api_key !== undefined) { sets.push('api_key = ?'); vals.push(data.api_key); }
-  if (data.base_url !== undefined) { sets.push('base_url = ?'); vals.push(data.base_url); }
-  if (data.base_url_anthropic !== undefined) { sets.push('base_url_anthropic = ?'); vals.push(data.base_url_anthropic); }
-  if (sets.length === 0) return { ok: true };
-  sets.push('updated_at = ?'); vals.push(Date.now());
-  // 大小写不敏感解析到小写名后按小写名更新（会话覆写存的是小写名，级联清理须一致）
-  const canonical = normalizeProviderName(provider);
-  vals.push(canonical);
-  execute(`UPDATE provider_config SET ${sets.join(', ')} WHERE provider = ?`, vals);
-  // 停用时自动清除所有引用该供应商的会话上游覆写（provider + model）
-  if (data.enabled === false) {
-    const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
-    if (cleared > 0) {
-      console.log(`已清除 ${cleared} 个会话的 "${canonical}" 上游覆写`);
-    }
-  }
-  return { ok: true };
-}
-
-/** 新增自定义 provider（大小写不敏感去重：与内置供应商仅大小写不同时提示已存在；既有自定义供应商更新现有行） */
-export function addProviderConfig(provider: string, baseUrl: string, baseUrlAnthropic: string, apiKey: string): number {
-  const existing = queryOne('SELECT id, provider FROM provider_config WHERE provider = ?', [provider])
-    ?? queryOne('SELECT id, provider FROM provider_config WHERE LOWER(provider) = LOWER(?)', [provider]);
-  if (existing && isBuiltinProvider(existing.provider as string)) {
-    // 内置供应商（大小写不敏感）已存在 → 不允许新增同名供应商，由调用方提示用户
-    throw new Error(`供应商已存在：内置供应商 "${existing.provider}" 不可重复添加`);
-  }
-  if (existing) {
-    // 既有自定义供应商 → 更新配置，保持其启用/停用状态（不强制启用）
-    execute(
-      'UPDATE provider_config SET base_url = ?, base_url_anthropic = ?, api_key = ?, updated_at = ? WHERE id = ?',
-      [baseUrl, baseUrlAnthropic, apiKey, Date.now(), existing.id],
-    );
-    return Number(existing.id);
-  }
-  // 不存在同名（大小写不敏感）供应商 → 按新供应商插入（供应商名归一化为小写）
-  const name = normalizeProviderName(provider);
-  const now = Date.now();
-  const id = executeInsert(
-    'INSERT INTO provider_config (provider, base_url, base_url_anthropic, api_key, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?) RETURNING id',
-    [name, baseUrl, baseUrlAnthropic, apiKey, now, now],
-  );
-  return id;
-}
-
-/** 删除 provider 配置（内置供应商不可删除；供应商名大小写不敏感定位规范行） */
-export function deleteProviderConfig(provider: string): { ok: boolean; error?: string } {
-  if (isBuiltinProvider(provider)) {
-    return { ok: false, error: `内置供应商 "${provider}" 不可删除` };
-  }
-  const canonical = normalizeProviderName(provider);
-  execute('DELETE FROM provider_config WHERE provider = ?', [canonical]);
-  // 同时清除引用该供应商的会话上游覆写（按小写名匹配）
-  const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
-  if (cleared > 0) {
-    console.log(`已清除 ${cleared} 个会话的 "${canonical}" 上游覆写`);
-  }
-  return { ok: true };
-}
-
-// ── Settings ──
-
-export function getSetting(key: string): string | null {
-  const row = queryOne('SELECT value FROM metadata WHERE key = ?', [key]);
-  return row?.value ?? null;
-}
-
-export function setSetting(key: string, value: string): void {
-  const existing = queryOne('SELECT key FROM metadata WHERE key = ?', [key]);
-  if (existing) {
-    execute('UPDATE metadata SET value = ? WHERE key = ?', [value, key]);
-  } else {
-    execute('INSERT INTO metadata (key, value) VALUES (?, ?)', [key, value]);
-  }
-}

@@ -12,7 +12,7 @@ import { getOrCreateSession, computeFingerprint, extractConversationSeed } from 
 import { randomUUID } from 'node:crypto';
 import {
   listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
-  listToolConfigs, getToolConfig, updateToolConfig, normalizeToolName,
+  listToolConfigs, getToolConfig, updateToolConfig, normalizeToolName, normalizeProviderName,
   listCalls as dbListCalls, countCalls as dbCountCalls, getCall as dbGetCall, getSessionTokenStats, getStats, getDailyStats,
   listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
@@ -164,7 +164,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       const lowerRaw = rawTool.toLowerCase();
       // 内置工具即使无 tool_config 行也走默认供应商映射（全新安装可直接使用）
       const isBuiltinTool = canonicalTool === 'claudecode' || canonicalTool === 'codex';
-      providerConfig = getProviderConfig(provider);
+      // 存储不变量全小写：查询前归一化首段供应商名（大小写不敏感，getProviderConfig 仅精确等值）
+      providerConfig = getProviderConfig(normalizeProviderName(provider));
       if (!toolConfig && (lowerRaw === 'anthropic' || lowerRaw === 'openai')) {
         const compatTool = lowerRaw === 'anthropic' ? 'claudecode' : 'codex';
         tool = compatTool;

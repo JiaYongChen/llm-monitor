@@ -81,12 +81,15 @@ describe('会话存储规范工具名', () => {
 });
 
 describe('tool_config 大小写不敏感', () => {
-  it('getToolConfig 大小写不敏感查找', () => {
+  it('getToolConfig 精确等值查找（存储全小写，LOWER 兜底已删除，仅小写命中）', () => {
     updateToolConfig('ClaudeCode', 'Qwen', 'qwen-test');
-    const tc = getToolConfig('CLAUDECODE');
+    // 调用方已归一化 → 小写查询命中
+    const tc = getToolConfig('claudecode');
     expect(tc).not.toBeNull();
     expect(tc!.tool).toBe('claudecode');
     expect(tc!.upstream_provider).toBe('qwen');
+    // 未归一化的大小写变体不再命中（迁移保证库内全小写）
+    expect(getToolConfig('CLAUDECODE')).toBeNull();
   });
 
   it('updateToolConfig 大小写不同视为同一工具，不产生重复行', () => {
