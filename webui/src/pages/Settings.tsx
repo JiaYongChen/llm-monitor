@@ -124,6 +124,14 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* 时区 */}
+      <Card>
+        <CardHeader><CardTitle>时区</CardTitle></CardHeader>
+        <CardContent>
+          <TimezoneSelector />
+        </CardContent>
+      </Card>
+
       {/* 数据管理 */}
       <Card>
         <CardHeader><CardTitle>数据管理</CardTitle></CardHeader>
@@ -368,6 +376,29 @@ function CurrencySelector() {
           {ratesMut.isPending ? '刷新中...' : '刷新'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function TimezoneSelector() {
+  const qc = useQueryClient();
+  const { data: config } = useQuery({ queryKey: ['config'], queryFn: api.getConfig });
+  const tzMut = useMutation({
+    mutationFn: (t: string) => api.updateConfig({ timezone: t }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+  });
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs text-gray-500">选择面板统计的时间归属时区，图表与每日统计将按此时区归日：</span>
+      <select
+        className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+        value={String(config?.timezone ?? '8')}
+        onChange={e => tzMut.mutate(e.target.value)}
+      >
+        <option value="0">UTC+0</option>
+        <option value="8">UTC+8</option>
+      </select>
     </div>
   );
 }
