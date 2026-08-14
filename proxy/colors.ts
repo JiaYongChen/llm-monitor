@@ -107,7 +107,7 @@ function addName(set: Set<string>, name: unknown, kind: 'tool' | 'provider'): vo
 }
 
 /** 启动迁移：内置固定色位 + 历史名称字母序注册。单次执行（metadata 门控 colors_migrated），
- *  事务包裹失败回滚。扫描五表（calls/sessions/daily_stats/tool_config/provider_config）收集已出现名称。 */
+ *  事务包裹失败回滚。扫描五表（calls/sessions/hourly_stats/tool_config/provider_config）收集已出现名称。 */
 export function migrateCategoryColors(): void {
   if (getSetting('colors_migrated') === '1') return;
   const d = getDb();
@@ -122,11 +122,11 @@ export function migrateCategoryColors(): void {
     const providers = new Set<string>();
     for (const r of queryAll('SELECT DISTINCT tool AS name FROM sessions')) addName(tools, r.name, 'tool');
     for (const r of queryAll('SELECT DISTINCT tool AS name FROM calls')) addName(tools, r.name, 'tool');
-    for (const r of queryAll('SELECT DISTINCT tool AS name FROM daily_stats')) addName(tools, r.name, 'tool');
+    for (const r of queryAll('SELECT DISTINCT tool AS name FROM hourly_stats')) addName(tools, r.name, 'tool');
     for (const r of queryAll('SELECT DISTINCT tool AS name FROM tool_config')) addName(tools, r.name, 'tool');
     for (const r of queryAll('SELECT DISTINCT provider AS name FROM provider_config')) addName(providers, r.name, 'provider');
     for (const r of queryAll('SELECT DISTINCT provider AS name FROM calls')) addName(providers, r.name, 'provider');
-    for (const r of queryAll('SELECT DISTINCT provider AS name FROM daily_stats')) addName(providers, r.name, 'provider');
+    for (const r of queryAll('SELECT DISTINCT provider AS name FROM hourly_stats')) addName(providers, r.name, 'provider');
     for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM sessions')) addName(providers, r.name, 'provider');
     for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM tool_config')) addName(providers, r.name, 'provider');
     for (const r of queryAll('SELECT DISTINCT provider AS name FROM pricing')) addName(providers, r.name, 'provider');

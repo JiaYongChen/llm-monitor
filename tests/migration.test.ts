@@ -16,7 +16,7 @@ const clearGate = () => getDb().run("DELETE FROM metadata WHERE key = 'tool_cano
 const clearLowerGate = () => getDb().run("DELETE FROM metadata WHERE key = 'lowercase_migrated'");
 
 describe('migrateToolCanonicalNames 历史数据迁移', () => {
-  it('归一化各表旧工具名，daily_stats 主键冲突时合并', () => {
+  it('归一化各表旧工具名', () => {
     clearGate();
     const d = getDb();
     // 直接 SQL 构造旧数据（绕过归一化函数）
@@ -24,13 +24,6 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     d.run(`INSERT INTO calls (session_id, provider, model, endpoint, method, status_code, duration_ms, fingerprint, tool, created_at)
            VALUES (1, 'OpenAI', 'gpt-legacy', '/v1/x', 'POST', 200, 10, 'fp_legacy_1', 'codex', 1)`);
     d.run(`INSERT INTO tool_config (tool, upstream_provider) VALUES ('codex', 'OpenAI')`);
-    // daily_stats：一行与规范名主键冲突（需合并），一行不冲突（直接改名）
-    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-           VALUES ('2026-08-01', 'OpenAI', 'm-legacy', 'Codex', 1, 0.1, 10, 5, 8, 2)`);
-    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-           VALUES ('2026-08-01', 'OpenAI', 'm-legacy', 'codex', 2, 0.2, 20, 10, 16, 4)`);
-    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-           VALUES ('2026-08-02', 'OpenAI', 'm-legacy', 'codex', 1, 0.05, 5, 2, 4, 1)`);
 
     migrateToolCanonicalNames();
 
@@ -39,16 +32,6 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     const tc = listToolConfigs().filter((r: any) => r.tool.toLowerCase() === 'codex');
     expect(tc).toHaveLength(1);
     expect(tc[0].tool).toBe('Codex');
-    // 冲突行合并：call_count = 1 + 2
-    const merged = queryAll(`SELECT * FROM daily_stats WHERE date = '2026-08-01' AND model = 'm-legacy'`);
-    expect(merged).toHaveLength(1);
-    expect(merged[0].tool).toBe('Codex');
-    expect(merged[0].call_count).toBe(3);
-    expect(merged[0].total_cost).toBeCloseTo(0.3);
-    // 非冲突行直接改名
-    const renamed = queryAll(`SELECT * FROM daily_stats WHERE date = '2026-08-02' AND model = 'm-legacy'`);
-    expect(renamed).toHaveLength(1);
-    expect(renamed[0].tool).toBe('Codex');
   });
 
   it('tool_config 多变体一轮收敛并合并上游配置', () => {
@@ -178,7 +161,7 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
 });
 
 describe('migrateLowercaseNames 小写迁移', () => {
-  it('工具/供应商/模型全链路转小写，daily_stats 冲突累加合并', () => {
+  it('工具/供应商/模型全链路转小写', () => {
     clearLowerGate();
     const d = getDb();
     // 清掉旧迁移用例残留的 'Codex' 主键行，避免 INSERT 撞主键（与其他用例 fixture 隔离）
@@ -190,11 +173,6 @@ describe('migrateLowercaseNames 小写迁移', () => {
     d.run(`INSERT INTO tool_config (tool, upstream_provider, upstream_model) VALUES ('Codex', 'OpenAI', 'GLM-X')`);
     d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
            VALUES ('OpenAI', 'GPT-5', 1, 0.5, 2)`);
-    // daily_stats：大小写变体冲突行（迁移后主键相同，须累加合并）
-    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-           VALUES ('2026-08-01', 'OpenAI', 'GPT-5', 'Codex', 1, 0.1, 10, 5, 8, 2)`);
-    d.run(`INSERT INTO daily_stats (date, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens)
-           VALUES ('2026-08-01', 'openai', 'gpt-5', 'codex', 2, 0.2, 20, 10, 16, 4)`);
 
     migrateLowercaseNames();
 
@@ -209,13 +187,6 @@ describe('migrateLowercaseNames 小写迁移', () => {
     expect(tc[0].upstream_provider).toBe('openai');
     expect(tc[0].upstream_model).toBe('glm-x');
     expect(queryAll(`SELECT provider FROM pricing WHERE LOWER(model) = 'gpt-5'`)[0].provider).toBe('openai');
-    const merged = queryAll(`SELECT * FROM daily_stats WHERE date = '2026-08-01' AND model = 'gpt-5'`);
-    expect(merged).toHaveLength(1);
-    expect(merged[0].provider).toBe('openai');
-    expect(merged[0].model).toBe('gpt-5');
-    expect(merged[0].tool).toBe('codex');
-    expect(merged[0].call_count).toBe(3);
-    expect(merged[0].total_cost).toBeCloseTo(0.3);
   });
 
   it('provider_config 大小写变体收敛为一行并小写', () => {
