@@ -1108,6 +1108,22 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
       startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth() - 1, 1);
       endMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);
       break;
+    case 'thisQuarter':
+      startMs = Date.UTC(utcNow.getFullYear(), Math.floor(utcNow.getMonth() / 3) * 3, 1);
+      break;
+    case 'lastQuarter': {
+      const quarterStartMonth = Math.floor(utcNow.getMonth() / 3) * 3;
+      startMs = Date.UTC(utcNow.getFullYear(), quarterStartMonth - 3, 1);
+      endMs = Date.UTC(utcNow.getFullYear(), quarterStartMonth, 1);
+      break;
+    }
+    case 'thisYear':
+      startMs = Date.UTC(utcNow.getFullYear(), 0, 1);
+      break;
+    case 'lastYear':
+      startMs = Date.UTC(utcNow.getFullYear() - 1, 0, 1);
+      endMs = Date.UTC(utcNow.getFullYear(), 0, 1);
+      break;
     default:
       startMs = tzMidnightMs(-30);  // 与前端 fillDateRange 的 fallback 30d 一致
   }
