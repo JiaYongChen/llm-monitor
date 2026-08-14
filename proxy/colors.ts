@@ -38,3 +38,28 @@ export function seedPalette(): void {
   });
   saveDb();
 }
+
+/** 该 kind 已占用的色位集合中找最小未占 idx；全占（32 个）则循环复用 idx0 */
+function nextFreeIdx(d: Database, kind: string): number {
+  const used = new Set(
+    queryAll('SELECT color_idx FROM category_colors WHERE kind = ?', [kind]).map(r => Number(r.color_idx)),
+  );
+  for (let i = 0; i < PALETTE_SIZE; i++) {
+    if (!used.has(i)) return i;
+  }
+  return 0;
+}
+
+/** 注册工具/供应商色位：已注册幂等返回；新类别分配最小未占色位并持久化。
+ *  名称内部归一化（tool → normalizeToolName、provider → normalizeProviderName），存储不变量小写。 */
+export function registerCategoryColor(kind: 'tool' | 'provider', name: string): number {
+  const normalized = kind === 'tool' ? normalizeToolName(name) : normalizeProviderName(name);
+  if (!normalized) return -1;
+  const existing = queryOne('SELECT color_idx FROM category_colors WHERE kind = ? AND name = ?', [kind, normalized]);
+  if (existing) return Number(existing.color_idx);
+  const d = getDb();
+  const idx = nextFreeIdx(d, kind);
+  d.run('INSERT INTO category_colors (kind, name, color_idx, created_at) VALUES (?, ?, ?, ?)', [kind, normalized, idx, Date.now()]);
+  saveDb();
+  return idx;
+}
