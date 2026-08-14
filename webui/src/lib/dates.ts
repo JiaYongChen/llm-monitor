@@ -43,6 +43,43 @@ export function fillDateRange(range: string, tz: number): string[] {
     }
     return r;
   }
+  if (range === 'thisQuarter') {
+    const start = new Date(utcNow.getFullYear(), Math.floor(utcNow.getMonth() / 3) * 3, 1);
+    const end = new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate());
+    const r: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+    return r;
+  }
+  if (range === 'lastQuarter') {
+    const quarterStartMonth = Math.floor(utcNow.getMonth() / 3) * 3;
+    const start = new Date(utcNow.getFullYear(), quarterStartMonth - 3, 1);
+    const end = new Date(utcNow.getFullYear(), quarterStartMonth, 0); // 本季度首日 - 1 天 = 上季度末日
+    const r: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+    return r;
+  }
+  if (range === 'thisYear') {
+    const start = new Date(utcNow.getFullYear(), 0, 1);
+    const end = new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate());
+    const r: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+    return r;
+  }
+  if (range === 'lastYear') {
+    const start = new Date(utcNow.getFullYear() - 1, 0, 1);
+    const end = new Date(utcNow.getFullYear() - 1, 11, 31);
+    const r: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+    return r;
+  }
   // 7d / 14d / 30d / 60d
   const days = parseInt(range) || 30;
   const r: string[] = [];
