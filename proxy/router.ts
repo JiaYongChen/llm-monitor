@@ -20,6 +20,7 @@ import {
   listProviderConfigs, updateProviderConfig, getProviderConfig,
   addProviderConfig, deleteProviderConfig, getSetting, setSetting,
 } from './db.js';
+import { readBody } from './db-body.js';
 import { PORT, DATA_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, debugLog } from './config.js';
 import { getRates, getRatesUpdatedAt, refreshRates } from './rates.js';
 import { getCategoryColors } from './colors.js';
@@ -444,7 +445,14 @@ function _registerApiRoutes(app: FastifyInstance): void {
   });
   app.get('/api/calls/:id', async (req, reply) => {
     const c = dbGetCall(parseInt((req.params as any).id));
-    return c || reply.status(404).send('Not found');
+    if (!c) return reply.status(404).send('Not found');
+    // body 外置：文件优先读取，缺失时回退行内列（渐进迁移完成前旧行仍在列内）
+    const body = readBody(c.session_id, c.id, c.created_at);
+    if (body) {
+      c.request_body = body.request;
+      c.response_body = body.response;
+    }
+    return c;
   });
 
   // Stats

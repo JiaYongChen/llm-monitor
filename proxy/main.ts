@@ -10,6 +10,7 @@ import { initDb, closeDb, listPricing, listProviderConfigs, upsertPricing } from
 import { UPSTREAMS } from './router.js';
 import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.js';
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
+import { startBodyMigration, stopBodyMigration } from './db-body.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
 import { PORT, WEBUI_PORT } from './config.js';
 import { readFileSync } from 'node:fs';
@@ -49,6 +50,7 @@ async function listenWithRetry(app: FastifyInstance, port: number, label: string
 
 async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInstance }> {
   await initDb();
+  startBodyMigration();
   scheduleDailyRefresh();
   await importDefaultPricing();
 
@@ -136,6 +138,7 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
 
   proxy.addHook('onClose', async () => {
     stopDailyRefresh();
+    stopBodyMigration();
     stopRecorder();
     closeDb();
   });
@@ -164,6 +167,7 @@ if (isMain) {
     console.log('\n正在关闭...');
     // 1) 先立即保存数据（不依赖 onClose 钩子，防止活跃 SSE 连接使 close() 挂起）
     stopDailyRefresh();
+    stopBodyMigration();
     stopRecorder();
     closeDb();
     // 2) 尝试优雅关闭服务器（最多等 3 秒，超时则强退）
