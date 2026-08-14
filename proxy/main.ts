@@ -10,7 +10,7 @@ import { initDb, closeDb, listPricing, listProviderConfigs, upsertPricing } from
 import { UPSTREAMS } from './router.js';
 import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.js';
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
-import { startBodyMigration, stopBodyMigration } from './db-body.js';
+import { startBodyMigration, stopBodyMigration, reconcileOrphanBodies } from './db-body.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
 import { PORT, WEBUI_PORT } from './config.js';
 import { readFileSync } from 'node:fs';
@@ -51,6 +51,15 @@ async function listenWithRetry(app: FastifyInstance, port: number, label: string
 async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInstance }> {
   await initDb();
   startBodyMigration();
+  // 孤儿 body 文件对账（后台，延迟启动不阻塞服务）
+  setTimeout(() => {
+    try {
+      const removed = reconcileOrphanBodies();
+      if (removed > 0) console.log(`[db] 孤儿 body 对账：已清理 ${removed} 个文件`);
+    } catch (err) {
+      console.warn('[db] 孤儿 body 对账失败:', (err as Error).message);
+    }
+  }, 5000);
   scheduleDailyRefresh();
   await importDefaultPricing();
 

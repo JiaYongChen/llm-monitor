@@ -5,8 +5,9 @@
  * 采用单例模式，所有模块共享同一个数据库实例。
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, rmSync } from 'node:fs';
 import { ensureDataDir, DB_PATH } from './config.js';
+import { deleteSessionBodies, moveSessionBodies, clearAllBodies, bodyFilePath } from './db-body.js';
 import type { CallRecord } from '../shared/types.js';
 import { initSqlJsCore, setDb, getSql, setCurrentDbPath, getDb, saveDb, closeDb, queryAll, queryOne, execute, executeInsert, startSaveSafetyNet } from './db-core.js';
 import { runMigrations, migrateToolCanonicalNames, migrateLowercaseNames, BUILTIN_PROVIDERS } from './db-migrations.js';
@@ -470,6 +471,7 @@ export function mergeSessions(sourceId: number, targetId: number): void {
     [row?.cnt || 0, row?.cost || 0, row?.tokens || 0, targetId],
   );
   d.run('DELETE FROM sessions WHERE id = ?', [sourceId]);
+  moveSessionBodies(sourceId, targetId);   // 先 DB 后文件：把源会话 body 文件移入目标会话
   saveDb();
 }
 
@@ -487,6 +489,7 @@ export function updateSessionModel(sessionId: number, model: string | null): voi
 export function deleteSession(sessionId: number): void {
   execute('DELETE FROM calls WHERE session_id = ?', [sessionId]);
   execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
+  deleteSessionBodies(sessionId);   // 先 DB 后文件：附属清理失败不影响主数据
 }
 
 // ── Tool Config ──
@@ -716,13 +719,20 @@ export function upsertHourlyStat(
 
 // ── Data Management ──
 
-/** 清理旧数据（days 天前的调用记录） */
+/** 清理旧数据（days 天前的调用记录及其 body 文件） */
 export function cleanupOldCalls(days: number): number {
   const d = getDb();
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const rows = queryAll('SELECT id, session_id, created_at FROM calls WHERE created_at < ?', [cutoff]);
   d.run('DELETE FROM calls WHERE created_at < ?', [cutoff]);
   const modified = d.getRowsModified();
   saveDb();
+  // 先 DB 后文件：逐个删除过期 body 文件（文件缺失静默忽略）
+  for (const r of rows) {
+    try {
+      rmSync(bodyFilePath(Number(r.session_id), Number(r.id), Number(r.created_at)));
+    } catch {}
+  }
   return modified;
 }
 
@@ -735,6 +745,7 @@ export function clearAllData(): void {
   d.run('DELETE FROM provider_config');
   d.run('DELETE FROM hourly_stats');
   d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','pricing','provider_config','hourly_stats')");
+  clearAllBodies();   // 先 DB 后文件：清空 body 目录
   saveDb();
 }
 
@@ -755,6 +766,7 @@ export function deleteAllSessions(): number {
   d.run('DELETE FROM sessions');
   // 重置 AUTOINCREMENT 计数器（与 clearAllData 同法，避免 DDL 重建导致约束漂移）
   d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls', 'sessions')");
+  clearAllBodies();   // 先 DB 后文件：清空 body 目录
   saveDb();
   return count;
 }

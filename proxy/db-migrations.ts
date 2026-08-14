@@ -163,7 +163,11 @@ function migrateToV4(d: Database): void {
     )
   `);
   d.run('CREATE INDEX IF NOT EXISTS idx_hourly_provider ON hourly_stats(provider)');
+  // tool 列回填：历史 NULL 从 sessions 补齐（为 listCalls 去 JOIN 铺路）。
+  // 先于 hourly_stats 回填：历史 NULL-tool 调用在统计中归到恢复后的工具名（而非 'unknown'）
+  d.run('UPDATE calls SET tool = (SELECT s.tool FROM sessions s WHERE s.id = calls.session_id) WHERE tool IS NULL');
   // 回填：hour_ms = 整数除法取小时边界；created_at 取组内最早、updated_at 取组内最晚
+  // COALESCE(tool,'unknown') 保留：防御 session 缺失的极端情况
   d.run(`
     INSERT OR IGNORE INTO hourly_stats (hour_ms, provider, model, tool, call_count, total_cost, prompt_tokens, output_tokens, uncached_input, cache_read_tokens, created_at, updated_at)
     SELECT
@@ -180,8 +184,6 @@ function migrateToV4(d: Database): void {
     FROM calls
     GROUP BY hour_ms, provider, model, tool
   `);
-  // tool 列回填：历史 NULL 从 sessions 补齐（为 listCalls 去 JOIN 铺路）
-  d.run('UPDATE calls SET tool = (SELECT s.tool FROM sessions s WHERE s.id = calls.session_id) WHERE tool IS NULL');
   d.run('DROP TABLE IF EXISTS daily_stats');
 }
 
