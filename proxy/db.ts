@@ -331,14 +331,14 @@ export function insertCall(r: CallRecord): number {
       cache_read_tokens, cache_write_tokens, uncached_input, input_cost,
       output_cost, total_cost, cache_savings, request_body, response_body,
       fingerprint, source_port, tool, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?) RETURNING id`,
     [
       r.session_id, r.provider, r.model, r.endpoint, r.method,
       r.target_url, r.downstream_url, r.source_ip,
       r.status_code, r.error_message, r.duration_ms, r.prompt_tokens, r.output_tokens,
       r.cache_read_tokens, r.cache_write_tokens, r.uncached_input, r.input_cost,
-      r.output_cost, r.total_cost, r.cache_savings, r.request_body, r.response_body,
-      r.fingerprint, r.source_port, r.tool, Date.now(),
+      r.output_cost, r.total_cost, r.cache_savings,
+      r.fingerprint, r.source_port, r.tool, r.created_at ?? Date.now(),
     ],
   );
 }

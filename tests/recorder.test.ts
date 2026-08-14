@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { initDb, closeDb, upsertSession, upsertPricing, listCalls, addProviderConfig, queryAll } from '../proxy/db.js';
 import { enqueueRecord, startRecorder, stopRecorder } from '../proxy/recorder.js';
+import { readBody } from '../proxy/db-body.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -50,6 +51,13 @@ describe('recorder', () => {
     expect(stats[0].output_tokens).toBe(300);
     expect(stats[0].uncached_input).toBe(400);  // prompt_tokens(500) - cache_write(100)
     expect(stats[0].cache_read_tokens).toBe(200);
+
+    // body 已外置为文件（先 DB 后文件）：calls 表 body 列为 NULL，内容可经 readBody 读回
+    const row = queryAll("SELECT * FROM calls WHERE fingerprint = 'fp_rec'")[0];
+    expect(row.request_body).toBeNull();
+    expect(row.response_body).toBeNull();
+    const body = readBody(row.session_id, row.id, row.created_at);
+    expect(body?.response).toBe(record.response_body);
   });
 
   it('★ 通过上游 URL 检测格式：非 anthropic 一律按 OpenAI 归一化', async () => {

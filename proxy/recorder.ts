@@ -3,6 +3,7 @@ import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing, upsertDailyStat } from './db.js';
+import { writeBody } from './db-body.js';
 import { registerCategoryColor } from './colors.js';
 import { getRates } from './rates.js';
 
@@ -44,6 +45,10 @@ export function stopRecorder(): void {
 }
 
 function processRecord(record: CallRecord): void {
+  // 0. 时间同源三处：created_at / 统计 / body 文件名
+  const now = Date.now();
+  record.created_at = now;
+
   // 1. 归一化 — 由上游 URL 决定解析方式（实际响应格式），而非工具类型
   if (record.response_body && record.prompt_tokens == null) {
     try {
@@ -94,8 +99,17 @@ function processRecord(record: CallRecord): void {
     console.error('类别颜色注册失败（不影响入库）:', err);
   }
 
-  // 4. 写入数据库
-  insertCall(record);
+  // 4. 写入数据库（body 列不再写入，值为 NULL）
+  const callId = insertCall(record);
+
+  // 4.5 body 外置写入（先 DB 后文件；失败仅降级详情展示）
+  if (record.session_id && (record.request_body != null || record.response_body != null)) {
+    try {
+      writeBody(record.session_id, callId, now, record.request_body, record.response_body);
+    } catch (err) {
+      console.warn('body 文件写入失败（详情页将降级显示）:', err);
+    }
+  }
 
   // 5. 更新会话统计
   const totalTokens = (record.prompt_tokens || 0) + (record.output_tokens || 0);
@@ -107,7 +121,6 @@ function processRecord(record: CallRecord): void {
   // 所有请求（含失败调用）无条件入 daily_stats，保持与 calls 表调用次数口径一致
   // 使用 epoch 时间戳 + tzOffset 计算日期归属，与 getDailyStats 的查询逻辑一致
   {
-    const now = Date.now();
     const tzOffset = 8; // 默认 UTC+8，后续可改为从配置读取
     const tzDate = new Date(now + tzOffset * 3600000);
     const dateText = `${tzDate.getUTCFullYear()}-${String(tzDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tzDate.getUTCDate()).padStart(2, '0')}`;

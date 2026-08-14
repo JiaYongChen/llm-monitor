@@ -53,6 +53,9 @@ describe('db', () => {
     const call = getCall(callId);
     expect(call).not.toBeNull();
     expect(call!.model).toBe('claude-sonnet-5');
+    // body 已外置：calls 表列写入 NULL，文件由 recorder 路径写入
+    expect(call!.request_body).toBeNull();
+    expect(call!.response_body).toBeNull();
   });
 
   it('insertCall 模型名写入前小写化', () => {
