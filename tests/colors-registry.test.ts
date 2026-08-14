@@ -2,6 +2,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { initDb, closeDb, queryAll, getDb, upsertSession, addProviderConfig } from '../proxy/db.js';
 import { seedPalette, registerCategoryColor, migrateCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
+import { enqueueRecord, startRecorder, stopRecorder } from '../proxy/recorder.js';
+import type { CallRecord } from '../shared/types.js';
 import { createTempDb } from './setup.js';
 
 const tmp = createTempDb();
@@ -104,5 +106,35 @@ describe('启动迁移 migrateCategoryColors', () => {
       { name: 'anthropic', color_idx: 1 },
       { name: 'deepseek', color_idx: 2 },
     ]);
+  });
+});
+
+describe('recorder 运行时注册', () => {
+  it('处理调用时自动注册新工具与新供应商', async () => {
+    const sid = upsertSession('fp_color_reg', 'claudecode', '/v1/messages');
+    const record: CallRecord = {
+      provider: 'moonshot', model: 'kimi-k2', tool: 'claudecode',
+      endpoint: '/v1/messages', method: 'POST',
+      target_url: 'https://api.moonshot.cn/v1/messages', downstream_url: 'http://localhost:9400/claudecode/v1/messages', source_ip: '127.0.0.1',
+      status_code: 200, error_message: null, duration_ms: 500,
+      request_body: null,
+      response_body: JSON.stringify({
+        model: 'kimi-k2',
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }),
+      fingerprint: 'fp_color_reg', source_port: 54330, session_id: sid,
+      prompt_tokens: null, output_tokens: null, cache_read_tokens: null,
+      cache_write_tokens: null, uncached_input: null,
+      input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+    };
+    startRecorder();
+    enqueueRecord(record);
+    await new Promise(r => setTimeout(r, 300));
+    stopRecorder();
+    const prov = queryAll("SELECT * FROM category_colors WHERE kind = 'provider' AND name = 'moonshot'");
+    expect(prov.length).toBe(1);
+    expect(prov[0].color_idx).toBeGreaterThanOrEqual(0);
+    // 已注册的内置工具不被覆盖（claudecode 仍为 idx1）
+    expect(queryAll("SELECT color_idx FROM category_colors WHERE kind = 'tool' AND name = 'claudecode'")[0]?.color_idx).toBe(1);
   });
 });

@@ -3,6 +3,7 @@ import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listPricing, upsertDailyStat } from './db.js';
+import { registerCategoryColor } from './colors.js';
 import { getRates } from './rates.js';
 
 // ── 队列 ──
@@ -84,16 +85,20 @@ function processRecord(record: CallRecord): void {
     }
   }
 
-  // 3. 写入数据库
+  // 3. 类别颜色注册：首次出现的工具/供应商自动占位（'unknown' 不注册，名称归一化在函数内完成）
+  if (record.tool && record.tool !== 'unknown') registerCategoryColor('tool', record.tool);
+  if (record.provider) registerCategoryColor('provider', record.provider);
+
+  // 4. 写入数据库
   insertCall(record);
 
-  // 4. 更新会话统计
+  // 5. 更新会话统计
   const totalTokens = (record.prompt_tokens || 0) + (record.output_tokens || 0);
   if (record.session_id) {
     updateSessionStats(record.session_id, record.total_cost, totalTokens);
   }
 
-  // 5. 累加每日统计（独立于 calls 表，删除操作不影响）
+  // 6. 累加每日统计（独立于 calls 表，删除操作不影响）
   // 所有请求（含失败调用）无条件入 daily_stats，保持与 calls 表调用次数口径一致
   // 使用 epoch 时间戳 + tzOffset 计算日期归属，与 getDailyStats 的查询逻辑一致
   {
