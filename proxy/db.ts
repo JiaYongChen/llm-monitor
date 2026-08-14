@@ -232,6 +232,28 @@ export async function initDb(dbPath?: string): Promise<void> {
   // 兼容已有库：添加 created_at_ms 列（列已存在则忽略）
   try { db.run(`ALTER TABLE daily_stats ADD COLUMN created_at_ms INTEGER NOT NULL DEFAULT 0`); } catch {}
 
+  // 类别颜色：色板静态数据表（改颜色只改此表，不动代码；theme 为未来主题预留）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS color_palette (
+      theme TEXT NOT NULL,
+      idx   INTEGER NOT NULL,
+      color TEXT NOT NULL,
+      PRIMARY KEY (theme, idx)
+    )
+  `);
+
+  // 类别颜色：工具/供应商色位注册表（两池独立注册，可同色位；注册后永久不变）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS category_colors (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind       TEXT    NOT NULL,
+      name       TEXT    NOT NULL,
+      color_idx  INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (kind, name)
+    )
+  `);
+
   // 历史数据工具名归一化迁移（claudeCode→ClaudeCode、codex/chatGPT→Codex 等，单次执行）
   // 失败时内部已回滚；此处降级为警告并继续启动（门控未设置，下次启动自动重试），避免迁移异常导致整个代理不可用
   try {
@@ -275,6 +297,14 @@ export async function initDb(dbPath?: string): Promise<void> {
       db.run('ROLLBACK');
       throw err;
     }
+  }
+
+  // 类别颜色：色板种子（动态 import 避免与 colors.ts 循环依赖；失败降级警告，不影响启动）
+  try {
+    const colorsMod = await import('./colors.js');
+    colorsMod.seedPalette();
+  } catch (err) {
+    console.error(`[db] ⚠ 色板种子失败（不影响启动）: ${(err as Error).message}`);
   }
 
   saveDb();
