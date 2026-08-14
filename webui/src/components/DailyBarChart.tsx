@@ -125,7 +125,10 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
 
   return (
     <div className="space-y-6">
-      {modelSeries ? (
+      {modelSeries ? (!colors ? (
+        // 颜色注册数据未就绪时不渲染分布图，避免柱段/图例以默认色渲染后在数据到达时整体跳变
+        <p className="text-sm text-gray-500 text-center py-8">加载颜色数据中…</p>
+      ) : (
         <>
           {/* 分布堆叠图（最前） */}
           <div>
@@ -199,7 +202,7 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
             );
           })}
         </>
-      ) : (
+      )) : (
         <>
           {/* 调用次数趋势 + Token 用量 同行（无模型数据时的聚合视图） */}
           <div className="grid grid-cols-2 gap-6">

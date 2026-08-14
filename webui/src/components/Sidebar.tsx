@@ -12,9 +12,10 @@ const KNOWN_TOOLS: Record<string, { l: string }> = {
   'claudecode': { l: 'C' },
   'codex': { l: 'X' },
 };
-/** 已知工具元数据查找（大小写不敏感） */
+/** 已知工具元数据查找（大小写不敏感）。
+ *  用 hasOwnProperty 防原型链键名（如 '__proto__'）误判为已知工具——与后端注册表的原型安全处理同源。 */
 function knownMeta(tool: string): { l: string } | undefined {
-  if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool];
+  if (Object.prototype.hasOwnProperty.call(KNOWN_TOOLS, tool)) return KNOWN_TOOLS[tool];
   const lower = tool.toLowerCase();
   const hit = Object.keys(KNOWN_TOOLS).find(k => k.toLowerCase() === lower);
   return hit ? KNOWN_TOOLS[hit] : undefined;

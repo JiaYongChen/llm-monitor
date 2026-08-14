@@ -52,7 +52,7 @@ export default function DailyCostBarChart({ data, range, tz, categoryKind = 'mod
   );
 
   const { data: colors } = useCategoryColors();
-  // 类别 → 颜色：tool/provider 由注册表决定（跨图表一致），model 与未注册类别字母序循环色板
+  // 类别 → 颜色：tool/provider 由注册表决定（跨图表一致），model 与未注册类别取名称哈希确定性色
   const colorMap = useMemo(
     () => (colors ? buildCategoryColorMap(chartData.categories, categoryKind, colors) : new Map<string, string>()),
     [chartData.categories, categoryKind, colors],
@@ -60,6 +60,11 @@ export default function DailyCostBarChart({ data, range, tz, categoryKind = 'mod
 
   if (!hasData) return (
     <p className="text-sm text-gray-500 text-center py-8">暂无数据</p>
+  );
+
+  // 颜色注册数据未就绪时不渲染分布图，避免柱段/图例以默认色渲染后在数据到达时整体跳变
+  if (!colors) return (
+    <p className="text-sm text-gray-500 text-center py-8">加载颜色数据中…</p>
   );
 
   return (

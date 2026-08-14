@@ -16,8 +16,8 @@ export function useCategoryColors() {
 }
 
 /** 单类别取色：tool/provider 命中注册表 → 色板色；model 永不查注册表；
- *  未命中 → 名称哈希映射到 [4, len-1] 的确定性色（避开内置锚点 0/1 与旧预设占用 2/3，且跨图表/跨集合稳定）；
- *  数据未加载 → undefined（由调用方兜底）。 */
+ *  未命中 → 名称哈希映射到 [2, len-1] 的确定性色（避开内置锚点 0/1，与后端池满哈希公式一致，
+ *  且跨图表/跨集合稳定）；数据未加载 → undefined（由调用方兜底）。 */
 export function categoryColor(name: string, kind: CategoryKind, colors?: CategoryColors): string | undefined {
   if (!colors) return undefined;
   if (kind !== 'model') {
@@ -29,11 +29,11 @@ export function categoryColor(name: string, kind: CategoryKind, colors?: Categor
       return colors.palette.find(p => Number(p.idx) === idx)?.color;
     }
   }
-  // 哈希兜底：锚点区间外的色板段，长度不足 5 时退化为整板哈希（防御性，正常色板恒 32）
+  // 哈希兜底：避开内置锚点 0/1（色板长度 <3 时退化为整板哈希，防御性，正常色板恒 32）
   const len = colors.palette.length;
   if (len === 0) return undefined;
-  const span = Math.max(1, len - 4);
-  const idx = 4 + (hashString(name.toLowerCase()) % span);
+  const span = Math.max(1, len - 2);
+  const idx = 2 + (hashString(name.toLowerCase()) % span);
   return colors.palette[Math.min(idx, len - 1)].color;
 }
 
