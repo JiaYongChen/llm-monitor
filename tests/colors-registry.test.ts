@@ -1,4 +1,10 @@
-/** 类别颜色注册系统测试 — 色板种子 / 注册 / 迁移 */
+/** 类别颜色注册系统测试 — 色板种子 / 注册 / 迁移
+ *
+ *  ⚠ 顺序依赖声明：本文件测试共享同一个临时数据库，vitest 按定义顺序串行执行。
+ *  关键依赖链：「历史名称按字母序注册」测试会清空 category_colors 并重置迁移门控后重跑迁移，
+ *  其后的「recorder 运行时注册」测试断言依赖该重跑结果（claudecode 仍为 idx1）。
+ *  请勿在「启动迁移」describe 与「recorder 运行时注册」describe 之间插入依赖注册表状态的测试；
+ *  如必须插入，请先为该测试自建前置状态或调整清表重跑的位置。 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { initDb, closeDb, queryAll, getDb, upsertSession, addProviderConfig } from '../proxy/db.js';
 import { seedPalette, registerCategoryColor, migrateCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
@@ -129,12 +135,22 @@ describe('recorder 运行时注册', () => {
     };
     startRecorder();
     enqueueRecord(record);
-    await new Promise(r => setTimeout(r, 300));
-    stopRecorder();
-    const prov = queryAll("SELECT * FROM category_colors WHERE kind = 'provider' AND name = 'moonshot'");
-    expect(prov.length).toBe(1);
-    expect(prov[0].color_idx).toBeGreaterThanOrEqual(0);
-    // 已注册的内置工具不被覆盖（claudecode 仍为 idx1）
-    expect(queryAll("SELECT color_idx FROM category_colors WHERE kind = 'tool' AND name = 'claudecode'")[0]?.color_idx).toBe(1);
+    try {
+      // 轮询等待消费者处理完毕（固定 300ms 等待在慢环境偶发脆弱；recorder 为 100ms 轮询，2s 上限足够）
+      const deadline = Date.now() + 2000;
+      let prov: any[] = [];
+      while (Date.now() < deadline) {
+        prov = queryAll("SELECT * FROM category_colors WHERE kind = 'provider' AND name = 'moonshot'");
+        if (prov.length === 1) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
+      expect(prov.length).toBe(1);
+      expect(prov[0].color_idx).toBeGreaterThanOrEqual(0);
+      // 已注册的内置工具不被覆盖（claudecode 仍为 idx1）
+      expect(queryAll("SELECT color_idx FROM category_colors WHERE kind = 'tool' AND name = 'claudecode'")[0]?.color_idx).toBe(1);
+    } finally {
+      // 断言失败也要停掉 recorder，避免 interval 泄漏影响同文件后续用例
+      stopRecorder();
+    }
   });
 });
