@@ -8,13 +8,15 @@ import { Badge } from '../components/ui/badge';
 import { Switch } from '../components/ui/switch';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Plus, Trash2, Copy, ChevronDown, ChevronRight } from 'lucide-react';
-import { useCurrency, CURRENCIES, providerColor, type CurrencyKey } from '../lib/currency';
+import { useCurrency, CURRENCIES, type CurrencyKey } from '../lib/currency';
+import { useCategoryColors, categoryColor } from '../lib/colors';
 import { displayName } from '../lib/display';
 
 export default function Settings() {
   const qc = useQueryClient();
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: api.listProviders });
   const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: api.listPricing });
+  const { data: colors } = useCategoryColors();
 
   const updateMut = useMutation({
     mutationFn: ({ p, d }: { p: string; d: any }) => api.updateProvider(p, d),
@@ -78,7 +80,7 @@ export default function Settings() {
               baseUrlAnthropic={p.base_url_anthropic || ''}
               apiKey={p.api_key || ''}
               enabled={p.enabled === 1}
-              color={providerColor(p.provider)}
+              color={categoryColor(p.provider, 'provider', colors) || '#9ca3af'}
               prices={providerPrices(p.provider)}
               onToggle={(v) => updateMut.mutate({ p: p.provider, d: { enabled: v } })}
               onUpdate={(d) => updateMut.mutate({ p: p.provider, d })}

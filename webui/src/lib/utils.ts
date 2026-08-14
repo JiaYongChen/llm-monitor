@@ -41,32 +41,7 @@ export function sortByPresetOrder(names: string[]): string[] {
   });
 }
 
-/** 类别共享色板（Token 用量分布图与费用分布图共用） */
-export const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#14b8a6'];
-
-/** 类别集合 → 颜色映射：内置类别恒占固定色板索引（与集合无关，索引与图例排序无关），
- *  其余类别按预设序（字母序）依次分配剩余色板颜色。同一类别在任何集合、任何图表中颜色一致。 */
-export function categoryColorMap(names: string[]): Map<string, string> {
-  const map = new Map<string, string>();
-  // 内置类别固定色板索引（claudecode 与 codex 颜色已调换）
-  const PRESET_COLOR: Record<string, number> = { claudecode: 1, codex: 0, anthropic: 2, openai: 3 };
-  const PRESET = Object.keys(PRESET_COLOR);
-  const findIn = (p: string) => names.find(n => n.toLowerCase() === p);
-  for (const p of PRESET) {
-    const hit = findIn(p);
-    if (hit) map.set(hit, CATEGORY_COLORS[PRESET_COLOR[p]]);
-  }
-  // 其余类别按预设序依次分配剩余色板颜色（循环取色）
-  let next = PRESET.length;
-  for (const name of sortByPresetOrder(names)) {
-    if (map.has(name)) continue;
-    map.set(name, CATEGORY_COLORS[next % CATEGORY_COLORS.length]);
-    next++;
-  }
-  return map;
-}
-
-/** 映射表大小写不敏感查找：先精确匹配，未命中再按小写匹配（用于 TOOL_DISPLAY / TOOL_COLORS 等） */
+/** 映射表大小写不敏感查找：先精确匹配，未命中再按小写匹配 */
 export function lookupCi(map: Record<string, string>, key: string | null | undefined): string | undefined {
   if (!key) return undefined;
   if (map[key]) return map[key];

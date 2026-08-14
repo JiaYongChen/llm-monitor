@@ -7,14 +7,10 @@ import { Badge } from '../components/ui/badge';
 import { Activity, Zap, Layers } from 'lucide-react';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
-import { useCurrency, formatCost, CURRENCIES, PROVIDER_COLORS } from '../lib/currency';
-import { lookupCi } from '../lib/utils';
+import { useCurrency, formatCost, CURRENCIES } from '../lib/currency';
+import { useCategoryColors, categoryColor } from '../lib/colors';
 import { displayName } from '../lib/display';
 
-/** 工具侧边栏图标颜色映射 */
-const TOOL_COLORS: Record<string, string> = {
-  claudecode: '#d97706', codex: '#16a34a',
-};
 /** 总览图标颜色（侧边栏激活态紫色） */
 const OVERVIEW_COLOR = '#5e5ce6';
 
@@ -33,12 +29,13 @@ export default function Dashboard() {
   // 工具名大小写不敏感匹配（URL 参数可能为任意大小写）
   const toolConfig = (toolConfigs as any[])?.find((t: any) => tool && t.tool.toLowerCase() === tool.toLowerCase());
 
-  /** 根据当前筛选状态决定标题文本和颜色（映射表查找大小写不敏感） */
+  /** 根据当前筛选状态决定标题文本和颜色（注册表命中 → 类别色；未命中/未加载 → 总览紫） */
+  const { data: colors } = useCategoryColors();
   const pageTitle = provider ? displayName(provider) : tool ? displayName(tool) : '总览';
   const titleColor = provider
-    ? (lookupCi(PROVIDER_COLORS, provider) || OVERVIEW_COLOR)
+    ? (categoryColor(provider, 'provider', colors) || OVERVIEW_COLOR)
     : tool
-      ? (lookupCi(TOOL_COLORS, tool) || OVERVIEW_COLOR)
+      ? (categoryColor(tool, 'tool', colors) || OVERVIEW_COLOR)
       : OVERVIEW_COLOR;
 
   const statsGroupBy = provider ? 'model' : tool ? 'provider' : 'tool';
@@ -210,7 +207,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} groupBy={costGroupBy} />
+          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} groupBy={costGroupBy} categoryKind={provider ? 'model' : tool ? 'provider' : 'tool'} />
         </CardContent>
       </Card>
 
@@ -227,6 +224,7 @@ export default function Dashboard() {
               tz={dailyTz}
               modelData={costDailyData}
               groupLabel={provider ? '模型分布' : tool ? '供应商分布' : '工具分布'}
+              categoryKind={provider ? 'model' : tool ? 'provider' : 'tool'}
             />
           </CardContent>
         </Card>

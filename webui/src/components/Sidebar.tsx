@@ -3,38 +3,30 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import * as api from '../api/client';
 
-import { providerColor } from '../lib/currency';
+import { useCategoryColors, categoryColor, type CategoryColors } from '../lib/colors';
 import { displayName } from '../lib/display';
 import { collectTools } from '../lib/utils';
 
-/** 已知工具的元数据（图标、颜色；键与库中小写存储一致） */
-const KNOWN_TOOLS: Record<string, { l: string; c: string }> = {
-  'claudecode': { l: 'C', c: '#d97706' },
-  'codex': { l: 'X', c: '#16a34a' },
+/** 已知工具的元数据（图标字母；颜色由类别注册表决定） */
+const KNOWN_TOOLS: Record<string, { l: string }> = {
+  'claudecode': { l: 'C' },
+  'codex': { l: 'X' },
 };
-const DEFAULT_META = { l: '?', c: '#9ca3af' };
+const DEFAULT_META = { l: '?' };
 
 /** 已知工具元数据查找（大小写不敏感） */
-function knownMeta(tool: string): { l: string; c: string } | undefined {
+function knownMeta(tool: string): { l: string } | undefined {
   if (KNOWN_TOOLS[tool]) return KNOWN_TOOLS[tool];
   const lower = tool.toLowerCase();
   const hit = Object.keys(KNOWN_TOOLS).find(k => k.toLowerCase() === lower);
   return hit ? KNOWN_TOOLS[hit] : undefined;
 }
 
-/** 生成工具图标的 HSL 色值（用于未知工具的动态颜色） */
-function toolColor(tool: string): string {
-  const meta = knownMeta(tool);
-  if (meta) return meta.c;
-  // 基于名称生成确定性颜色
-  let hash = 0;
-  for (let i = 0; i < tool.length; i++) hash = ((hash << 5) - hash) + tool.charCodeAt(i);
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 48%)`;
-}
-
-function toolMeta(tool: string): { l: string; c: string } {
-  return knownMeta(tool) ?? { l: tool.slice(0, 2).toUpperCase(), c: toolColor(tool) };
+function toolMeta(tool: string, colors?: CategoryColors): { l: string; c: string } {
+  const known = knownMeta(tool);
+  // 图标色：tool 池注册表命中 → 色板色；未命中/未加载 → 灰兜底
+  const c = categoryColor(tool, 'tool', colors) || '#9ca3af';
+  return known ? { l: known.l, c } : { l: tool.slice(0, 2).toUpperCase(), c };
 }
 
 export default function Sidebar() {
@@ -46,6 +38,7 @@ export default function Sidebar() {
 
   const { data: sessions } = useQuery({ queryKey: ['sessions'], queryFn: () => api.listSessions(), refetchInterval: 5000 });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: api.listProviders });
+  const { data: colors } = useCategoryColors();
 
   const groups = new Map<string, typeof sessions>();
   sessions?.forEach((s: any) => { const l = groups.get(s.tool) || []; l.push(s); groups.set(s.tool, l); });
@@ -85,7 +78,7 @@ export default function Sidebar() {
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">工具</span>
           </div>
           {allTools.map(tool => {
-            const m = toolMeta(tool);
+            const m = toolMeta(tool, colors);
             return (
               <button
                 key={tool}
@@ -110,7 +103,7 @@ export default function Sidebar() {
               onClick={() => { if (selectedProvider !== p.provider) setParam('provider', p.provider); }}
               className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${selectedProvider === p.provider ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
             >
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: providerColor(p.provider) }} />
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: categoryColor(p.provider, 'provider', colors) || '#9ca3af' }} />
               <span className="truncate">{displayName(p.provider)}</span>
             </button>
           ))}
@@ -121,7 +114,7 @@ export default function Sidebar() {
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[#aeaeb2]">会话</span>
         </div>
         {[...groups.entries()].map(([tool, ss]: any) => {
-          const m = toolMeta(tool);
+          const m = toolMeta(tool, colors);
           return (
             <div key={tool} className="mb-3">
               <div className="flex items-center gap-2 pl-7 pr-3 mb-1">
