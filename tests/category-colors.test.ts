@@ -1,6 +1,7 @@
-/** 前端类别取色测试 — 注册表命中取注册色 + 未命中名称哈希确定性兜底（避开内置锚点、跨集合稳定） */
+/** 前端类别取色测试 — tool/provider：注册表命中取注册色 + 未命中名称哈希确定性兜底（避开内置锚点、跨集合稳定）；
+ *  model：buildModelColorMap 按字母序依次对应色板（与集合内容相关，见各断言）。 */
 import { describe, it, expect } from 'vitest';
-import { categoryColor, buildCategoryColorMap, type CategoryColors } from '../webui/src/lib/colors';
+import { categoryColor, buildCategoryColorMap, buildModelColorMap, type CategoryColors } from '../webui/src/lib/colors';
 
 /** 测试夹具：5 色色板 + 内置 4 类注册表（tool: codex→0、claudecode→1；provider: openai→0、anthropic→1）。
  *  兜底哈希映射区间与后端池满公式一致：[2, len-1] = [2,4]（span=3），具体取色见各断言。 */
@@ -41,11 +42,6 @@ describe('categoryColor', () => {
     expect(categoryColor('kimi', 'tool', FIXTURE)).toBe(categoryColor('kimi', 'provider', FIXTURE));
   });
 
-  it('model 类别永不查注册表（取哈希色而非注册色）', () => {
-    const color = categoryColor('claudecode', 'model', FIXTURE);
-    expect(color).toBe('#9467bd');           // hashString('claudecode') % 3 === 2 → palette[4]，而非注册色 '#ff7f0e'
-  });
-
   it('数据未加载返回 undefined（调用方兜底）', () => {
     expect(categoryColor('codex', 'tool')).toBeUndefined();
   });
@@ -60,12 +56,6 @@ describe('buildCategoryColorMap', () => {
     expect(map.get('zebra')).toBe('#d62728'); // % 3 = 1
   });
 
-  it('模型类别全部取哈希色（不查注册表）', () => {
-    const map = buildCategoryColorMap(['gpt-5', 'claude-sonnet-4-5'], 'model', FIXTURE);
-    expect(map.get('claude-sonnet-4-5')).toBe('#9467bd'); // % 3 = 2
-    expect(map.get('gpt-5')).toBe('#2ca02c');             // % 3 = 0
-  });
-
   it('同一未注册类别跨集合颜色稳定（哈希与集合内容无关）', () => {
     const small = buildCategoryColorMap(['kimi'], 'tool', FIXTURE);
     const large = buildCategoryColorMap(['a-tool', 'kimi', 'zebra-tool'], 'tool', FIXTURE);
@@ -75,5 +65,34 @@ describe('buildCategoryColorMap', () => {
 
   it('空集合返回空映射', () => {
     expect(buildCategoryColorMap([], 'tool', FIXTURE).size).toBe(0);
+  });
+});
+
+describe('buildModelColorMap', () => {
+  it('模型按字母序依次对应色板（第 0 色起）', () => {
+    const map = buildModelColorMap(['gpt-5', 'claude-sonnet-4-5', 'gemini-2.5-pro'], FIXTURE);
+    expect(map.get('claude-sonnet-4-5')).toBe('#1f77b4'); // 字母序第 1 → palette[0]
+    expect(map.get('gemini-2.5-pro')).toBe('#ff7f0e');    // 字母序第 2 → palette[1]（'e' < 'p'，gemini 先于 gpt）
+    expect(map.get('gpt-5')).toBe('#2ca02c');             // 字母序第 3 → palette[2]
+  });
+
+  it('颜色取决于集合内容：插入字典序更小的模型后，原模型颜色后移', () => {
+    const before = buildModelColorMap(['gpt-5', 'claude-sonnet-4-5'], FIXTURE);
+    const after = buildModelColorMap(['a-model', 'gpt-5', 'claude-sonnet-4-5'], FIXTURE);
+    expect(before.get('claude-sonnet-4-5')).toBe('#1f77b4'); // 原第 1 位
+    expect(after.get('claude-sonnet-4-5')).toBe('#ff7f0e');  // 后移 1 位
+    expect(after.get('a-model')).toBe('#1f77b4');            // 新第 1 位
+  });
+
+  it('模型数超过色板长度时模循环取色', () => {
+    const map = buildModelColorMap(['a', 'b', 'c', 'd', 'e', 'f'], FIXTURE); // 6 > 5
+    expect(map.get('a')).toBe('#1f77b4'); // idx 0
+    expect(map.get('f')).toBe('#1f77b4'); // idx 5 % 5 = 0
+  });
+
+  it('空集合返回空映射；空色板不报错', () => {
+    expect(buildModelColorMap([], FIXTURE).size).toBe(0);
+    const empty: CategoryColors = { palette: [], tools: {}, providers: {} };
+    expect(buildModelColorMap(['a'], empty).size).toBe(0);
   });
 });

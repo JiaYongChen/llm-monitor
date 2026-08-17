@@ -15,19 +15,17 @@ export function useCategoryColors() {
   return useQuery({ queryKey: ['colors'], queryFn: () => api.fetchColors(), refetchInterval: 60_000 });
 }
 
-/** 单类别取色：tool/provider 命中注册表 → 色板色；model 永不查注册表；
+/** 单类别取色：tool/provider 命中注册表 → 色板色；
  *  未命中 → 名称哈希映射到 [2, len-1] 的确定性色（避开内置锚点 0/1，与后端池满哈希公式一致，
  *  且跨图表/跨集合稳定）；数据未加载 → undefined（由调用方兜底）。 */
-export function categoryColor(name: string, kind: CategoryKind, colors?: CategoryColors): string | undefined {
+export function categoryColor(name: string, kind: 'tool' | 'provider', colors?: CategoryColors): string | undefined {
   if (!colors) return undefined;
-  if (kind !== 'model') {
-    const registry = kind === 'tool' ? colors.tools : colors.providers;
-    const lower = name.toLowerCase();
-    const hit = Object.entries(registry).find(([k]) => k.toLowerCase() === lower);
-    if (hit) {
-      const idx = Number(hit[1]);
-      return colors.palette.find(p => Number(p.idx) === idx)?.color;
-    }
+  const registry = kind === 'tool' ? colors.tools : colors.providers;
+  const lower = name.toLowerCase();
+  const hit = Object.entries(registry).find(([k]) => k.toLowerCase() === lower);
+  if (hit) {
+    const idx = Number(hit[1]);
+    return colors.palette.find(p => Number(p.idx) === idx)?.color;
   }
   // 哈希兜底：避开内置锚点 0/1（色板长度 <3 时退化为整板哈希，防御性，正常色板恒 32）
   const len = colors.palette.length;
@@ -38,12 +36,26 @@ export function categoryColor(name: string, kind: CategoryKind, colors?: Categor
 }
 
 /** 类别集合 → 颜色映射：每类别独立取色（注册命中 → 注册色；其余 → 名称哈希确定性色），
- *  颜色与集合内容、图例/柱段顺序完全解耦（图例用 sortByPresetOrder、柱段保持各自顺序不变）。 */
-export function buildCategoryColorMap(names: string[], kind: CategoryKind, colors: CategoryColors): Map<string, string> {
+ *  颜色与集合内容、图例/柱段顺序完全解耦（图例用 sortByPresetOrder、柱段保持各自顺序不变）。
+ *  仅适用于 tool/provider；模型柱状图的顺序取色见 buildModelColorMap。 */
+export function buildCategoryColorMap(names: string[], kind: 'tool' | 'provider', colors: CategoryColors): Map<string, string> {
   const map = new Map<string, string>();
   for (const name of names) {
     const color = categoryColor(name, kind, colors);
     if (color) map.set(name, color);
   }
+  return map;
+}
+
+/** 模型柱状图顺序取色：模型名按字母序排列，第 N 个取色板第 N 个颜色（模循环防溢出）。
+ *  仅用于模型维度（供应商页的费用分布 / 模型分布），颜色取决于当前集合的字母序位置；
+ *  与 tool/provider 的注册表色（跨图表一致）语义相反，故独立成函数，不并入 buildCategoryColorMap。 */
+export function buildModelColorMap(names: string[], colors: CategoryColors): Map<string, string> {
+  const map = new Map<string, string>();
+  const sorted = [...names].sort((a, b) => a.localeCompare(b));
+  sorted.forEach((name, i) => {
+    if (colors.palette.length === 0) return;
+    map.set(name, colors.palette[i % colors.palette.length].color);
+  });
   return map;
 }
