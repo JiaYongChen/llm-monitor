@@ -151,7 +151,7 @@ llm-monitor/
 │   └── web/                     # 前端静态文件
 ├── tsconfig.json
 ├── package.json
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 ## API 端点
