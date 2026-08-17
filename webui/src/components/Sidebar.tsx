@@ -49,9 +49,9 @@ export default function Sidebar() {
     [sessions],
   );
 
-  /** 详情页路由激活判断（大小写不敏感，路由参数可能为任意大小写） */
-  const toolActive = (tool: string) => loc.pathname.toLowerCase() === `/tools/${tool.toLowerCase()}`;
-  const providerActive = (provider: string) => loc.pathname.toLowerCase() === `/providers/${provider.toLowerCase()}`;
+  /** 详情页路由激活判断（大小写不敏感，路由参数可能为任意大小写；路径先解码以匹配编码后的链接） */
+  const toolActive = (tool: string) => decodeURIComponent(loc.pathname).toLowerCase() === `/tools/${tool.toLowerCase()}`;
+  const providerActive = (provider: string) => decodeURIComponent(loc.pathname).toLowerCase() === `/providers/${provider.toLowerCase()}`;
 
   return (
     <aside className="flex flex-col h-screen select-none" style={{ width: 230, background: '#fafafc', borderRight: '1px solid #e5e5ea' }}>
@@ -73,7 +73,7 @@ export default function Sidebar() {
             return (
               <Link
                 key={tool}
-                to={`/tools/${tool}`}
+                to={`/tools/${encodeURIComponent(tool)}`}
                 className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${toolActive(tool) ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
               >
                 <div className="w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0" style={{ background: m.c }}>{m.l}</div>
@@ -91,7 +91,7 @@ export default function Sidebar() {
           {enabledProviders.map((p: any) => (
             <Link
               key={p.provider}
-              to={`/providers/${p.provider}`}
+              to={`/providers/${encodeURIComponent(p.provider)}`}
               className={`flex items-center gap-2 pl-7 pr-3 py-1.5 rounded-md text-[13px] transition-colors w-full text-left ${providerActive(p.provider) ? 'bg-[#e8e7ff] text-[#5e5ce6] font-medium' : 'text-[#6e6e73] hover:bg-[#f0f0f4]'}`}
             >
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: categoryColor(p.provider, 'provider', colors) || '#9ca3af' }} />

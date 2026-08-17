@@ -33,7 +33,6 @@ export default function SessionDetail() {
 
   if (!s) return <div className="p-8 text-sm text-[#aeaeb2]">加载中...</div>;
 
-  const callsList = calls || [];
   // Token 分项统计来自后端全量聚合，不受时间线分页影响
   const uncachedTokens = tokenStats?.uncached_input || 0;
   const cacheHitTokens = tokenStats?.cache_read_tokens || 0;

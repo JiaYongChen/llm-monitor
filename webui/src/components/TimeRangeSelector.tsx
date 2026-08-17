@@ -22,6 +22,8 @@ export default function TimeRangeSelector({ value, onChange }: { value: string; 
         {DAILY_RANGES.map(r => (
           <button
             key={r.value}
+            type="button"
+            aria-pressed={value === r.value}
             onClick={() => onChange(r.value)}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${value === r.value ? 'bg-white text-[#1d1d1f] font-medium shadow-sm' : 'text-[#6e6e73] hover:text-[#1d1d1f]'}`}
           >

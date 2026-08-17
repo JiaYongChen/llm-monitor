@@ -3,10 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import * as api from '../api/client';
 import type { CategoryKind } from '../lib/colors';
 
+/** 模块级共享的时间范围档位：页面切换（卸载/挂载）时保持用户上次选择 */
+let sharedRange = '30d';
+
 /** Dashboard 三页共用查询 hook：stats/dailyStats/dailyModelStats/costDailyStats 四查询 + 时区配置 + totals 归约。
  *  查询键与拆分前完全一致 → 页面切换时 react-query 共享缓存，零重复请求。 */
 export default function useDashboardData({ groupBy, provider, tool }: { groupBy: CategoryKind; provider?: string; tool?: string }) {
-  const [dailyRange, setDailyRange] = useState('30d');
+  const [dailyRange, setDailyRangeState] = useState(sharedRange);
+  /** 受控更新：同步写回模块级共享状态，跨页面保持选择 */
+  const setDailyRange = (v: string) => {
+    sharedRange = v;
+    setDailyRangeState(v);
+  };
   const { data: stats } = useQuery({ queryKey: ['stats', groupBy, provider, tool], queryFn: () => api.getStats(groupBy, provider, tool), refetchInterval: 5000 });
   // 时区为全局设置（设置页维护，metadata 持久化）；CurrencyProvider 已用同一 queryKey，共享缓存零重复请求
   const { data: config } = useQuery({ queryKey: ['config'], queryFn: api.getConfig });
