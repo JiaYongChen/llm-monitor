@@ -77,6 +77,15 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `proxy/thinking-preview.ts` | 终端思考输出格式化：分隔线包围 + `[think]` 独立前缀标签 |
 | `proxy/config.ts` | CLI 参数解析（--port / --webui-port）+ 目录常量（DATA_DIR=~/.llm-monitor） |
 | `shared/extractThinking.ts` | 思考提取函数：兼容流式干净结构 / Anthropic 原始 / OpenAI 原始三种响应形态，前后端共用 |
+| `webui/src/pages/Overview.tsx` | 总览页（`/`）：按工具维度汇总；兼容旧查询参数重定向到工具/供应商详情路由 |
+| `webui/src/pages/ToolDetail.tsx` | 工具详情页（`/tools/:tool`）：按供应商维度汇总 + 工具级上游配置面板 |
+| `webui/src/pages/ProviderDetail.tsx` | 供应商详情页（`/providers/:provider`）：按模型维度汇总 + 缓存命中率 KPI |
+| `webui/src/hooks/useDashboardData.ts` | Dashboard 三页共用查询 hook：stats/dailyStats/费用分布查询（含复用去重）+ 时区 + totals 归约 |
+| `webui/src/components/UpstreamSelectorPanel.tsx` | 上游选择器面板（工具详情页 + 会话详情页共用）：供应商/模型下拉 + 转发地址提示，持久化留在调用方 |
+| `webui/src/components/KpiCards.tsx` | KPI 卡片行（Dashboard 三页 + 会话详情页共用） |
+| `webui/src/components/PageHeader.tsx` | 页面标题行（类别色标题 + 实时监控徽标） |
+| `webui/src/components/TimeRangeSelector.tsx` | 时间范围分段按钮组（DAILY_RANGES 常量） |
+| `webui/src/components/ChartCard.tsx` | 图表卡片外壳 |
 
 ## 数据流
 
