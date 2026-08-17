@@ -7,7 +7,7 @@
  *  如必须插入，请先为该测试自建前置状态或调整清表重跑的位置。 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { initDb, closeDb, queryAll, getDb, upsertSession, addProviderConfig } from '../proxy/db.js';
-import { seedPalette, registerCategoryColor, migrateCategoryColors, getCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
+import { seedPalette, registerCategoryColor, migrateCategoryColors, migratePaletteSwap, getCategoryColors, PALETTE_SIZE, PALETTE_COLORS } from '../proxy/colors.js';
 import { enqueueRecord, startRecorder, stopRecorder } from '../proxy/recorder.js';
 import type { CallRecord } from '../shared/types.js';
 import { createTempDb } from './setup.js';
@@ -23,8 +23,8 @@ describe('色板种子', () => {
   it('initDb 后 color_palette 自动种入 32 色（light 主题）', () => {
     const rows = queryAll("SELECT idx, color FROM color_palette WHERE theme = 'light' ORDER BY idx");
     expect(rows.length).toBe(PALETTE_SIZE);
-    expect(rows[0]).toEqual({ idx: 0, color: '#1f77b4' });
-    expect(rows[1]).toEqual({ idx: 1, color: '#ff7f0e' });
+    expect(rows[0]).toEqual({ idx: 0, color: '#ff7f0e' });
+    expect(rows[1]).toEqual({ idx: 1, color: '#1f77b4' });
     expect(rows[31]).toEqual({ idx: 31, color: '#999999' });
     expect(PALETTE_COLORS.length).toBe(32);
   });
@@ -37,10 +37,10 @@ describe('色板种子', () => {
 });
 
 describe('运行时注册 registerCategoryColor', () => {
-  it('新类别分配最小未占色位（tool 池：codex/claudecode 已注册占 0/1 → kimi 取 idx2）', () => {
-    // 前置：先注册内置两个工具（空表时最小空位分配 → codex=0、claudecode=1；Task 3 迁移前本测试自建前置，不依赖迁移）
-    expect(registerCategoryColor('tool', 'codex')).toBe(0);
-    expect(registerCategoryColor('tool', 'claudecode')).toBe(1);
+  it('新类别分配最小未占色位（tool 池：claudecode/codex 已注册占 0/1 → kimi 取 idx2）', () => {
+    // 前置：先注册内置两个工具（空表时最小空位分配 → claudecode=0、codex=1；Task 3 迁移前本测试自建前置，不依赖迁移）
+    expect(registerCategoryColor('tool', 'codex')).toBe(1);
+    expect(registerCategoryColor('tool', 'claudecode')).toBe(0);
     const idx = registerCategoryColor('tool', 'kimi');
     expect(idx).toBe(2);
     const row = queryAll("SELECT * FROM category_colors WHERE kind = 'tool' AND name = 'kimi'");
@@ -55,9 +55,9 @@ describe('运行时注册 registerCategoryColor', () => {
   });
 
   it('provider 池独立注册（同样从最小空位开始）', () => {
-    // 前置：注册内置两个供应商（openai=0、anthropic=1）
-    expect(registerCategoryColor('provider', 'openai')).toBe(0);
-    expect(registerCategoryColor('provider', 'anthropic')).toBe(1);
+    // 前置：注册内置两个供应商（openai=1、anthropic=0）
+    expect(registerCategoryColor('provider', 'openai')).toBe(1);
+    expect(registerCategoryColor('provider', 'anthropic')).toBe(0);
     expect(registerCategoryColor('provider', 'deepseek')).toBe(2);
     expect(registerCategoryColor('provider', 'glm')).toBe(3);
   });
@@ -67,7 +67,7 @@ describe('运行时注册 registerCategoryColor', () => {
     for (let i = 0; i < PALETTE_SIZE; i++) {
       registerCategoryColor('tool', `t-${String(i).padStart(2, '0')}`);
     }
-    // 此刻 0~31 全占 → 下一个按名称哈希映射到 [2,31]，不与内置锚点 codex(0)/claudecode(1) 撞色
+    // 此刻 0~31 全占 → 下一个按名称哈希映射到 [2,31]，不与内置锚点 claudecode(0)/codex(1) 撞色
     const idx = registerCategoryColor('tool', 'overflow-tool');
     expect(idx).toBeGreaterThanOrEqual(2);
     expect(idx).toBeLessThan(PALETTE_SIZE);
@@ -96,7 +96,37 @@ describe('注册表查询 getCategoryColors', () => {
     d.run("DELETE FROM color_palette WHERE theme = 'light'");
     const colors = getCategoryColors();
     expect(colors.palette.length).toBe(PALETTE_SIZE);
-    expect(colors.palette[0]).toEqual({ idx: 0, color: '#1f77b4' });
+    expect(colors.palette[0]).toEqual({ idx: 0, color: '#ff7f0e' });
+  });
+});
+
+describe('色板交换迁移 migratePaletteSwap', () => {
+  it('老库旧序数据交换后内置类别显示色不变（门控幂等）', () => {
+    const d = getDb();
+    // 构造老库旧序：色板 0 蓝 1 橙、注册表 codex/openai→0、claudecode/anthropic→1
+    // （色板表可能已被兜底测试清空 → 显式删除后插入旧序行，自包含构造）
+    d.run("DELETE FROM color_palette WHERE theme = 'light'");
+    d.run("INSERT INTO color_palette (theme, idx, color) VALUES ('light', 0, '#1f77b4'), ('light', 1, '#ff7f0e')");
+    d.run("UPDATE category_colors SET color_idx = CASE name WHEN 'codex' THEN 0 WHEN 'claudecode' THEN 1 ELSE color_idx END WHERE kind = 'tool'");
+    d.run("UPDATE category_colors SET color_idx = CASE name WHEN 'openai' THEN 0 WHEN 'anthropic' THEN 1 ELSE color_idx END WHERE kind = 'provider'");
+    d.run("DELETE FROM metadata WHERE key = 'palette_01_swapped'");
+    migratePaletteSwap();
+    // 色板表：idx 0/1 颜色交换（#ff7f0e 在前）
+    const palette = queryAll("SELECT idx, color FROM color_palette WHERE theme = 'light' ORDER BY idx");
+    expect(palette[0]).toEqual({ idx: 0, color: '#ff7f0e' });
+    expect(palette[1]).toEqual({ idx: 1, color: '#1f77b4' });
+    // 注册表：色位 0↔1 交换 → 内置类别显示色不变（codex/openai 蓝、claudecode/anthropic 橙）
+    const tools = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'tool' AND name IN ('codex','claudecode')");
+    expect(tools.find(r => r.name === 'codex')?.color_idx).toBe(1);
+    expect(tools.find(r => r.name === 'claudecode')?.color_idx).toBe(0);
+    const providers = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'provider' AND name IN ('openai','anthropic')");
+    expect(providers.find(r => r.name === 'openai')?.color_idx).toBe(1);
+    expect(providers.find(r => r.name === 'anthropic')?.color_idx).toBe(0);
+    // 门控幂等：重跑不重复交换
+    migratePaletteSwap();
+    const palette2 = queryAll("SELECT idx, color FROM color_palette WHERE theme = 'light' ORDER BY idx");
+    expect(palette2[0]).toEqual({ idx: 0, color: '#ff7f0e' });
+    expect(palette2[1]).toEqual({ idx: 1, color: '#1f77b4' });
   });
 });
 
@@ -105,10 +135,10 @@ describe('启动迁移 migrateCategoryColors', () => {
     // 注意：Task 2 的测试可能已注册额外类别，按名断言而非全表 toEqual
     const tools = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'tool'");
     const providers = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'provider'");
-    expect(tools.find(r => r.name === 'codex')?.color_idx).toBe(0);
-    expect(tools.find(r => r.name === 'claudecode')?.color_idx).toBe(1);
-    expect(providers.find(r => r.name === 'openai')?.color_idx).toBe(0);
-    expect(providers.find(r => r.name === 'anthropic')?.color_idx).toBe(1);
+    expect(tools.find(r => r.name === 'codex')?.color_idx).toBe(1);
+    expect(tools.find(r => r.name === 'claudecode')?.color_idx).toBe(0);
+    expect(providers.find(r => r.name === 'openai')?.color_idx).toBe(1);
+    expect(providers.find(r => r.name === 'anthropic')?.color_idx).toBe(0);
   });
 
   it('metadata 门控幂等：重跑不产生重复行', () => {
@@ -128,16 +158,16 @@ describe('启动迁移 migrateCategoryColors', () => {
     migrateCategoryColors();
     const tools = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'tool' ORDER BY color_idx");
     expect(tools).toEqual([
-      { name: 'codex', color_idx: 0 },
-      { name: 'claudecode', color_idx: 1 },
+      { name: 'claudecode', color_idx: 0 },
+      { name: 'codex', color_idx: 1 },
       { name: 'glm', color_idx: 2 },
       { name: 'kimi', color_idx: 3 },
       { name: 'zebra-tool', color_idx: 4 },
     ]);
     const providers = queryAll("SELECT name, color_idx FROM category_colors WHERE kind = 'provider' ORDER BY color_idx");
     expect(providers).toEqual([
-      { name: 'openai', color_idx: 0 },
-      { name: 'anthropic', color_idx: 1 },
+      { name: 'anthropic', color_idx: 0 },
+      { name: 'openai', color_idx: 1 },
       { name: 'deepseek', color_idx: 2 },
     ]);
   });
@@ -174,8 +204,8 @@ describe('recorder 运行时注册', () => {
       }
       expect(prov.length).toBe(1);
       expect(prov[0].color_idx).toBeGreaterThanOrEqual(0);
-      // 已注册的内置工具不被覆盖（claudecode 仍为 idx1）
-      expect(queryAll("SELECT color_idx FROM category_colors WHERE kind = 'tool' AND name = 'claudecode'")[0]?.color_idx).toBe(1);
+      // 已注册的内置工具不被覆盖（claudecode 仍为 idx0）
+      expect(queryAll("SELECT color_idx FROM category_colors WHERE kind = 'tool' AND name = 'claudecode'")[0]?.color_idx).toBe(0);
     } finally {
       // 断言失败也要停掉 recorder，避免 interval 泄漏影响同文件后续用例
       stopRecorder();

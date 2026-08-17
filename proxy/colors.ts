@@ -7,9 +7,11 @@ import type { Database } from 'sql.js';
 /** 色板主题（本期仅 light；未来暗色主题插入同色位的变体行） */
 export const PALETTE_THEME = 'light';
 
-/** light 主题 32 色种子（前 10 为 d3 Tableau 10，其余 colorbrewer Dark2/Set1/Accent/Paired 精选，均为中等明度） */
+/** light 主题 32 色种子（前 10 为 d3 Tableau 10，其余 colorbrewer Dark2/Set1/Accent/Paired 精选，均为中等明度）。
+ *  前两位为 #ff7f0e/#1f77b4（交换自 Tableau 10 原始顺序）：模型柱状图顺序取色以橙为首；
+ *  内置锚点色位已随交换补偿（见 BUILTIN_COLOR_IDX 与 migratePaletteSwap），类别显示色不受影响。 */
 export const PALETTE_COLORS: string[] = [
-  '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
+  '#ff7f0e', '#1f77b4', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
   '#bcbd22', '#17becf', '#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02',
   '#a6761d', '#666666', '#386cb0', '#984ea3', '#4daf4a', '#a65628', '#f781bf', '#bf5b17',
   '#8dd3c7', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#bebada', '#e41a1c', '#999999',
@@ -55,7 +57,7 @@ function invalidateRegistryCache(): void {
 }
 
 /** 该 kind 已占用的色位集合中找最小未占 idx；全占（32 个）则按名称哈希映射到 [2,31]，
- *  避开内置锚点 codex/openai(0) 与 claudecode/anthropic(1)——池满属于极端情况，但撞色不应撞到最高可见度类别。 */
+ *  避开内置锚点 claudecode/anthropic(0) 与 codex/openai(1)——池满属于极端情况，但撞色不应撞到最高可见度类别。 */
 function nextFreeIdx(kind: string, name: string): number {
   const used = new Set(
     queryAll('SELECT color_idx FROM category_colors WHERE kind = ?', [kind]).map(r => Number(r.color_idx)),
@@ -84,12 +86,13 @@ export function registerCategoryColor(kind: 'tool' | 'provider', name: string): 
   return idx;
 }
 
-/** 内置类别固定色位（与注册池无关的静态约定）：tool 池 codex→0、claudecode→1；provider 池 openai→0、anthropic→1 */
+/** 内置类别固定色位（与注册池无关的静态约定）：tool 池 claudecode→0、codex→1；provider 池 anthropic→0、openai→1。
+ *  色板 0/1 两位交换后（#ff7f0e 在前）锚点随之互换，保证内置类别显示色与交换前一致（claudecode/anthropic 橙、codex/openai 蓝）。 */
 const BUILTIN_COLOR_IDX: Array<[kind: 'tool' | 'provider', name: string, idx: number]> = [
-  ['tool', 'codex', 0],
-  ['tool', 'claudecode', 1],
-  ['provider', 'openai', 0],
-  ['provider', 'anthropic', 1],
+  ['tool', 'claudecode', 0],
+  ['tool', 'codex', 1],
+  ['provider', 'anthropic', 0],
+  ['provider', 'openai', 1],
 ];
 
 /** 事务内插入（INSERT OR IGNORE：内置固定色位不覆盖已有注册） */
@@ -144,6 +147,30 @@ export function migrateCategoryColors(): void {
     d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('colors_migrated', '1')");
     d.run('COMMIT');
     invalidateRegistryCache(); // 注册表已重建，缓存必须同步失效
+    saveDb();
+  } catch (err) {
+    d.run('ROLLBACK');
+    throw err;
+  }
+}
+
+/** 色板 0/1 位交换迁移：PALETTE_COLORS 前两位互换（#ff7f0e 在前）后，老库的 color_palette（色板表）与
+ *  category_colors（注册表）需同步交换 0↔1，保证内置类别显示色不变（codex/openai 蓝、claudecode/anthropic 橙）。
+ *  单次执行（metadata 门控 palette_01_swapped），事务包裹；
+ *  必须在 seedPalette 之前调用——全新库两表为空 no-op 后由种子写入新色板顺序，老库则交换既有数据。 */
+export function migratePaletteSwap(): void {
+  if (getSetting('palette_01_swapped') === '1') return;
+  const d = getDb();
+  d.run('BEGIN');
+  try {
+    // 色板表：交换 idx 0/1 的颜色（CASE 基于原值求值，同语句内不会二次交换）
+    d.run("UPDATE color_palette SET color = CASE idx WHEN 0 THEN ? WHEN 1 THEN ? ELSE color END WHERE theme = ?",
+      ['#ff7f0e', '#1f77b4', PALETTE_THEME]);
+    // 注册表：交换 0↔1 色位（0/1 仅内置 4 类占用；其余类别色位 ≥2 不受影响）
+    d.run('UPDATE category_colors SET color_idx = CASE color_idx WHEN 0 THEN 1 WHEN 1 THEN 0 ELSE color_idx END');
+    d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('palette_01_swapped', '1')");
+    d.run('COMMIT');
+    invalidateRegistryCache(); // 注册表色位已变，缓存必须同步失效
     saveDb();
   } catch (err) {
     d.run('ROLLBACK');

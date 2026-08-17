@@ -23,12 +23,12 @@ describe('GET /api/colors', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.palette.length).toBe(32);
-    expect(body.palette[0]).toEqual({ idx: 0, color: '#1f77b4' });
-    expect(body.tools.claudecode).toBe(1);
-    expect(body.tools.codex).toBe(0);
+    expect(body.palette[0]).toEqual({ idx: 0, color: '#ff7f0e' });
+    expect(body.tools.claudecode).toBe(0);
+    expect(body.tools.codex).toBe(1);
     expect(body.tools.kimi).toBe(2);
-    expect(body.providers.anthropic).toBe(1);
-    expect(body.providers.openai).toBe(0);
+    expect(body.providers.anthropic).toBe(0);
+    expect(body.providers.openai).toBe(1);
     await app.close();
   });
 });
