@@ -2,7 +2,9 @@ import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Overview = lazy(() => import('./pages/Overview'));
+const ToolDetail = lazy(() => import('./pages/ToolDetail'));
+const ProviderDetail = lazy(() => import('./pages/ProviderDetail'));
 const SessionDetail = lazy(() => import('./pages/SessionDetail'));
 const CallDetail = lazy(() => import('./pages/CallDetail'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -21,7 +23,9 @@ export default function App() {
     <Layout>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Overview />} />
+          <Route path="/tools/:tool" element={<ToolDetail />} />
+          <Route path="/providers/:provider" element={<ProviderDetail />} />
           <Route path="/sessions/:id" element={<SessionDetail />} />
           <Route path="/calls/:id" element={<CallDetail />} />
           <Route path="/settings" element={<Settings />} />
