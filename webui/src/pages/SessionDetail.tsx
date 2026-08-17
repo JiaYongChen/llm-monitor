@@ -6,6 +6,8 @@ import { useCurrency, formatCost } from '../lib/currency';
 import { formatTime } from '../lib/utils';
 import { displayName } from '../lib/display';
 import CallTimeline from '../components/CallTimeline';
+import KpiCards from '../components/KpiCards';
+import UpstreamSelectorPanel, { builtinProviderFor } from '../components/UpstreamSelectorPanel';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
 
@@ -39,24 +41,12 @@ export default function SessionDetail() {
   const totalCalls = callsCount?.count || 0;
   const totalPages = Math.max(1, Math.ceil(totalCalls / PAGE_SIZE));
 
-  // 工具本身对应的内置供应商无需覆写（claudecode→anthropic, codex→openai；大小写不敏感）
-  const toolLower = (s.tool || '').toLowerCase();
-  const toolBuiltin = toolLower === 'claudecode' ? 'anthropic' : toolLower === 'codex' ? 'openai' : null;
-  const enabledProviders = (providers || []).filter((p: any) => p.enabled && p.provider !== toolBuiltin);
+  // 工具对应的内置供应商无需覆写（claudecode→anthropic, codex→openai；大小写不敏感）
+  const enabledProviders = (providers || []).filter((p: any) => p.enabled && p.provider !== builtinProviderFor(s.tool));
   const enabledProviderNames = new Set(enabledProviders.map((p: any) => p.provider));
   // 如果当前上游已被停用，自动切回跟随请求
   const currentUpstream = s.upstream_provider && enabledProviderNames.has(s.upstream_provider) ? s.upstream_provider : '';
   const currentModel = currentUpstream ? s.upstream_model || '' : '';
-  // 模型列表跟随代理商：选了代理商则只显示该代理商的模型，否则显示全部，按添加顺序排列
-  const modelOrder = (pricing || [])
-    .filter((p: any) => !currentUpstream || p.provider === currentUpstream)
-    .sort((a: any, b: any) => a.id - b.id);
-  const seen = new Set<string>();
-  const models = modelOrder.filter((p: any) => {
-    if (seen.has(p.model)) return false;
-    seen.add(p.model);
-    return true;
-  }).map((p: any) => p.model as string);
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6 animate-in">
@@ -74,74 +64,32 @@ export default function SessionDetail() {
         </div>
       </div>
 
-      {/* 上游选择器 */}
-      <div className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">供应商</span>
-          <select
-            className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] w-[200px]"
-            value={currentUpstream}
-            onChange={async (e) => {
-              const val = e.target.value || null;
-              await api.updateSessionUpstream(s.id, val);
-              if (!val) {
-                // 切回跟随请求路径 → 清除模型
-                await api.updateSessionModel(s.id, null);
-              } else {
-                // 第三方供应商 → 默认选第一个模型
-                const filteredModels = [...new Set<string>((pricing || [])
-                  .filter((p: any) => p.provider === val)
-                  .map((p: any) => p.model as string)
-                )].sort();
-                await api.updateSessionModel(s.id, filteredModels[0] || null);
-              }
-              qc.invalidateQueries({ queryKey: ['session', sessionId] });
-            }}
-          >
-            <option value="">跟随请求路径（{displayName(s.tool)}）</option>
-            {enabledProviders.map((p: any) => (
-              <option key={p.provider} value={p.provider}>{displayName(p.provider)}</option>
-            ))}
-          </select>
-          {currentUpstream && (() => {
-            const officialUrls: Record<string, string> = { anthropic: 'https://api.anthropic.com', openai: 'https://api.openai.com' };
-            const up = (providers || []).find((p: any) => p.provider === currentUpstream);
-            const baseUrl = (toolLower === 'claudecode' && up?.base_url_anthropic)
-              ? up.base_url_anthropic
-              : (up?.base_url || officialUrls[currentUpstream] || '');
-            return <span className="text-xs text-[#30b48b]">转发到 {displayName(currentUpstream)} — <span className="font-mono">{baseUrl}</span></span>;
-          })()}
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-[#aeaeb2] uppercase tracking-wider w-14 shrink-0">模型</span>
-          {currentUpstream ? (
-            <select
-              className="text-sm border border-[#e5e5ea] rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3] w-[200px]"
-              value={currentModel}
-              onChange={async (e) => {
-                const val = e.target.value || null;
-                await api.updateSessionModel(s.id, val);
-                qc.invalidateQueries({ queryKey: ['session', sessionId] });
-              }}
-            >
-              {models.map((m: string) => (
-                <option key={m} value={m}>{displayName(m)}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-sm text-[#aeaeb2] px-3 py-1.5">跟随客户端请求</span>
-          )}
-          {currentModel && (
-            <span className="text-xs text-[#0071e3]">强制使用 {displayName(currentModel)}</span>
-          )}
-        </div>
-      </div>
+      {/* 上游选择器：共用面板（providers 传全量，面板内部排除内置供应商） */}
+      <UpstreamSelectorPanel
+        tool={s.tool || ''}
+        provider={currentUpstream}
+        model={currentModel}
+        providers={providers || []}
+        pricing={pricing || []}
+        onProviderChange={async (next, defaultModel) => {
+          await api.updateSessionUpstream(s.id, next);
+          // 切回跟随请求路径 → 清除模型；第三方供应商 → 默认选第一个模型（由面板回传）
+          await api.updateSessionModel(s.id, next ? defaultModel : null);
+          qc.invalidateQueries({ queryKey: ['session', sessionId] });
+        }}
+        onModelChange={async (next) => {
+          await api.updateSessionModel(s.id, next);
+          qc.invalidateQueries({ queryKey: ['session', sessionId] });
+        }}
+      />
 
-      <div className="grid grid-cols-5 gap-4">
-        {[{ l: '调用次数', v: s.request_count.toLocaleString() }, { l: '总费用', v: formatCost(s.total_cost, currency, rates), c: '#e69900' }, { l: '输出 tokens', v: outputTokens.toLocaleString() }, { l: '输入 tokens (未命中缓存)', v: uncachedTokens.toLocaleString() }, { l: '输入 tokens (命中缓存)', v: cacheHitTokens.toLocaleString(), c: '#30b48b' }].map(k => (
-          <div key={k.l} className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm"><div className="text-[11px] font-medium uppercase tracking-wider text-[#aeaeb2] mb-1">{k.l}</div><div className="text-xl font-bold text-[#1d1d1f]" style={k.c ? { color: k.c } : {}}>{k.v}</div></div>
-        ))}
-      </div>
+      <KpiCards items={[
+        { label: '调用次数', value: s.request_count.toLocaleString() },
+        { label: '总费用', value: formatCost(s.total_cost, currency, rates), valueColor: '#e69900' },
+        { label: '输出 tokens', value: outputTokens.toLocaleString() },
+        { label: '输入 tokens (未命中缓存)', value: uncachedTokens.toLocaleString() },
+        { label: '输入 tokens (命中缓存)', value: cacheHitTokens.toLocaleString(), valueColor: '#30b48b' },
+      ]} />
 
       <div className="rounded-xl bg-white border border-[#e5e5ea] shadow-sm">
         <div className="px-5 py-3 border-b border-[#e5e5ea] flex items-center gap-2"><h2 className="text-sm font-semibold text-[#1d1d1f]">调用时间线</h2><span className="text-xs font-mono text-[#aeaeb2]">共 {totalCalls} 条</span></div>
