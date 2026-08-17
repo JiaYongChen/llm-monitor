@@ -93,19 +93,26 @@ async function fetchJsonWithTimeout(url: string): Promise<unknown> {
   }
 }
 
-/** 拉取 liteLLM 价格表（jsdelivr 镜像为主，GitHub raw 备份） */
+/** 测试注入：LLM_MONITOR_PRICING_URLS = {"liteLLM": "...", "modelsDev": "...", "anthropic": "..."} */
+function envUrlOverride(): { liteLLM?: string; modelsDev?: string; anthropic?: string } {
+  try { return JSON.parse(process.env.LLM_MONITOR_PRICING_URLS || '{}'); } catch { return {}; }
+}
+
+/** 拉取 liteLLM 价格表（jsdelivr 镜像为主，GitHub raw 备份；均支持环境变量注入） */
 export async function fetchLiteLLMPricing(urlOverride?: string): Promise<Map<string, ModelPrice>> {
+  const url = urlOverride ?? envUrlOverride().liteLLM ?? LITELLM_URL;
+  const fallback = urlOverride ?? envUrlOverride().liteLLM ?? LITELLM_URL_FALLBACK;
   try {
-    return parseLiteLLM(await fetchJsonWithTimeout(urlOverride ?? LITELLM_URL));
+    return parseLiteLLM(await fetchJsonWithTimeout(url));
   } catch (err) {
     console.warn('liteLLM 主源拉取失败，尝试备份源:', (err as Error).message);
-    return parseLiteLLM(await fetchJsonWithTimeout(LITELLM_URL_FALLBACK));
+    return parseLiteLLM(await fetchJsonWithTimeout(fallback));
   }
 }
 
-/** 拉取 models.dev 目录（fallback 定价源） */
+/** 拉取 models.dev 目录（fallback 定价源；支持环境变量注入） */
 export async function fetchModelsDevPricing(urlOverride?: string): Promise<Map<string, ModelPrice>> {
-  return parseModelsDev(await fetchJsonWithTimeout(urlOverride ?? MODELS_DEV_URL));
+  return parseModelsDev(await fetchJsonWithTimeout(urlOverride ?? envUrlOverride().modelsDev ?? MODELS_DEV_URL));
 }
 
 const ANTHROPIC_PRICING_URL = 'https://platform.claude.com/docs/en/pricing.md';
@@ -133,13 +140,14 @@ export function parseAnthropicPricing(markdown: string): Map<string, ModelPrice>
   return out;
 }
 
-/** 拉取 Anthropic 官方定价文档（运行时直连；WebFetch 类爬虫被 404 属已知现象，失败由调用方回落其他源） */
+/** 拉取 Anthropic 官方定价文档（运行时直连；WebFetch 类爬虫被 404 属已知现象，失败由调用方回落其他源；支持环境变量注入） */
 export async function fetchAnthropicPricing(urlOverride?: string): Promise<Map<string, ModelPrice>> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const url = urlOverride ?? envUrlOverride().anthropic ?? ANTHROPIC_PRICING_URL;
   try {
-    const res = await fetch(urlOverride ?? ANTHROPIC_PRICING_URL, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${urlOverride ?? ANTHROPIC_PRICING_URL}`);
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
     return parseAnthropicPricing(await res.text());
   } finally {
     clearTimeout(timeout);
