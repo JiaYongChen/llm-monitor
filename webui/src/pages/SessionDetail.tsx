@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { useCurrency, formatCost } from '../lib/currency';
 import { formatTime } from '../lib/utils';
@@ -25,7 +25,8 @@ export default function SessionDetail() {
   // 切换会话时回到第一页
   useEffect(() => { setPage(1); }, [sessionId]);
   const { data: s } = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.getSession(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
-  const { data: calls } = useQuery({ queryKey: ['calls', sessionId, page], queryFn: () => api.listCalls(sessionId, undefined, undefined, PAGE_SIZE, (page - 1) * PAGE_SIZE), enabled: !!sessionId, refetchInterval: 10000 });
+  // 翻页期间保留上一页数据（keepPreviousData），避免时间线闪空态、容器高度塌陷与滚动跳位的抖动
+  const { data: calls } = useQuery({ queryKey: ['calls', sessionId, page], queryFn: () => api.listCalls(sessionId, undefined, undefined, PAGE_SIZE, (page - 1) * PAGE_SIZE), enabled: !!sessionId, refetchInterval: 10000, placeholderData: keepPreviousData });
   const { data: callsCount } = useQuery({ queryKey: ['calls-count', sessionId], queryFn: () => api.countCalls(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
   const { data: tokenStats } = useQuery({ queryKey: ['session-token-stats', sessionId], queryFn: () => api.getSessionTokenStats(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
