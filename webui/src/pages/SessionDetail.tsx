@@ -30,7 +30,6 @@ export default function SessionDetail() {
   const { data: callsCount } = useQuery({ queryKey: ['calls-count', sessionId], queryFn: () => api.countCalls(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
   const { data: tokenStats } = useQuery({ queryKey: ['session-token-stats', sessionId], queryFn: () => api.getSessionTokenStats(sessionId), enabled: !!sessionId, refetchInterval: 10000 });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
-  const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: () => api.listPricing() });
   const { data: providerModels } = useQuery({ queryKey: ['provider-models'], queryFn: () => api.listProviderModels() });
 
   if (!s) return <div className="p-8 text-sm text-[#aeaeb2]">加载中...</div>;
@@ -71,7 +70,6 @@ export default function SessionDetail() {
         provider={currentUpstream}
         model={currentModel}
         providers={providers || []}
-        pricing={pricing || []}
         providerModels={providerModels as any[]}
         onProviderChange={async (next, defaultModel) => {
           await api.updateSessionUpstream(s.id, next);

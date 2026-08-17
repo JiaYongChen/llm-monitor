@@ -23,7 +23,6 @@ export default function ToolDetail() {
   const sym = CURRENCIES[currency].symbol;
   const { data: toolConfigs } = useQuery({ queryKey: ['tool-configs'], queryFn: () => api.listToolConfigs() });
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: () => api.listProviders() });
-  const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: () => api.listPricing() });
   const { data: providerModels } = useQuery({ queryKey: ['provider-models'], queryFn: () => api.listProviderModels() });
   // 工具名大小写不敏感匹配（URL 参数可能为任意大小写）
   const toolConfig = toolConfigs?.find((t: any) => toolName && t.tool.toLowerCase() === toolName.toLowerCase());
@@ -43,7 +42,6 @@ export default function ToolDetail() {
           provider={toolConfig?.upstream_provider || ''}
           model={toolConfig?.upstream_model || ''}
           providers={providers}
-          pricing={pricing || []}
           providerModels={providerModels as any[]}
           onProviderChange={async (next, defaultModel) => {
             if (!next) {
