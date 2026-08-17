@@ -24,7 +24,7 @@ describe('provider_models', () => {
     replaceProviderModels('openai', ['gpt-5.6-sol', 'gpt-5.6-luna'], now);
     const rows = listProviderModels();
     expect(rows).toHaveLength(2);
-    const row = rows.find(r => r.model === 'gpt-5.6-sol');
+    const row = rows.find(r => r.model === 'gpt-5.6-sol')!;
     expect(row.enabled).toBe(1);
     expect(row.available).toBe(1);
     expect(row.created_at).toBe(now);
@@ -39,8 +39,8 @@ describe('provider_models', () => {
     replaceProviderModels('openai', ['gpt-5.6-sol'], now + 1000); // luna 不再探测到
     const rows = listProviderModels().filter(r => r.provider === 'openai');
     expect(rows).toHaveLength(2); // 不删除
-    const sol = rows.find(r => r.model === 'gpt-5.6-sol');
-    const luna = rows.find(r => r.model === 'gpt-5.6-luna');
+    const sol = rows.find(r => r.model === 'gpt-5.6-sol')!;
+    const luna = rows.find(r => r.model === 'gpt-5.6-luna')!;
     expect(sol.available).toBe(1);
     expect(luna.available).toBe(0);   // 置灰
     expect(luna.enabled).toBe(0);     // 用户关闭状态保持
@@ -50,7 +50,7 @@ describe('provider_models', () => {
 
   it('重新探测到置灰模型后 available 恢复 1（enabled 保持关闭）', () => {
     replaceProviderModels('openai', ['gpt-5.6-sol', 'gpt-5.6-luna'], Date.now());
-    const luna = listProviderModels().find(r => r.provider === 'openai' && r.model === 'gpt-5.6-luna');
+    const luna = listProviderModels().find(r => r.provider === 'openai' && r.model === 'gpt-5.6-luna')!;
     expect(luna.available).toBe(1);
     expect(luna.enabled).toBe(0);
   });

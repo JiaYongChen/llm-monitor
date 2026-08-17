@@ -98,10 +98,10 @@ describe('syncProvider 集成', () => {
     expect(rows.map(r => r.model).sort()).toEqual(['gpt-5.6-luna', 'gpt-5.6-sol', 'unknown-xyz']);
     const pricing = listPricing().filter(p => p.provider === 'mock-prov');
     expect(pricing).toHaveLength(2); // unknown-xyz 匹配不到不建条目
-    const sol = pricing.find(p => p.model === 'gpt-5.6-sol');
+    const sol = pricing.find(p => p.model === 'gpt-5.6-sol')!;
     expect(sol.input_price).toBe(5);
     expect(sol.currency).toBe('USD');
-    const st = getSyncStatus('mock-prov');
+    const st = getSyncStatus('mock-prov')!;
     expect(st.status).toBe('ok');
     expect(st.model_count).toBe(3);
     expect(st.priced_count).toBe(2);
@@ -110,7 +110,7 @@ describe('syncProvider 集成', () => {
   it('定价覆盖已有条目（全部覆盖语义）', async () => {
     upsertPricing('mock-prov', 'gpt-5.6-sol', 999, 999, 999, 'USD'); // 先写入旧价
     await syncProvider('mock-prov');
-    const sol = listPricing().find(p => p.provider === 'mock-prov' && p.model === 'gpt-5.6-sol');
+    const sol = listPricing().find(p => p.provider === 'mock-prov' && p.model === 'gpt-5.6-sol')!;
     expect(sol.input_price).toBe(5); // 被覆盖
   });
 
@@ -127,7 +127,7 @@ describe('syncProvider 集成', () => {
       addProviderConfig('no-price-prov', `${url}/probe`, '', 'sk-ok');
       await syncProvider('no-price-prov');
       expect(listProviderModels().filter(r => r.provider === 'no-price-prov')).toHaveLength(3);
-      const st = getSyncStatus('no-price-prov');
+      const st = getSyncStatus('no-price-prov')!;
       expect(st.status).toBe('ok');
       expect(st.priced_count).toBe(0);
     } finally {
