@@ -107,3 +107,41 @@ export async function fetchLiteLLMPricing(urlOverride?: string): Promise<Map<str
 export async function fetchModelsDevPricing(urlOverride?: string): Promise<Map<string, ModelPrice>> {
   return parseModelsDev(await fetchJsonWithTimeout(urlOverride ?? MODELS_DEV_URL));
 }
+
+const ANTHROPIC_PRICING_URL = 'https://platform.claude.com/docs/en/pricing.md';
+
+/** 显示名 → 模型 ID：归一化 "Claude " 前缀、小写、空白与点号转连字符（"Claude Opus 4.8" → "claude-opus-4-8"） */
+function displayNameToModelId(name: string): string {
+  return name.replace(/^Claude\s+/i, 'claude-').toLowerCase().replace(/[\s.]+/g, '-');
+}
+
+/** Anthropic 官方定价文档解析：扫描 markdown 表格中首列以 Claude 开头的行，
+ *  依次提取 $ 价格列 [输入, 输出, 缓存读(可选)]；缓存读缺失回落 input × 0.1 */
+export function parseAnthropicPricing(markdown: string): Map<string, ModelPrice> {
+  const out = new Map<string, ModelPrice>();
+  for (const line of markdown.split('\n')) {
+    if (!/^\s*\|/.test(line) || !/Claude/i.test(line)) continue;
+    const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+    if (cells.length < 3) continue;
+    const modelId = displayNameToModelId(cells[0]);
+    if (!/^claude-/.test(modelId)) continue;
+    const prices = cells.flatMap(c => [...c.matchAll(/\$([\d.]+)/g)].map(m => parseFloat(m[1])));
+    if (prices.length < 2 || !Number.isFinite(prices[0]) || !Number.isFinite(prices[1])) continue;
+    const cacheRead = prices.length >= 3 && Number.isFinite(prices[2]) ? prices[2] : prices[0] * 0.1;
+    out.set(modelId, { input_price: prices[0], cache_input_price: cacheRead, output_price: prices[1] });
+  }
+  return out;
+}
+
+/** 拉取 Anthropic 官方定价文档（运行时直连；WebFetch 类爬虫被 404 属已知现象，失败由调用方回落其他源） */
+export async function fetchAnthropicPricing(urlOverride?: string): Promise<Map<string, ModelPrice>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(urlOverride ?? ANTHROPIC_PRICING_URL, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${urlOverride ?? ANTHROPIC_PRICING_URL}`);
+    return parseAnthropicPricing(await res.text());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
