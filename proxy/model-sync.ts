@@ -165,3 +165,37 @@ export async function syncAllProviders(): Promise<void> {
     catch (err) { console.error(`供应商 "${p.provider}" 模型同步失败:`, (err as Error).message); }
   }
 }
+
+// ── 定时调度（每日 04:00 CST，错开 09:30 汇率刷新；仿 rates.ts 的 msUntil 模式）──
+
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 计算到下一个北京时间 04:00 的毫秒数（基于 UTC+8 计算，不依赖系统时区） */
+function msUntilNext0400CST(): number {
+  const now = new Date();
+  const cstNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const target = new Date(cstNow);
+  target.setUTCHours(4, 0, 0, 0);
+  if (target <= cstNow) target.setUTCDate(target.getUTCDate() + 1);
+  return target.getTime() - cstNow.getTime();
+}
+
+/** 启动每日模型同步：立即异步同步一次，之后每天北京时间 04:00（initDb 后调用一次） */
+export function scheduleDailyModelSync(): void {
+  syncAllProviders().catch(() => {});
+  const schedule = () => {
+    const delay = msUntilNext0400CST();
+    console.log(`下次模型同步: ${Math.round(delay / 60_000)} 分钟后`);
+    syncTimer = setTimeout(() => {
+      syncAllProviders().catch(() => {});
+      syncTimer = setTimeout(schedule, 24 * 60 * 60 * 1000);
+    }, delay);
+  };
+  // 延迟 2 秒安排首个定时器，避免与启动时的首次同步冲突
+  syncTimer = setTimeout(schedule, 2000);
+}
+
+/** 停止每日模型同步（关闭服务器时调用） */
+export function stopDailyModelSync(): void {
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+}

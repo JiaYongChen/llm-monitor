@@ -12,6 +12,7 @@ import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
 import { startBodyMigration, stopBodyMigration, reconcileOrphanBodies } from './db-body.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
+import { scheduleDailyModelSync, stopDailyModelSync } from './model-sync.js';
 import { PORT, WEBUI_PORT } from './config.js';
 import { readFileSync } from 'node:fs';
 
@@ -61,6 +62,7 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
     }
   }, 5000);
   scheduleDailyRefresh();
+  scheduleDailyModelSync();
   await importDefaultPricing();
 
   // 启动时校验所有已启用供应商的 base_url 有效，阻止无效配置启动
@@ -147,6 +149,7 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
 
   proxy.addHook('onClose', async () => {
     stopDailyRefresh();
+    stopDailyModelSync();
     stopBodyMigration();
     stopRecorder();
     closeDb();
@@ -176,6 +179,7 @@ if (isMain) {
     console.log('\n正在关闭...');
     // 1) 先立即保存数据（不依赖 onClose 钩子，防止活跃 SSE 连接使 close() 挂起）
     stopDailyRefresh();
+    stopDailyModelSync();
     stopBodyMigration();
     stopRecorder();
     closeDb();

@@ -19,7 +19,9 @@ import {
   deleteAllThirdPartyProviders, deleteAllSessions,
   listProviderConfigs, updateProviderConfig, getProviderConfig,
   addProviderConfig, deleteProviderConfig, getSetting, setSetting,
+  listProviderModels, setModelEnabled,
 } from './db.js';
+import { syncProvider, syncAllProviders, getSyncStatus } from './model-sync.js';
 import { readBody } from './db-body.js';
 import { PORT, DATA_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, debugLog } from './config.js';
 import { getRates, getRatesUpdatedAt, refreshRates } from './rates.js';
@@ -532,6 +534,10 @@ function _registerApiRoutes(app: FastifyInstance): void {
     const data = req.body as any;
     const result = updateProviderConfig((req.params as any).provider, data);
     if (!result.ok) return reply.status(400).send(result);
+    // 配置变更（含 api_key 更新）后异步触发模型同步（fire-and-forget，不拖慢响应）
+    if (data.api_key !== undefined || data.base_url !== undefined || data.base_url_anthropic !== undefined) {
+      syncProvider((req.params as any).provider).catch(() => {});
+    }
     return result;
   });
   app.post('/api/providers', async (req, reply) => {
@@ -539,6 +545,8 @@ function _registerApiRoutes(app: FastifyInstance): void {
     if (!provider) return reply.status(400).send({ error: 'provider name required' });
     try {
       const id = addProviderConfig(provider, base_url || '', base_url_anthropic || '', api_key || '');
+      // 新增供应商后异步触发模型同步
+      syncProvider(provider).catch(() => {});
       return { id };
     } catch (err) {
       return reply.status(400).send({ error: (err as Error).message });
@@ -548,6 +556,28 @@ function _registerApiRoutes(app: FastifyInstance): void {
     const result = deleteProviderConfig((req.params as any).provider);
     if (!result.ok) return reply.status(400).send(result);
     return result;
+  });
+
+  // Model sync（供应商模型探测与定价自动同步）
+  app.get('/api/provider-models', async () => listProviderModels());
+  app.get('/api/provider-models/status', async () => {
+    const providers = listProviderConfigs() as any[];
+    const out: Record<string, unknown> = {};
+    for (const p of providers) out[p.provider] = getSyncStatus(p.provider) || null;
+    return out;
+  });
+  app.post('/api/provider-models/refresh', async (req) => {
+    const provider = (req.body as any)?.provider as string | undefined;
+    if (provider) return syncProvider(provider);
+    await syncAllProviders();
+    return { ok: true };
+  });
+  // 模型开关（前端 Settings 卡片使用；Task 7 依赖此路由）
+  app.put('/api/provider-models/:provider/:model/enabled', async (req, reply) => {
+    const { provider, model } = req.params as any;
+    const enabled = Boolean((req.body as any)?.enabled);
+    setModelEnabled(provider, model, enabled);
+    return { ok: true };
   });
 
   // Config
