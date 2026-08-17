@@ -154,6 +154,26 @@ export async function deleteProvider(provider: string) {
   return fetchJson(`/providers/${provider}`, { method: 'DELETE' });
 }
 
+// ── Provider Models（供应商模型探测）──
+export async function listProviderModels() {
+  return fetchJson('/provider-models');
+}
+
+export async function getProviderModelsStatus() {
+  return fetchJson('/provider-models/status');
+}
+
+export async function refreshProviderModels(provider?: string) {
+  return fetchJson('/provider-models/refresh', { method: 'POST', body: JSON.stringify(provider ? { provider } : {}) });
+}
+
+export async function setProviderModelEnabled(provider: string, model: string, enabled: boolean) {
+  return fetchJson(`/provider-models/${encodeURIComponent(provider)}/${encodeURIComponent(model)}/enabled`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 // ── Config ──
 export async function getConfig() {
   return fetchJson('/config');

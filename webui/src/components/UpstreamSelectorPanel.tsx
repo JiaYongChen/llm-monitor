@@ -10,12 +10,13 @@ export function builtinProviderFor(tool: string): 'anthropic' | 'openai' | null 
 
 /** 上游选择器面板（工具详情页 + 会话详情页共用）：供应商下拉 + 转发地址提示 + 模型下拉 + 强制使用提示。
  *  持久化留在调用方：工具页写 tool_config、会话页写 session 上游/模型，组件仅回传选择结果。 */
-export default function UpstreamSelectorPanel({ tool, provider, model, providers, pricing, onProviderChange, onModelChange }: {
+export default function UpstreamSelectorPanel({ tool, provider, model, providers, pricing, providerModels, onProviderChange, onModelChange }: {
   tool: string;
   provider: string;
   model: string;
   providers: any[];
   pricing: any[];
+  providerModels?: any[];
   onProviderChange: (next: string | null, defaultModel: string | null) => void;
   onModelChange: (next: string | null) => void;
 }) {
@@ -24,16 +25,22 @@ export default function UpstreamSelectorPanel({ tool, provider, model, providers
   const enabledProviders = providers.filter((p: any) => p.enabled && p.provider !== toolBuiltin);
   const currentUpstream = provider || '';
   const currentModel = model || '';
-  // 模型列表跟随代理商：选了代理商则只显示该代理商的模型，否则显示全部，按添加顺序排列
-  const modelOrder = (pricing || [])
-    .filter((p: any) => !currentUpstream || p.provider === currentUpstream)
-    .sort((a: any, b: any) => a.id - b.id);
-  const seen = new Set<string>();
-  const models = modelOrder.filter((p: any) => {
-    if (seen.has(p.model)) return false;
-    seen.add(p.model);
-    return true;
-  }).map((p: any) => p.model as string);
+  // 模型列表：优先探测结果（provider_models），无探测数据的供应商回落 pricing 派生
+  const buildModelOptions = (prov: string): { value: string; disabled: boolean }[] => {
+    const rows = (providerModels || []).filter((m: any) => m.provider === prov);
+    if (rows.length > 0) {
+      return rows
+        .filter((m: any) => m.enabled)
+        .map((m: any) => ({
+          value: m.model,
+          disabled: !m.available, // 不可用模型置灰显示（保留可选列表，disabled 选项）
+        }));
+    }
+    return [...new Set<string>((pricing || [])
+      .filter((p: any) => p.provider === prov)
+      .map((p: any) => p.model as string))].sort()
+      .map((m: string) => ({ value: m, disabled: false }));
+  };
 
   return (
     <div className="p-4 rounded-xl bg-white border border-[#e5e5ea] shadow-sm space-y-3">
@@ -47,12 +54,9 @@ export default function UpstreamSelectorPanel({ tool, provider, model, providers
             if (!val) {
               onProviderChange(null, null);
             } else {
-              // 第三方供应商 → 默认选第一个模型（排序去重）
-              const filteredModels = [...new Set<string>((pricing || [])
-                .filter((p: any) => p.provider === val)
-                .map((p: any) => p.model as string)
-              )].sort();
-              onProviderChange(val, filteredModels[0] || null);
+              // 第三方供应商 → 默认选第一个可用模型（探测结果优先，无探测数据回落 pricing 派生）
+              const defaultModel = buildModelOptions(val).find((o: any) => !o.disabled)?.value || null;
+              onProviderChange(val, defaultModel);
             }
           }}
         >
@@ -78,9 +82,14 @@ export default function UpstreamSelectorPanel({ tool, provider, model, providers
             value={currentModel}
             onChange={(e) => onModelChange(e.target.value || null)}
           >
-            {models.map((m: string) => (
-              <option key={m} value={m}>{displayName(m)}</option>
-            ))}
+            {(() => {
+              const opts = currentUpstream ? buildModelOptions(currentUpstream) : [];
+              return opts.map(opt => (
+                <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                  {displayName(opt.value)}{opt.disabled ? '（不可用）' : ''}
+                </option>
+              ));
+            })()}
           </select>
         ) : (
           <span className="text-sm text-[#aeaeb2] px-3 py-1.5">跟随客户端请求</span>
