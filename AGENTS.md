@@ -67,6 +67,8 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `proxy/session.ts` | 会话识别：provider + 会话种子 → SHA256 指纹 → 自动创建/复用会话，自动生成标签（首条用户消息） |
 | `proxy/normalizer.ts` | Token 归一化：三种 usage 格式 → 统一的 NormalizedTokens。OpenAI Chat Completions（prompt_tokens/completion_tokens）优先，OpenAI Responses API（input_tokens/output_tokens）作 fallback；格式由上游响应 URL 决定 |
 | `proxy/pricing.ts` | 定价匹配（最长模型前缀匹配）+ 费用计算（非 CNY 币种自动汇率换算为 CNY 存储） |
+| `proxy/model-sync.ts` | 模型探测与定价自动同步：供应商 `/v1/models` 探测（OpenAI/Anthropic 两种格式）→ `provider_models` 标记式更新（不可用置灰不删除）→ 定价匹配全部覆盖写入 + metadata 同步状态；每日 04:00 CST 定时 + 供应商配置变更自动触发 |
+| `proxy/pricing-sources.ts` | 定价源拉取解析：Anthropic 官方定价文档 / liteLLM 价格表（jsdelivr 镜像）/ models.dev 目录（fallback），统一输出 USD/1M tokens 的 ModelPrice，模型名匹配（相等/最长前缀/剥离供应商前缀） |
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
 | `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + body 外置写文件 → upsertHourlyStat + updateSessionStats |
 | `proxy/db.ts` | 数据库入口：initDb 建表（schema v4）+ 迁移调度 + 迁移后统一建索引、calls/sessions CRUD、统计聚合（getStats/getDailyStats 从 hourly_stats 上卷，删除操作不影响）、数据管理（清理/清空/合并会话，联动维护 body 文件） |
@@ -93,6 +95,8 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body + tool）入队 — 此处不阻塞响应，思考内容从流式响应中独立分离存为 `thinking` 字段
 3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据上游 URL 检测响应格式（`detectFormatFromUrl`）→ `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → body 外置写入文件（writeBody，失败仅降级详情展示）→ `upsertHourlyStat` 累加小时统计表 → `updateSessionStats` 更新会话聚合
 4. **展示阶段**：Web 面板通过 `/api/*` 端点查询 `hourly_stats` 统计表（删除操作不影响）和 `calls` 明细表，调用详情接口按需读取 body 文件（缺失/解析失败降级占位）；思考过程在调用详情页始终可见（带滚动条）、终端以 `[think]` 前缀实时输出
+
+供应商配置新增/更新（含 api_key）后异步触发 `syncProvider`：探测 → 标记 → 定价匹配 → 写入同步状态；上游选择器模型下拉优先用 `provider_models`（不可用置灰、关闭不出现），无探测数据回落 pricing 派生
 
 ## 路由架构
 
@@ -172,3 +176,5 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - 清空全部会话（`deleteAllSessions`）会同时重置 AUTOINCREMENT ID，清空全部数据（`clearAllData`）同步清空统计
 - 工具 / 供应商 / 模型名存储统一小写（`normalizeToolName` / `normalizeProviderName`，模型名写入时 toLowerCase），查询匹配大小写不敏感（LOWER() 兜底 + 入参归一化等值）；`migrateLowercaseNames` 单次迁移历史数据（metadata 门控 `lowercase_migrated`，事务包裹：先按唯一约束维度合并变体行再 LOWER 改名）；前端显示统一走 `displayName`（整体映射表 + 特殊词 AI/GPT/API/CLI/LLM/URL/HTTP/HTTPS/JSON/SQL/ID/IP/GLM/KIMI 全大写 + 按分隔符分词首字母大写）；provider_config / tool_config / pricing 三张配置表带 created_at/updated_at（毫秒，存量行 0 = 未知）
 - `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/pricing 变体）；旧迁移产出 CamelCase 中间态，随后由 `migrateLowercaseNames` 统一转小写
+- 新表时间戳规则：可更新状态表（行会被 UPDATE）→ `created_at` + `updated_at`；仅追加明细表 → 仅 `created_at`；静态/派生表 → 无。`provider_models` 属可更新状态表
+- 定价自动同步：探测结果只标记（`available`）不删除定价与模型行；自动定价全部覆盖同 provider+model 条目；`modelsync_<provider>` metadata 存每供应商同步状态；探测 10s 超时
