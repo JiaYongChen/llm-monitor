@@ -5,7 +5,7 @@
  * （写入时归一化），查询只做精确等值，不做 LOWER 兜底。
  */
 
-import { queryAll, queryOne, execute, executeInsert } from './db-core.js';
+import { queryAll, queryOne, execute, executeInsert, getDb, runRaw, saveDb } from './db-core.js';
 import { BUILTIN_PROVIDERS } from './db-migrations.js';
 
 // ── 名称归一化 ──
@@ -204,6 +204,7 @@ export function deleteProviderConfig(provider: string): { ok: boolean; error?: s
     return { ok: false, error: `内置供应商 "${provider}" 不可删除` };
   }
   const canonical = normalizeProviderName(provider);
+  deleteProviderModels(canonical); // 联动删除该供应商的模型探测缓存行
   execute('DELETE FROM provider_config WHERE provider = ?', [canonical]);
   // 同时清除引用该供应商的会话上游覆写（按小写名匹配）
   const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
@@ -211,6 +212,53 @@ export function deleteProviderConfig(provider: string): { ok: boolean; error?: s
     console.log(`已清除 ${cleared} 个会话的 "${canonical}" 上游覆写`);
   }
   return { ok: true };
+}
+
+// ── Provider Models（供应商可用模型探测结果）──
+
+/** 列出全部供应商模型行 */
+export function listProviderModels(): Record<string, any>[] {
+  return queryAll('SELECT * FROM provider_models ORDER BY provider, model');
+}
+
+/** 标记式同步：探测到的模型 available=1（新行 enabled=1）；未探测到的存量行置灰保留；
+ *  用户 enabled 状态与 created_at 不重置。事务包裹，落盘一次。 */
+export function replaceProviderModels(provider: string, models: string[], now: number): void {
+  const d = getDb();
+  const set = new Set(models.map(m => m.toLowerCase()));
+  const existing = queryAll('SELECT model FROM provider_models WHERE provider = ?', [provider]);
+  d.run('BEGIN');
+  try {
+    for (const row of existing) {
+      const available = set.has(row.model) ? 1 : 0;
+      runRaw('UPDATE provider_models SET available = ?, updated_at = ? WHERE provider = ? AND model = ?',
+        [available, now, provider, row.model]);
+    }
+    for (const m of set) {
+      runRaw('INSERT OR IGNORE INTO provider_models (provider, model, enabled, available, created_at, updated_at) VALUES (?, ?, 1, 1, ?, ?)',
+        [provider, m, now, now]);
+    }
+    d.run('COMMIT');
+  } catch (err) {
+    d.run('ROLLBACK');
+    throw err;
+  }
+  saveDb();
+}
+
+/** 用户手动开/关模型；关闭时清理会话上游模型引用（供应商一致或未指定供应商的会话） */
+export function setModelEnabled(provider: string, model: string, enabled: boolean): void {
+  execute('UPDATE provider_models SET enabled = ?, updated_at = ? WHERE provider = ? AND model = ?',
+    [enabled ? 1 : 0, Date.now(), provider, model]);
+  if (!enabled) {
+    execute('UPDATE sessions SET upstream_model = NULL WHERE upstream_model = ? AND (upstream_provider IS NULL OR upstream_provider = ?)',
+      [model, provider]);
+  }
+}
+
+/** 删除供应商的全部模型行（deleteProviderConfig 内调用） */
+export function deleteProviderModels(provider: string): void {
+  execute('DELETE FROM provider_models WHERE provider = ?', [provider]);
 }
 
 // ── Settings ──

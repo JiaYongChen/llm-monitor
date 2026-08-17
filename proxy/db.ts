@@ -19,7 +19,8 @@ export { BUILTIN_PROVIDERS, migrateToolCanonicalNames, migrateLowercaseNames, ru
 // 兼容旧引用：配置 CRUD 与名称归一化统一从 db-config re-export
 export { normalizeToolName, normalizeProviderName, listToolConfigs, getToolConfig, updateToolConfig,
   listPricing, upsertPricing, deletePricing, listProviderConfigs, getProviderConfig, updateProviderConfig,
-  addProviderConfig, deleteProviderConfig, getSetting, setSetting } from './db-config.js';
+  addProviderConfig, deleteProviderConfig, getSetting, setSetting,
+  listProviderModels, replaceProviderModels, setModelEnabled, deleteProviderModels } from './db-config.js';
 
 // ── 初始化 ──
 
@@ -155,6 +156,19 @@ export async function initDb(dbPath?: string): Promise<void> {
       upstream_model    TEXT,
       created_at        INTEGER NOT NULL DEFAULT 0,
       updated_at        INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  // 供应商可用模型（探测结果缓存：enabled 用户开关 / available 最近探测是否返回；置灰不删除）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS provider_models (
+      provider   TEXT NOT NULL,
+      model      TEXT NOT NULL,
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      available  INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (provider, model)
     )
   `);
 
