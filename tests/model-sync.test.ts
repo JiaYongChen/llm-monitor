@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { probeModelsOpenAI, probeModelsAnthropic, syncProvider, getSyncStatus } from '../proxy/model-sync.js';
-import { initDb, closeDb, listPricing, addProviderConfig, listProviderModels, getSetting, upsertPricing } from '../proxy/db.js';
+import { initDb, closeDb, listPricing, addProviderConfig, listProviderModels, getSetting, upsertPricing, replaceProviderModels } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
 // 本地 mock：验证鉴权头 + 返回模型列表
@@ -119,6 +119,22 @@ describe('syncProvider 集成', () => {
     const r = await syncProvider('dead-prov');
     expect(r.status).toBe('error');
     expect(getSyncStatus('dead-prov')?.status).toBe('error');
+  });
+
+  it('两个 base_url 都为空：存量模型不置灰、定价不动、状态 error', async () => {
+    addProviderConfig('no-url-prov', '', '', 'sk-any');
+    // 预置存量模型行与定价（模拟此前探测成功留下的缓存）
+    replaceProviderModels('no-url-prov', ['gpt-5.6-sol', 'gpt-5.6-luna'], Date.now());
+    upsertPricing('no-url-prov', 'gpt-5.6-sol', 999, 999, 999, 'USD');
+    const r = await syncProvider('no-url-prov');
+    expect(r.status).toBe('error');
+    expect(r.error).toContain('未配置任何 Base URL');
+    expect(getSyncStatus('no-url-prov')?.status).toBe('error');
+    const rows = listProviderModels().filter(x => x.provider === 'no-url-prov');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.available).toBe(1); // 存量模型保持可用，不置灰
+    const p = listPricing().find(p => p.provider === 'no-url-prov' && p.model === 'gpt-5.6-sol')!;
+    expect(p.input_price).toBe(999); // 定价未被覆盖
   });
 
   it('定价源失败：模型照常更新，pricing 保持现状，状态仍 ok', async () => {

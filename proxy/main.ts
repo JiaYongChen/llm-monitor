@@ -6,30 +6,18 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyMiddie from '@fastify/middie';
-import { initDb, closeDb, listPricing, listProviderConfigs, upsertPricing } from './db.js';
+import { initDb, closeDb, listProviderConfigs } from './db.js';
 import { UPSTREAMS } from './router.js';
 import { registerProxyRoutes, registerApiRoutes, setEnqueueRef } from './router.js';
 import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
 import { startBodyMigration, stopBodyMigration, reconcileOrphanBodies } from './db-body.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
 import { scheduleDailyModelSync, stopDailyModelSync } from './model-sync.js';
+import { importDefaultPricing } from './default-pricing.js';
 import { PORT, WEBUI_PORT } from './config.js';
 import { readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-async function importDefaultPricing(): Promise<void> {
-  try {
-    const file = join(__dirname, 'data', 'default-pricing.json');
-    const data = JSON.parse(readFileSync(file, 'utf-8'));
-    for (const item of data) {
-      upsertPricing(item.provider, item.model, item.input_price, item.cache_input_price, item.output_price, item.currency || 'CNY', true);
-    }
-    console.log(`已同步 ${data.length} 条预置定价`);
-  } catch (err) {
-    console.warn('同步预置定价失败:', err);
-  }
-}
 
 /** 启动服务器，端口被占用则重试 */
 async function listenWithRetry(app: FastifyInstance, port: number, label: string): Promise<void> {

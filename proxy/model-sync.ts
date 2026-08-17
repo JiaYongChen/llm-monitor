@@ -115,8 +115,9 @@ async function doSyncProvider(provider: string): Promise<SyncResult> {
       (await probe(config.base_url, config.api_key)).forEach(m => models.add(m));
     } catch (err) { errors.push(`openai 端点: ${(err as Error).message}`); }
   }
-  if (models.size === 0 && errors.length > 0) {
-    const error = errors.join('; ');
+  if (models.size === 0) {
+    // 探测无结果（含未配置任何 Base URL 导致两个探针都被跳过）→ 不触碰存量模型/定价，直接记 error
+    const error = errors.length > 0 ? errors.join('; ') : '未配置任何 Base URL';
     setSyncStatus(provider, { updated_at: Date.now(), status: 'error', error, model_count: 0, priced_count: 0 });
     return { status: 'error', error, model_count: 0, priced_count: 0 };
   }
