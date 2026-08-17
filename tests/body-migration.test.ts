@@ -1,7 +1,7 @@
 /** body 渐进迁移测试 — 构造带 body 列的老库，验证分片迁移、幂等续跑与 DROP COLUMN */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, closeDb, getDb, queryAll } from '../proxy/db.js';
-import { migrateLegacyBodies, finishBodyMigration, readBody } from '../proxy/db-body.js';
+import { initDb, closeDb, getDb, queryAll, insertCall } from '../proxy/db.js';
+import { migrateLegacyBodies, finishBodyMigration, readBody, writeBody } from '../proxy/db-body.js';
 import { createTempDb } from './setup.js';
 
 const tmp = createTempDb();
@@ -44,5 +44,22 @@ describe('body 渐进迁移', () => {
     expect(cols).toHaveLength(0);
     const g = queryAll("SELECT value FROM metadata WHERE key = 'bodies_migrated'")[0];
     expect(g.value).toBe('1');
+  });
+
+  it('finishBodyMigration 后 insertCall 正常（列已删除，recorder 路径写 body 文件可读回）', () => {
+    const now = Date.now();
+    const newId = insertCall({
+      provider: 'openai', model: 'gpt-4o', tool: 'codex', endpoint: '/v1/x', method: 'POST',
+      target_url: null, downstream_url: null, source_ip: null, status_code: 200, error_message: null,
+      duration_ms: 10, prompt_tokens: 1, output_tokens: 1, cache_read_tokens: null, cache_write_tokens: null,
+      uncached_input: null, input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+      request_body: null, response_body: null, fingerprint: 'fp_bm_after', source_port: null, session_id: 1, created_at: now,
+    });
+    expect(newId).toBeGreaterThan(4);   // 迁移前已插入 4 行，新行 id 递增
+    // 与 recorder.ts 一致：DB 落库后 body 外置写文件，详情接口 readBody 读回
+    writeBody(1, newId, now, '{"m":"new"}', '{"ok":1}');
+    const body = readBody(1, newId, now);
+    expect(body?.request).toBe('{"m":"new"}');
+    expect(body?.response).toBe('{"ok":1}');
   });
 });

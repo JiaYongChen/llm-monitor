@@ -7,6 +7,61 @@ import { queryAll, queryOne, runRaw, getDb, saveDb, getCurrentDbPath } from './d
 /** 内置供应商名称集合（不可删除、不可停用；存储不变量：小写） */
 export const BUILTIN_PROVIDERS = new Set(['anthropic', 'openai']);
 
+/** calls 表 DDL — initDb 建表与 migrateToV2 重建共用（列清单一致，单一来源）。
+ *  含 ALTER 兼容块补充的列（target_url/source_ip/downstream_url）：
+ *  v1 老库的 ALTER 在旧表上执行后被 DROP，重建表必须内联这些列，否则 insertCall 引用缺失列失败。 */
+export const CALLS_TABLE_DDL = `
+    CREATE TABLE IF NOT EXISTS calls (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id      INTEGER NOT NULL REFERENCES sessions(id),
+      provider        TEXT    NOT NULL,
+      model           TEXT    NOT NULL,
+      endpoint        TEXT    NOT NULL,
+      method          TEXT    NOT NULL,
+      status_code     INTEGER,
+      error_message   TEXT,
+      duration_ms     INTEGER NOT NULL,
+      prompt_tokens       INTEGER,
+      output_tokens       INTEGER,
+      cache_read_tokens   INTEGER,
+      cache_write_tokens  INTEGER,
+      uncached_input      INTEGER,
+      input_cost    REAL DEFAULT 0.0,
+      output_cost   REAL DEFAULT 0.0,
+      total_cost    REAL DEFAULT 0.0,
+      cache_savings REAL DEFAULT 0.0,
+      request_body   TEXT,
+      response_body  TEXT,
+      fingerprint  TEXT NOT NULL,
+      source_port  INTEGER,
+      tool         TEXT,
+      created_at INTEGER NOT NULL,
+      target_url TEXT,
+      source_ip TEXT,
+      downstream_url TEXT
+    )
+  `;
+
+/** sessions 表 DDL — initDb 建表与 migrateToV2 重建共用（列清单一致，单一来源；含 upstream_model） */
+export const SESSIONS_TABLE_DDL = `
+    CREATE TABLE IF NOT EXISTS sessions (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool          TEXT    NOT NULL,
+      label         TEXT,
+      fingerprint   TEXT    NOT NULL UNIQUE,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      total_cost    REAL    NOT NULL DEFAULT 0,
+      total_tokens  INTEGER NOT NULL DEFAULT 0,
+      first_call_at INTEGER,
+      last_call_at  INTEGER,
+      first_endpoint TEXT,
+      status        TEXT    NOT NULL DEFAULT 'active',
+      created_at    INTEGER NOT NULL,
+      upstream_provider TEXT,
+      upstream_model TEXT
+    )
+  `;
+
 /** 单条迁移 */
 export interface Migration { version: number; name: string; up: (d: Database) => void; }
 
@@ -57,56 +112,10 @@ function migrateToV2(d: Database): void {
   }
   d.run('DROP TABLE IF EXISTS calls');
   d.run('DROP TABLE IF EXISTS sessions');
-  // 重建最新结构（含后续 ALTER 补充的列；v1 老库的 ALTER 已在旧表上执行过，重建后不再补列）
-  d.run(`
-    CREATE TABLE IF NOT EXISTS calls (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id      INTEGER NOT NULL REFERENCES sessions(id),
-      provider        TEXT    NOT NULL,
-      model           TEXT    NOT NULL,
-      endpoint        TEXT    NOT NULL,
-      method          TEXT    NOT NULL,
-      status_code     INTEGER,
-      error_message   TEXT,
-      duration_ms     INTEGER NOT NULL,
-      prompt_tokens       INTEGER,
-      output_tokens       INTEGER,
-      cache_read_tokens   INTEGER,
-      cache_write_tokens  INTEGER,
-      uncached_input      INTEGER,
-      input_cost    REAL DEFAULT 0.0,
-      output_cost   REAL DEFAULT 0.0,
-      total_cost    REAL DEFAULT 0.0,
-      cache_savings REAL DEFAULT 0.0,
-      request_body   TEXT,
-      response_body  TEXT,
-      fingerprint  TEXT NOT NULL,
-      source_port  INTEGER,
-      tool         TEXT,
-      created_at INTEGER NOT NULL,
-      target_url TEXT,
-      source_ip TEXT,
-      downstream_url TEXT
-    )
-  `);
-  d.run(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      tool          TEXT    NOT NULL,
-      label         TEXT,
-      fingerprint   TEXT    NOT NULL UNIQUE,
-      request_count INTEGER NOT NULL DEFAULT 0,
-      total_cost    REAL    NOT NULL DEFAULT 0,
-      total_tokens  INTEGER NOT NULL DEFAULT 0,
-      first_call_at INTEGER,
-      last_call_at  INTEGER,
-      first_endpoint TEXT,
-      status        TEXT    NOT NULL DEFAULT 'active',
-      created_at    INTEGER NOT NULL,
-      upstream_provider TEXT,
-      upstream_model TEXT
-    )
-  `);
+  // 重建最新结构（与 initDb 共用 CALLS_TABLE_DDL/SESSIONS_TABLE_DDL，列清单一致；
+  // v1 老库的 ALTER 已在旧表上执行过，重建后不再补列）
+  d.run(CALLS_TABLE_DDL);
+  d.run(SESSIONS_TABLE_DDL);
   console.log('数据库已升级到 schema v2（时间戳格式），旧数据已备份');
 }
 

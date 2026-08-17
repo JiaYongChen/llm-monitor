@@ -140,7 +140,6 @@ export function stopBodyMigration(): void {
 export function reconcileOrphanBodies(): number {
   const files = listBodyFiles();
   if (files.length === 0) return 0;
-  const d = getDb();
   const ids = new Set<number>();
   // 分页扫描 calls 构建存活集合（避免一次 SELECT 百万 id）
   let offset = 0;

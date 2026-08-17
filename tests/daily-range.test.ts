@@ -53,4 +53,18 @@ describe('getDailyStats 季度/年度范围', () => {
     expect(rows.find((r: any) => r.date === fmt(lastYearLastDay))).toBeDefined();
     expect(rows.find((r: any) => r.date === todayText)).toBeUndefined();
   });
+
+  it('today / 7d 范围不含未来小时（时钟偏差防御）', () => {
+    // 未来 48h 的 createdAtMs：若范围缺上界会被错误纳入（时钟偏差产生的未来小时）
+    const futureMs = Date.now() + 48 * 3600 * 1000;
+    const futureHourMs = Math.floor(futureMs / 3600000) * 3600000;
+    const shifted = new Date(futureHourMs + 8 * 3600000);   // 标签按查询端 tzOffset（UTC+8）重算
+    const futureHourLabel = `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())} ${pad(shifted.getUTCHours())}:00`;
+    const futureDayLabel = `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+    upsertHourlyStat('OpenAI', 'm-future', 'codex', 0.05, 1, 50, 80, 20, futureMs);
+    const todayRows = getDailyStats('today', 'OpenAI');
+    expect(todayRows.find((r: any) => r.date === futureHourLabel)).toBeUndefined();
+    const weekRows = getDailyStats('7d', 'OpenAI');
+    expect(weekRows.find((r: any) => r.date === futureDayLabel)).toBeUndefined();
+  });
 });

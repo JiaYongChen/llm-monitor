@@ -1,6 +1,6 @@
 /** body 生命周期联动测试 — 删除/合并/清理操作同步维护 body 文件 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, closeDb, getDb, insertCall, upsertSession, deleteSession, mergeSessions, cleanupOldCalls, deleteAllSessions, clearAllData, queryAll } from '../proxy/db.js';
+import { initDb, closeDb, insertCall, upsertSession, deleteSession, mergeSessions, cleanupOldCalls, deleteAllSessions, clearAllData } from '../proxy/db.js';
 import { writeBody, readBody, listBodyFiles, reconcileOrphanBodies } from '../proxy/db-body.js';
 import { createTempDb } from './setup.js';
 

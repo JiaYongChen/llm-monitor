@@ -116,15 +116,6 @@ export function closeDb(): void {
 
 // ── 辅助 ──
 
-/** 将 sql.js 的 Statement 结果行转为对象 */
-export function rowToDict(columns: string[], row: any[]): Record<string, any> {
-  const obj: Record<string, any> = {};
-  for (let i = 0; i < columns.length; i++) {
-    obj[columns[i]] = row[i];
-  }
-  return obj;
-}
-
 /** 执行 SELECT 查询，返回对象数组（导出供测试使用） */
 export function queryAll(sql: string, params?: any[]): Record<string, any>[] {
   const d = getDb();

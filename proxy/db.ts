@@ -10,7 +10,7 @@ import { ensureDataDir, DB_PATH } from './config.js';
 import { deleteSessionBodies, moveSessionBodies, clearAllBodies, bodyFilePath } from './db-body.js';
 import type { CallRecord } from '../shared/types.js';
 import { initSqlJsCore, setDb, getSql, setCurrentDbPath, getDb, saveDb, closeDb, queryAll, queryOne, execute, executeInsert, startSaveSafetyNet } from './db-core.js';
-import { runMigrations, migrateToolCanonicalNames, migrateLowercaseNames } from './db-migrations.js';
+import { runMigrations, migrateToolCanonicalNames, migrateLowercaseNames, CALLS_TABLE_DDL, SESSIONS_TABLE_DDL } from './db-migrations.js';
 import { normalizeToolName, normalizeProviderName, getToolConfig } from './db-config.js';
 
 // 兼容旧引用：统一从 db-core / db-migrations / db-config re-export（router/recorder/测试 import 路径不变）
@@ -67,52 +67,9 @@ export async function initDb(dbPath?: string): Promise<void> {
   // 创建 metadata 表（最先，用于 schema 版本检查）
   db.run(`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)`);
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS calls (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id      INTEGER NOT NULL REFERENCES sessions(id),
-      provider        TEXT    NOT NULL,
-      model           TEXT    NOT NULL,
-      endpoint        TEXT    NOT NULL,
-      method          TEXT    NOT NULL,
-      status_code     INTEGER,
-      error_message   TEXT,
-      duration_ms     INTEGER NOT NULL,
-      prompt_tokens       INTEGER,
-      output_tokens       INTEGER,
-      cache_read_tokens   INTEGER,
-      cache_write_tokens  INTEGER,
-      uncached_input      INTEGER,
-      input_cost    REAL DEFAULT 0.0,
-      output_cost   REAL DEFAULT 0.0,
-      total_cost    REAL DEFAULT 0.0,
-      cache_savings REAL DEFAULT 0.0,
-      request_body   TEXT,
-      response_body  TEXT,
-      fingerprint  TEXT NOT NULL,
-      source_port  INTEGER,
-      tool         TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      tool          TEXT    NOT NULL,
-      label         TEXT,
-      fingerprint   TEXT    NOT NULL UNIQUE,
-      request_count INTEGER NOT NULL DEFAULT 0,
-      total_cost    REAL    NOT NULL DEFAULT 0,
-      total_tokens  INTEGER NOT NULL DEFAULT 0,
-      first_call_at INTEGER,
-      last_call_at  INTEGER,
-      first_endpoint TEXT,
-      status        TEXT    NOT NULL DEFAULT 'active',
-      created_at    INTEGER NOT NULL,
-      upstream_provider TEXT
-    )
-  `);
+  // calls/sessions DDL 与 db-migrations 的 v2 重建共用同一常量（列清单一致，单一来源）
+  db.run(CALLS_TABLE_DDL);
+  db.run(SESSIONS_TABLE_DDL);
 
   db.run(`
     CREATE TABLE IF NOT EXISTS pricing (
@@ -168,21 +125,6 @@ export async function initDb(dbPath?: string): Promise<void> {
       PRIMARY KEY (hour_ms, provider, model, tool)
     )
   `);
-
-  // 索引
-  const indexes = [
-    'CREATE INDEX IF NOT EXISTS idx_calls_session ON calls(session_id)',
-    'CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at)',
-    'CREATE INDEX IF NOT EXISTS idx_calls_model ON calls(model)',
-    'CREATE INDEX IF NOT EXISTS idx_calls_fingerprint ON calls(fingerprint)',
-    'CREATE INDEX IF NOT EXISTS idx_calls_tool ON calls(tool)',
-    'CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions(tool)',
-    'CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)',
-    'CREATE INDEX IF NOT EXISTS idx_hourly_provider ON hourly_stats(provider)',
-  ];
-  for (const idx of indexes) {
-    db.run(idx);
-  }
 
   // 兼容已有库：添加 upstream_provider 列（列已存在则忽略错误）
   try { db.run(`ALTER TABLE sessions ADD COLUMN upstream_provider TEXT`); } catch {}
@@ -263,6 +205,22 @@ export async function initDb(dbPath?: string): Promise<void> {
   })();
   runMigrations(storedVersion);
 
+  // 索引：必须在迁移之后创建 — v2 迁移会 DROP + 重建 calls/sessions（索引随表删除），
+  // 迁移完成后再统一建索引，全新库与老库升级路径均覆盖
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_calls_session ON calls(session_id)',
+    'CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_calls_model ON calls(model)',
+    'CREATE INDEX IF NOT EXISTS idx_calls_fingerprint ON calls(fingerprint)',
+    'CREATE INDEX IF NOT EXISTS idx_calls_tool ON calls(tool)',
+    'CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions(tool)',
+    'CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)',
+    'CREATE INDEX IF NOT EXISTS idx_hourly_provider ON hourly_stats(provider)',
+  ];
+  for (const idx of indexes) {
+    db.run(idx);
+  }
+
   // 类别颜色：色板种子 + 注册迁移（动态 import 避免与 colors.ts 循环依赖；失败降级警告，不影响启动）
   try {
     const colorsMod = await import('./colors.js');
@@ -288,9 +246,9 @@ export function insertCall(r: CallRecord): number {
       target_url, downstream_url, source_ip,
       status_code, error_message, duration_ms, prompt_tokens, output_tokens,
       cache_read_tokens, cache_write_tokens, uncached_input, input_cost,
-      output_cost, total_cost, cache_savings, request_body, response_body,
+      output_cost, total_cost, cache_savings,
       fingerprint, source_port, tool, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?) RETURNING id`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     [
       r.session_id, r.provider, r.model, r.endpoint, r.method,
       r.target_url, r.downstream_url, r.source_ip,
@@ -559,6 +517,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
   switch (range) {
     case 'today':
       startMs = tzMidnightMs();
+      endMs = tzMidnightMs(1);   // 上界 = 明天午夜：排除时钟偏差产生的未来小时
       break;
     case 'yesterday':
       startMs = tzMidnightMs(-1);
@@ -569,6 +528,7 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
     case '30d':
     case '60d':
       startMs = tzMidnightMs(-(parseInt(range) - 1));
+      endMs = Date.now();        // 上界 = 当前时刻：滚动窗口不含未来小时
       break;
     case 'thisMonth':
       startMs = Date.UTC(utcNow.getFullYear(), utcNow.getMonth(), 1);

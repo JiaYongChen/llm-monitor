@@ -68,8 +68,12 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `proxy/normalizer.ts` | Token 归一化：三种 usage 格式 → 统一的 NormalizedTokens。OpenAI Chat Completions（prompt_tokens/completion_tokens）优先，OpenAI Responses API（input_tokens/output_tokens）作 fallback；格式由上游响应 URL 决定 |
 | `proxy/pricing.ts` | 定价匹配（最长模型前缀匹配）+ 费用计算（非 CNY 币种自动汇率换算为 CNY 存储） |
 | `proxy/rates.ts` | 汇率：Frankfurter API 拉取 → metadata 表缓存，每日 09:30 CST 定时刷新，兜底内置汇率 |
-| `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + upsertDailyStat + updateSessionStats |
-| `proxy/db.ts` | sql.js 数据库全部操作：建表（schema v3）、CRUD、daily_stats 累加、统计聚合、Settings、Provider Config、Tool Config；`normalizeToolName` / `normalizeProviderName` 名称归一化（toLowerCase + 内置别名，大小写不敏感 → 小写存储），`migrateLowercaseNames` 启动时一次性把历史名称字段转小写（metadata 门控 + 事务，先合并变体再改名）；Provider Config / Tool Config / Pricing 三张配置表带 created_at/updated_at（毫秒，存量行 0 = 未知） |
+| `proxy/recorder.ts` | 后台消费者：定时轮询队列 → normalize → pricing → insertCall + body 外置写文件 → upsertHourlyStat + updateSessionStats |
+| `proxy/db.ts` | 数据库入口：initDb 建表（schema v4）+ 迁移调度 + 迁移后统一建索引、calls/sessions CRUD、统计聚合（getStats/getDailyStats 从 hourly_stats 上卷，删除操作不影响）、数据管理（清理/清空/合并会话，联动维护 body 文件） |
+| `proxy/db-core.ts` | sql.js 核心：数据库实例管理（单例）、saveDb 落盘节流（去抖 + 安全网）、查询辅助（queryAll/queryOne/execute/executeInsert/runRaw） |
+| `proxy/db-config.ts` | 配置 CRUD：Provider Config / Tool Config / Pricing / Settings + `normalizeToolName` / `normalizeProviderName` 名称归一化（toLowerCase + 内置别名，大小写不敏感 → 小写存储）；配置表带 created_at/updated_at（毫秒，存量行 0 = 未知） |
+| `proxy/db-migrations.ts` | 迁移列表机制（v2 时间戳重建 / v3 daily_stats 回填 / v4 hourly_stats 替换 daily_stats）+ `migrateToolCanonicalNames` / `migrateLowercaseNames` 名称归一化迁移（metadata 门控 + 事务，先合并变体再改名）+ calls/sessions 共享建表 DDL 常量 |
+| `proxy/db-body.ts` | body 外置文件存储（bodyData/<sessionId>/<createdAtMs>-<callId>.json）+ 渐进迁移（分片幂等 → DROP COLUMN → VACUUM，`bodies_migrated` 门控）+ 孤儿文件对账 |
 | `proxy/thinking-preview.ts` | 终端思考输出格式化：分隔线包围 + `[think]` 独立前缀标签 |
 | `proxy/config.ts` | CLI 参数解析（--port / --webui-port）+ 目录常量（DATA_DIR=~/.llm-monitor） |
 | `shared/extractThinking.ts` | 思考提取函数：兼容流式干净结构 / Anthropic 原始 / OpenAI 原始三种响应形态，前后端共用 |
@@ -78,8 +82,8 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 1. **代理阶段**：请求到达 `router.ts` → 根据 URL 首段识别工具（如 `/codex/v1/responses` → codex）→ 映射到供应商 → 剥离首段 → 检测格式差异 → 如需转换调用 `converter.ts` → `forwardRequest`/`forwardStream` 转发至上游 → 收集响应
 2. **入队阶段**：响应返回后立即构造 `CallRecord`（含原始 request/response body + tool）入队 — 此处不阻塞响应，思考内容从流式响应中独立分离存为 `thinking` 字段
-3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据上游 URL 检测响应格式（`detectFormatFromUrl`）→ `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → `upsertDailyStat` 累加统计表 → `updateSessionStats` 更新会话聚合
-4. **展示阶段**：Web 面板通过 `/api/*` 端点查询 `daily_stats` 统计表（删除操作不影响）和 `calls` 明细表；思考过程在调用详情页始终可见（带滚动条）、终端以 `[think]` 前缀实时输出
+3. **后台处理**：`recorder.ts` 每 100ms 轮询队列 → 根据上游 URL 检测响应格式（`detectFormatFromUrl`）→ `normalizer.ts` 解析 Token → `pricing.ts` 匹配定价并计费 → `insertCall` 写入 calls 表 → body 外置写入文件（writeBody，失败仅降级详情展示）→ `upsertHourlyStat` 累加小时统计表 → `updateSessionStats` 更新会话聚合
+4. **展示阶段**：Web 面板通过 `/api/*` 端点查询 `hourly_stats` 统计表（删除操作不影响）和 `calls` 明细表，调用详情接口按需读取 body 文件（缺失/解析失败降级占位）；思考过程在调用详情页始终可见（带滚动条）、终端以 `[think]` 前缀实时输出
 
 ## 路由架构
 
@@ -94,14 +98,22 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 
 ## 统计持久化
 
-数据库 `daily_stats` 表独立于 `calls`/`sessions` 累积每日调用统计：
+数据库 `hourly_stats` 表独立于 `calls`/`sessions` 累积调用统计（主键 `(hour_ms, provider, model, tool)`，纯 UTC 小时毫秒，写入端零时区）：
 
-- recorder 每次处理后实时 upsert（UTC+8 日期归属，tool 自动归一化）
-- `getStats`/`getDailyStats` 查询 `daily_stats` 而非 `calls`
+- recorder 每次处理后实时 upsert（`hour_ms` 由 createdAtMs 整数运算取小时边界，tool/供应商/模型自动归一化）
+- `getStats`/`getDailyStats` 查询 `hourly_stats` 而非 `calls`；天级/小时级标签在查询端按 tzOffset 重算（`today`/`yesterday` 小时粒度，`7d`~`60d` 与月/季/年范围按天）
 - 删除操作行为：
   - 单条删除 / 清空会话 / 清理旧数据 → **统计不变**
   - 清空全部数据 → 统计同步清空
-- 首次升级 v3 时自动从 `calls` 表回填历史统计
+- 首次升级 v4 时自动从 `calls` 表回填历史统计（小时粒度），随后 DROP `daily_stats`
+
+## Body 外置存储
+
+调用详情 body 不存数据库列，外置为文件（`bodyData/<sessionId>/<createdAtMs>-<callId>.json`，先 DB 后文件）：
+
+- recorder 落库后写 body 文件（失败仅降级详情展示）；删除/合并/清理操作联动维护 body 文件
+- 调用详情接口按需读取（`readBody`，文件缺失/解析失败降级占位）；孤儿对账删除 calls 表中已不存在的文件
+- 存量 body 列数据渐进迁移（分片幂等 → 完成后 DROP COLUMN + VACUUM，`bodies_migrated` 门控）
 
 ## 格式转换
 
@@ -150,4 +162,4 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
 - 清空全部会话（`deleteAllSessions`）会同时重置 AUTOINCREMENT ID，清空全部数据（`clearAllData`）同步清空统计
 - 工具 / 供应商 / 模型名存储统一小写（`normalizeToolName` / `normalizeProviderName`，模型名写入时 toLowerCase），查询匹配大小写不敏感（LOWER() 兜底 + 入参归一化等值）；`migrateLowercaseNames` 单次迁移历史数据（metadata 门控 `lowercase_migrated`，事务包裹：先按唯一约束维度合并变体行再 LOWER 改名）；前端显示统一走 `displayName`（整体映射表 + 特殊词 AI/GPT/API/CLI/LLM/URL/HTTP/HTTPS/JSON/SQL/ID/IP/GLM/KIMI 全大写 + 按分隔符分词首字母大写）；provider_config / tool_config / pricing 三张配置表带 created_at/updated_at（毫秒，存量行 0 = 未知）
-- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/daily_stats 变体）；旧迁移产出 CamelCase 中间态，随后由 `migrateLowercaseNames` 统一转小写
+- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/pricing 变体）；旧迁移产出 CamelCase 中间态，随后由 `migrateLowercaseNames` 统一转小写

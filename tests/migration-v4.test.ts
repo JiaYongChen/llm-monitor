@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import initSqlJs from 'sql.js';
 import { writeFileSync } from 'node:fs';
-import { initDb, closeDb, queryAll } from '../proxy/db.js';
+import { initDb, closeDb, queryAll, insertCall, upsertHourlyStat } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
 const tmp = createTempDb();
@@ -57,5 +57,35 @@ describe('v4 迁移', () => {
   it('v4 后旧名称迁移函数门控已置位', () => {
     const g = queryAll("SELECT value FROM metadata WHERE key = 'lowercase_migrated'")[0];
     expect(g.value).toBe('1');
+  });
+
+  it('calls/sessions 索引齐全（老库升级路径不被迁移重建丢失）', () => {
+    const callsNames = queryAll("SELECT name FROM pragma_index_list('calls')").map((r: any) => r.name);
+    for (const idx of ['idx_calls_session', 'idx_calls_created', 'idx_calls_model', 'idx_calls_fingerprint', 'idx_calls_tool']) {
+      expect(callsNames).toContain(idx);
+    }
+    const sessionsNames = queryAll("SELECT name FROM pragma_index_list('sessions')").map((r: any) => r.name);
+    expect(sessionsNames).toContain('idx_sessions_tool');
+    expect(sessionsNames).toContain('idx_sessions_status');
+  });
+
+  it('v4 升级后 insertCall 与 upsertHourlyStat 正常执行（迁移完成后继续写入）', () => {
+    const newId = insertCall({
+      provider: 'openai', model: 'gpt-4o', tool: 'codex', endpoint: '/v1/x', method: 'POST',
+      target_url: null, downstream_url: null, source_ip: null, status_code: 200, error_message: null,
+      duration_ms: 10, prompt_tokens: 1, output_tokens: 1, cache_read_tokens: null, cache_write_tokens: null,
+      uncached_input: null, input_cost: 0, output_cost: 0, total_cost: 0, cache_savings: 0,
+      request_body: null, response_body: null, fingerprint: 'fp_v4_new', source_port: null, session_id: 1, created_at: Date.now(),
+    });
+    expect(newId).toBeGreaterThan(2);   // 老库已有 2 行，新行 id 递增
+    // upsertHourlyStat 正常累加（写入端零时区，hour_ms 由 createdAtMs 整数运算得出）
+    upsertHourlyStat('openai', 'gpt-4o', 'codex', 0.05, 1, 50, 80, 20);
+    upsertHourlyStat('openai', 'gpt-4o', 'codex', 0.05, 1, 50, 80, 20);
+    const hourMs = Math.floor(Date.now() / 3600000) * 3600000;
+    const rows = queryAll('SELECT call_count, total_cost FROM hourly_stats WHERE hour_ms = ? AND provider = ? AND model = ? AND tool = ?',
+      [hourMs, 'openai', 'gpt-4o', 'codex']);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].call_count).toBe(2);
+    expect(rows[0].total_cost).toBeCloseTo(0.1);
   });
 });
