@@ -5,6 +5,7 @@
 
 import { getProviderConfig, upsertPricing, getSetting, setSetting, listProviderConfigs, normalizeProviderName, replaceProviderModels } from './db.js';
 import { detectFormatFromUrl } from './normalizer.js';
+import { joinUrlPath } from '../shared/joinUrlPath.js';
 import { fetchLiteLLMPricing, fetchModelsDevPricing, fetchAnthropicPricing, matchModelPricing, type ModelPrice } from './pricing-sources.js';
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
@@ -26,9 +27,10 @@ async function fetchJsonWithTimeout(url: string, init: RequestInit): Promise<unk
   }
 }
 
-/** 探测 OpenAI 兼容供应商：GET {baseUrl}/v1/models，Bearer 鉴权，返回小写模型名列表 */
+/** 探测 OpenAI 兼容供应商：GET {baseUrl}/v1/models，Bearer 鉴权，返回小写模型名列表。
+ *  URL 经 joinUrlPath 拼接：base_url 已含 /v1 尾段（如百炼 compatible-mode/v1）时不重复。 */
 export async function probeModelsOpenAI(baseUrl: string, apiKey: string): Promise<string[]> {
-  const data = await fetchJsonWithTimeout(`${baseUrl.replace(/\/$/, '')}/v1/models`, {
+  const data = await fetchJsonWithTimeout(joinUrlPath(baseUrl, '/v1/models'), {
     headers: { authorization: `Bearer ${apiKey}` },
   }) as { data?: { id?: string }[] };
   return [...new Set((data.data ?? [])
@@ -37,9 +39,10 @@ export async function probeModelsOpenAI(baseUrl: string, apiKey: string): Promis
     .map(id => id.toLowerCase()))];
 }
 
-/** 探测 Anthropic 格式供应商：GET {baseUrl}/v1/models，x-api-key 鉴权，返回小写模型名列表 */
+/** 探测 Anthropic 格式供应商：GET {baseUrl}/v1/models，x-api-key 鉴权，返回小写模型名列表。
+ *  URL 经 joinUrlPath 拼接：base_url 已含 /v1 尾段（如百炼 compatible-mode/v1）时不重复。 */
 export async function probeModelsAnthropic(baseUrl: string, apiKey: string): Promise<string[]> {
-  const data = await fetchJsonWithTimeout(`${baseUrl.replace(/\/$/, '')}/v1/models`, {
+  const data = await fetchJsonWithTimeout(joinUrlPath(baseUrl, '/v1/models'), {
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
   }) as { data?: { id?: string }[] };
   return [...new Set((data.data ?? [])

@@ -23,6 +23,11 @@ beforeAll(async () => {
   });
   // 触发超时用：挂起响应
   app.get('/slow/v1/models', async () => new Promise(() => {}));
+  // 含 /v1 尾段 base_url 场景（阿里云百炼兼容模式写法）：探测应命中 /tail-v1/v1/models 而非 /tail-v1/v1/v1/models
+  app.get('/tail-v1/v1/models', async (req, reply) => {
+    if (req.headers.authorization !== 'Bearer sk-tail') return reply.status(401).send({ error: 'unauthorized' });
+    return { object: 'list', data: [{ id: 'qwen-tail-model' }] };
+  });
   // 探测 mock：返回 3 个模型
   app.get('/probe/v1/models', async (req, reply) => {
     if (req.headers.authorization !== 'Bearer sk-ok') return reply.status(401).send({ error: 'unauthorized' });
@@ -71,6 +76,10 @@ describe('probeModels', () => {
   });
   it('畸形 JSON 抛错', async () => {
     await expect(probeModelsOpenAI(`${url}/missing`, 'sk')).rejects.toThrow();
+  });
+  it('base_url 含 /v1 尾段：探测 URL 不重复拼接（回归：百炼 compatible-mode 场景曾产生 /v1/v1/models → 400）', async () => {
+    const models = await probeModelsOpenAI(`${url}/tail-v1/v1`, 'sk-tail');
+    expect(models).toEqual(['qwen-tail-model']);
   });
 });
 

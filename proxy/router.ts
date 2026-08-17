@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { forwardRequest, forwardStream } from './forwarder.js';
 import { needsConversion, convertRequest, convertResponse, createResponseTransform } from './converter.js';
 import { extractThinking } from '../shared/extractThinking.js';
+import { joinUrlPath } from '../shared/joinUrlPath.js';
 import { formatThinkingFull } from './thinking-preview.js';
 import { detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { getOrCreateSession, computeFingerprint, extractConversationSeed } from './session.js';
@@ -286,20 +287,6 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         config = getConfiguredUpstream(upstreamProvider, tool, `/${actualRemaining}`);
         upstream = config.base_url;
       }
-
-/** 智能拼接 base URL 与路径，避免重复段（如 /v1/v1/） */
-function joinUrlPath(base: string, path: string): string {
-  const cleanBase = base.replace(/\/+$/, '');
-  const cleanPath = path.replace(/^\/+/, '');
-  if (!cleanPath) return cleanBase;
-  const baseParts = cleanBase.split('/');
-  const pathParts = cleanPath.split('/');
-  if (baseParts.length > 0 && pathParts.length > 0 &&
-      baseParts[baseParts.length - 1] === pathParts[0]) {
-    return `${cleanBase}/${pathParts.slice(1).join('/')}`;
-  }
-  return `${cleanBase}/${cleanPath}`;
-}
 
       // 验证上游 URL 有效
       if (!upstream || !upstream.startsWith('http')) {
