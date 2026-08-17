@@ -4,7 +4,7 @@ import { fillDateRange, fmtXAxis } from '../lib/dates';
 import ChartTooltip, { DashedCursor } from './ChartTooltip';
 import { displayName } from '../lib/display';
 import { sortByPresetOrder } from '../lib/utils';
-import { useCategoryColors, buildCategoryColorMap, type CategoryKind } from '../lib/colors';
+import { useCategoryColors, buildCategoryColorMap, buildModelColorMap, type CategoryKind } from '../lib/colors';
 
 const COLORS = {
   output: '#5e5ce6',
@@ -45,18 +45,23 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
     return fillDateRange(range, tz).map(date => map.get(date) || { ...ZERO_ROW, date });
   }, [data, range, tz]);
 
-  // 堆叠分布图的类别（保持后端返回顺序，供柱段渲染；图例单独按预设序排列）
+  // 堆叠分布图的类别：模型维度按字母序（与顺序取色对应）；tool/provider 保持后端返回顺序
   const seriesModels = useMemo(
-    () => [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))],
-    [modelData],
+    () => {
+      const names = [...new Set((modelData || []).map(d => d.category || d.model || '').filter(Boolean))];
+      return categoryKind === 'model' ? names.sort((a, b) => a.localeCompare(b)) : names;
+    },
+    [modelData, categoryKind],
   );
 
   const { data: colors } = useCategoryColors();
-  // 类别 → 颜色：tool/provider 由注册表决定（跨图表一致），model 与未注册类别字母序循环色板
-  const colorMap = useMemo(
-    () => (colors ? buildCategoryColorMap(seriesModels, categoryKind, colors) : new Map<string, string>()),
-    [seriesModels, categoryKind, colors],
-  );
+  // 类别 → 颜色：模型维度按字母序依次对应色板；tool/provider 由注册表决定（跨图表一致），未注册取名称哈希确定性色
+  const colorMap = useMemo(() => {
+    if (!colors) return new Map<string, string>();
+    return categoryKind === 'model'
+      ? buildModelColorMap(seriesModels, colors)
+      : buildCategoryColorMap(seriesModels, categoryKind, colors);
+  }, [seriesModels, categoryKind, colors]);
 
   const modelSeries = useMemo(() => {
     if (!modelData || modelData.length === 0) return null;
@@ -142,8 +147,8 @@ export default function DailyBarChart({ data, range, tz, modelData, groupLabel =
                 <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={(v) => v.toLocaleString()} />} />
                 <Legend
                   wrapperStyle={{ fontSize: 12 }}
-                  payload={sortByPresetOrder(seriesModels).map(model => ({
-                    // 图例按固定预设序排列；颜色由类别名唯一决定，与柱段取色一致
+                  payload={(categoryKind === 'model' ? seriesModels : sortByPresetOrder(seriesModels)).map(model => ({
+                    // 图例：模型维度与柱段同一字母序；tool/provider 按固定预设序；颜色与柱段取色一致
                     id: model, value: displayName(model), type: 'rect' as const, color: colorMap.get(model),
                   }))}
                 />
