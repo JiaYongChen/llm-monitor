@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Switch } from '../components/ui/switch';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
-import { Plus, Trash2, Copy, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Copy, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { useCurrency, CURRENCIES, type CurrencyKey } from '../lib/currency';
 import { useCategoryColors, categoryColor } from '../lib/colors';
 import { displayName } from '../lib/display';
@@ -17,6 +17,8 @@ export default function Settings() {
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: api.listProviders });
   const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: api.listPricing });
   const { data: colors } = useCategoryColors();
+  const { data: providerModels } = useQuery({ queryKey: ['provider-models'], queryFn: () => api.listProviderModels() });
+  const { data: modelSyncStatus } = useQuery({ queryKey: ['provider-models-status'], queryFn: () => api.getProviderModelsStatus() });
 
   const updateMut = useMutation({
     mutationFn: ({ p, d }: { p: string; d: any }) => api.updateProvider(p, d),
@@ -82,9 +84,10 @@ export default function Settings() {
               enabled={p.enabled === 1}
               color={categoryColor(p.provider, 'provider', colors) || '#9ca3af'}
               prices={providerPrices(p.provider)}
+              models={(providerModels || []).filter((m: any) => m.provider === p.provider)}
+              syncStatus={(modelSyncStatus as any)?.[p.provider] || null}
               onToggle={(v) => updateMut.mutate({ p: p.provider, d: { enabled: v } })}
               onUpdate={(d) => updateMut.mutate({ p: p.provider, d })}
-              onPricesChanged={() => qc.invalidateQueries({ queryKey: ['pricing'] })}
               onDelete={() => { if (window.confirm(`删除 "${p.provider}"？`)) delMut.mutate(p.provider); }}
             />
           ))}
@@ -158,10 +161,10 @@ export default function Settings() {
 
 const BUILTIN_PROVIDERS: Record<string, string> = { anthropic: 'anthropic', openai: 'openai' };
 
-function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, color, prices, onToggle, onUpdate, onPricesChanged, onDelete }: {
+function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, color, prices, models, syncStatus, onToggle, onUpdate, onDelete }: {
   provider: string; baseUrl: string; baseUrlAnthropic: string; apiKey: string; enabled: boolean; color: string;
-  prices: any[]; onToggle: (v: boolean) => void; onUpdate: (d: Record<string, string>) => void;
-  onPricesChanged: () => void; onDelete: () => void;
+  prices: any[]; models: any[]; syncStatus: any; onToggle: (v: boolean) => void; onUpdate: (d: Record<string, string>) => void;
+  onDelete: () => void;
 }) {
   const [keyValue, setKeyValue] = useState(apiKey);
   const [urlOpenAI, setUrlOpenAI] = useState(baseUrl);
@@ -169,21 +172,19 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
   const [expanded, setExpanded] = useState(false);
   const isBuiltin = provider in BUILTIN_PROVIDERS;
   const fmt = BUILTIN_PROVIDERS[provider] || '';
-  const { currency } = useCurrency();
-  const [showAddPrice, setShowAddPrice] = useState(false);
-  const [newModel, setNewModel] = useState({ model: '', outPrice: '', inPrice: '', cachePrice: '', currency: 'CNY' as string });
+  const qc = useQueryClient();
 
-  const addPriceMut = useMutation({
-    mutationFn: (d: any) => api.upsertPricing(d),
+  const refreshMut = useMutation({
+    mutationFn: (p: string) => api.refreshProviderModels(p),
     onSuccess: () => {
-      onPricesChanged();
-      setNewModel({ model: '', outPrice: '', inPrice: '', cachePrice: '', currency: 'CNY' });
-      setShowAddPrice(false);
+      qc.invalidateQueries({ queryKey: ['provider-models'] });
+      qc.invalidateQueries({ queryKey: ['provider-models-status'] });
+      qc.invalidateQueries({ queryKey: ['pricing'] });
     },
   });
-  const deletePriceMut = useMutation({
-    mutationFn: (id: number) => api.deletePricing(id),
-    onSuccess: () => onPricesChanged(),
+  const toggleModelMut = useMutation({
+    mutationFn: (d: { provider: string; model: string; enabled: boolean }) => api.setProviderModelEnabled(d.provider, d.model, d.enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['provider-models'] }),
   });
 
   return (
@@ -199,7 +200,7 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
             <div className="flex items-center gap-2">
               <div className="w-[140px] flex-shrink-0 flex items-center gap-2">
                 <span className="text-sm font-semibold truncate">{displayName(provider)}</span>
-                <Badge variant="secondary" className="text-[10px] font-mono flex-shrink-0">{prices.length} 个定价</Badge>
+                <Badge variant="secondary" className="text-[10px] font-mono flex-shrink-0">{(models || []).length} 个模型</Badge>
               </div>
               <div className="text-xs text-[#6e6e73] leading-normal min-w-0 space-y-1.5">
                 {fmt === 'anthropic' ? (
@@ -262,69 +263,63 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
 
       {expanded && (
         <div className="border-t border-[#e5e5ea]">
+          {/* 同步状态行 */}
+          <div className="flex items-center gap-2 px-4 py-1.5 text-[11px] text-[#6e6e73] border-b border-[#f2f2f7]">
+            <Button variant="ghost" size="sm" className="h-6 text-xs"
+              onClick={() => { refreshMut.mutate(provider); }}
+              disabled={refreshMut.isPending}>
+              <RefreshCw className="h-3 w-3 mr-1" />刷新模型与定价
+            </Button>
+            {syncStatus?.status === 'error' && (
+              <span className="text-red-500 truncate">同步失败：{syncStatus.error}</span>
+            )}
+            {syncStatus?.status === 'no_key' && (
+              <span>未配置 API Key，配置后自动获取模型与定价</span>
+            )}
+            {syncStatus?.status === 'ok' && (
+              <span>已同步 {syncStatus.model_count} 个模型 / {syncStatus.priced_count} 个有定价 · {new Date(syncStatus.updated_at).toLocaleString('zh-CN', { hour12: false })}</span>
+            )}
+          </div>
           {/* 表头 */}
           <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 px-4 py-1 min-w-fit">
             <span className="flex-1 min-w-0">模型</span>
             <span className="w-16 text-center shrink-0">输出</span>
             <span className="w-16 text-center shrink-0">输入(未命中)</span>
             <span className="w-16 text-center shrink-0">输入(命中)</span>
-            <span className="w-6 shrink-0" />
+            <span className="w-10 text-center shrink-0">启用</span>
           </div>
-
-          {/* 已有定价 */}
-          {prices.map((p: any) => (
-            <div key={p.id} className="flex items-center gap-2 text-xs py-1.5 px-4 rounded hover:bg-muted/50 min-w-fit">
-              <span className="flex-1 min-w-0 font-mono text-gray-500 truncate">{p.model}</span>
-              <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.output_price.toFixed(2)}</span>
-              <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.input_price.toFixed(3)}</span>
-              <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[p.currency || 'CNY']?.symbol || '￥'}{p.cache_input_price.toFixed(3)}</span>
-              {p.is_default ? <span className="w-6 shrink-0" /> : <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => deletePriceMut.mutate(p.id)}><Trash2 className="h-3 w-3" /></Button>}
-            </div>
-          ))}
-
-          {/* 添加模型定价按钮 */}
-          <button
-            className="w-full text-xs text-gray-500 hover:text-gray-700 py-1.5 px-4 rounded flex items-center gap-1 hover:bg-muted/50"
-            onClick={() => setShowAddPrice(true)}
-          >
-            <Plus className="h-3 w-3" /> 添加模型定价
-          </button>
-
-          {prices.length === 0 && (
-            <p className="text-xs text-gray-400 py-1 px-4">暂无模型定价</p>
+          {/* 模型清单（探测驱动；不可用置灰） */}
+          {(models || []).map((m: any) => {
+            const price = (prices || []).find((p: any) => p.model === m.model);
+            const grey = !m.available;
+            return (
+              <div key={m.model} className={`flex items-center gap-2 text-xs py-1.5 px-4 rounded hover:bg-muted/50 min-w-fit ${grey ? 'opacity-50' : ''}`}>
+                <span className="flex-1 min-w-0 font-mono text-gray-500 truncate">
+                  {m.model}
+                  {grey && <span className="ml-1 text-[10px] text-[#aeaeb2]">不可用</span>}
+                </span>
+                {price ? (
+                  <>
+                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[price.currency || 'CNY']?.symbol || '￥'}{price.output_price.toFixed(2)}</span>
+                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[price.currency || 'CNY']?.symbol || '￥'}{price.input_price.toFixed(3)}</span>
+                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[price.currency || 'CNY']?.symbol || '￥'}{price.cache_input_price.toFixed(3)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-16 text-center text-[#aeaeb2] shrink-0">—</span>
+                    <span className="w-16 text-center text-[#aeaeb2] shrink-0">—</span>
+                    <span className="w-16 text-center text-[#aeaeb2] shrink-0">—</span>
+                  </>
+                )}
+                <span className="w-10 text-center shrink-0">
+                  <Switch checked={!!m.enabled} onCheckedChange={(v) => toggleModelMut.mutate({ provider, model: m.model, enabled: v })} />
+                </span>
+              </div>
+            );
+          })}
+          {(!models || models.length === 0) && (
+            <p className="text-xs text-gray-400 py-1 px-4">暂无模型 — 配置 API Key 后自动获取</p>
           )}
-
-          {/* 添加定价弹窗 */}
-          <Dialog open={showAddPrice} onClose={() => { setShowAddPrice(false); setNewModel({ model: '', outPrice: '', inPrice: '', cachePrice: '', currency: 'CNY' }); }}>
-            <DialogHeader>
-              <DialogTitle>添加模型定价</DialogTitle>
-              <DialogDescription>为「{displayName(provider)}」添加新的模型定价规则。</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="flex items-end gap-2">
-                <div className="flex-[2]"><label className="text-xs text-gray-700 font-medium">模型名称</label><Input value={newModel.model} onChange={e => setNewModel({ ...newModel, model: e.target.value })} placeholder="gpt-4o" /></div>
-                <div className="flex-1"><label className="text-xs text-gray-700 font-medium">币种</label>
-                  <select value={newModel.currency} onChange={e => setNewModel({ ...newModel, currency: e.target.value })} className="h-9 text-sm border border-[#e5e5ea] rounded-lg px-3 w-full bg-white">
-                    {Object.keys(CURRENCIES).map(k => (
-                      <option key={k} value={k}>{k}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="flex items-end gap-2">
-                <div className="flex-1"><label className="text-xs text-gray-700 font-medium">输出价格 (每1M token)</label><Input type="number" step="any" value={newModel.outPrice} onChange={e => setNewModel({ ...newModel, outPrice: e.target.value })} placeholder="0" /></div>
-                <div className="flex-1"><label className="text-xs text-gray-700 font-medium">输入价格-未命中 (每1M token)</label><Input type="number" step="any" value={newModel.inPrice} onChange={e => setNewModel({ ...newModel, inPrice: e.target.value })} placeholder="0" /></div>
-                <div className="flex-1"><label className="text-xs text-gray-700 font-medium">输入价格-命中 (每1M token)</label><Input type="number" step="any" value={newModel.cachePrice} onChange={e => setNewModel({ ...newModel, cachePrice: e.target.value })} placeholder="0" /></div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button onClick={() => {
-                  if (!newModel.model.trim()) return;
-                  addPriceMut.mutate({ provider, model: newModel.model.trim(), input_price: +newModel.inPrice || 0, cache_input_price: +newModel.cachePrice || 0, output_price: +newModel.outPrice || 0, currency: newModel.currency });
-                }} size="sm"><Plus className="h-4 w-4 mr-1" />确认添加</Button>
-                <Button variant="outline" size="sm" onClick={() => { setShowAddPrice(false); setNewModel({ model: '', outPrice: '', inPrice: '', cachePrice: '', currency: 'CNY' }); }}>取消</Button>
-              </div>
-            </div>
-          </Dialog>
         </div>
       )}
     </div>

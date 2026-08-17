@@ -112,18 +112,6 @@ export async function listPricing() {
   return fetchJson('/pricing');
 }
 
-export async function upsertPricing(p: { provider: string; model: string; input_price: number; cache_input_price: number; output_price: number; currency?: string }) {
-  return fetchJson('/pricing', { method: 'POST', body: JSON.stringify(p) });
-}
-
-export async function deletePricing(id: number) {
-  return fetchJson(`/pricing/${id}`, { method: 'DELETE' });
-}
-
-export async function importDefaultPricing() {
-  return fetchJson('/pricing/default', { method: 'POST' });
-}
-
 // ── Data ──
 export async function clearAllData() {
   return fetchJson('/data/clear', { method: 'POST' });
