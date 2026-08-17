@@ -1,4 +1,5 @@
-/** 类别颜色取色模块 — 注册表命中取注册色；模型与未注册类别取名称哈希确定性色（避开内置锚点、跨集合稳定） */
+/** 类别颜色取色模块 — tool/provider 注册表命中取注册色 + 未命中名称哈希确定性兜底（避开内置锚点、跨集合稳定）；
+ *  模型维度顺序取色（字母序依次对应色板）见 buildModelColorMap */
 import { useQuery } from '@tanstack/react-query';
 import * as api from '../api/client';
 import { hashString } from '../../../shared/hash';
