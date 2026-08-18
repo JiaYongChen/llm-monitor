@@ -190,6 +190,11 @@ export async function initDb(dbPath?: string): Promise<void> {
       PRIMARY KEY (provider, model)
     )
   `);
+  // 兼容已有库：provider_models 价格列（列已存在则忽略错误；CREATE TABLE IF NOT EXISTS 不会升级旧表）
+  try { db.run('ALTER TABLE provider_models ADD COLUMN input_price REAL NOT NULL DEFAULT 0'); } catch {}
+  try { db.run('ALTER TABLE provider_models ADD COLUMN cache_input_price REAL NOT NULL DEFAULT 0'); } catch {}
+  try { db.run('ALTER TABLE provider_models ADD COLUMN output_price REAL NOT NULL DEFAULT 0'); } catch {}
+  try { db.run('ALTER TABLE provider_models ADD COLUMN currency TEXT NOT NULL DEFAULT \'USD\''); } catch {}
   // 类别颜色：色板静态数据表（改颜色只改此表，不动代码；theme 为未来主题预留）
   db.run(`
     CREATE TABLE IF NOT EXISTS color_palette (

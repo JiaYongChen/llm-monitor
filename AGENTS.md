@@ -214,5 +214,5 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - 工具 / 供应商 / 模型名存储统一小写（`normalizeToolName` / `normalizeProviderName`，模型名写入时 toLowerCase），查询匹配大小写不敏感（LOWER() 兜底 + 入参归一化等值）；前端显示统一走 `displayName`（整体映射表 + 特殊词 AI/GPT/API/CLI/LLM/URL/HTTP/HTTPS/JSON/SQL/ID/IP/GLM/KIMI 全大写 + 按分隔符分词首字母大写）；provider_config / tool_config / provider_models 三张可更新状态表带 created_at/updated_at（毫秒，存量行 0 = 未知）
 - 新表时间戳规则：可更新状态表（行会被 UPDATE）→ `created_at` + `updated_at`；仅追加明细表 → 仅 `created_at`；静态/派生表 → 无。`provider_models` 属可更新状态表
 - provider_models 行内价格列（input_price/cache_input_price/output_price/currency，0 = 无定价）：设置页价格 0 显示「—」；模型开关（enabled）与置灰（available）只影响 UI 选择，不影响计费匹配；pricing 表已废弃，启动时直接 DROP TABLE IF EXISTS pricing（内置供应商靠 default-pricing.json 种子、第三方靠重新探测同步重建）
-- 数据库无版本迁移机制：历史备份文件（calls.v1/v2-backup.db 等）仅作静态存档，不再支持升级加载
+- 数据库无版本迁移机制：历史备份文件（calls.v1/v2-backup.db 等）仅作静态存档，不再支持升级加载；存量库仅保留两处幂等列兼容（DDL 旁 try/catch ALTER）：provider_models 价格列 ADD（旧库升级）+ calls request_body/response_body 列 DROP（旧列清理）
 - 定价自动同步：探测结果只标记（`available`）不删除模型行；定价源匹配到的行价格全量覆盖（同 provider+model 行价格列），未匹配到的行价格保留；`modelsync_<provider>` metadata 存每供应商同步状态；探测 10s 超时
