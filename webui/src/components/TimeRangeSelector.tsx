@@ -14,10 +14,10 @@ export const DAILY_RANGES = [
   { value: 'lastYear', label: '去年' },
 ];
 
-/** 时间范围分段按钮组（受控组件，状态由页面持有） */
-export default function TimeRangeSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** 时间范围分段按钮组（受控组件，状态由页面持有）；align 控制对齐方式，默认居中 */
+export default function TimeRangeSelector({ value, onChange, align = 'center' }: { value: string; onChange: (v: string) => void; align?: 'center' | 'left' }) {
   return (
-    <div className="flex items-center justify-center">
+    <div className={`flex items-center ${align === 'left' ? 'justify-start' : 'justify-center'}`}>
       <div className="inline-flex items-center gap-0.5 bg-[#e9e9ee] rounded-lg p-1">
         {DAILY_RANGES.map(r => (
           <button
