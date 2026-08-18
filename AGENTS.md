@@ -81,7 +81,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `webui/src/pages/Overview.tsx` | 总览页（`/`）：按工具维度汇总；兼容旧查询参数重定向到工具/供应商详情路由 |
 | `webui/src/pages/ToolDetail.tsx` | 工具详情页（`/tools/:tool`）：按供应商维度汇总 + 工具级上游配置面板 |
 | `webui/src/pages/ProviderDetail.tsx` | 供应商详情页（`/providers/:provider`）：按模型维度汇总 + 缓存命中率 KPI |
-| `webui/src/hooks/useDashboardData.ts` | Dashboard 三页共用查询 hook：stats/dailyStats/费用分布查询（含复用去重）+ 时区 + totals 归约 |
+| `webui/src/hooks/useDashboardData.ts` | Dashboard 三页共用查询 hook：stats/dailyStats/费用分布查询（含复用去重）+ 时区 + totals 归约；时间范围按页面类型独立记忆（pageKey 参数，会话内有效，刷新回默认 30d） |
 | `webui/src/components/UpstreamSelectorPanel.tsx` | 上游选择器面板（工具详情页 + 会话详情页共用）：供应商/模型下拉 + 转发地址提示，持久化留在调用方 |
 | `webui/src/components/KpiCards.tsx` | KPI 卡片行（Dashboard 三页 + 会话详情页共用） |
 | `webui/src/components/PageHeader.tsx` | 页面标题行（类别色标题 + 实时监控徽标） |
