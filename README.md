@@ -119,7 +119,7 @@ llm-monitor/
 ├── proxy/                       # Node.js 代理层
 │   ├── main.ts                  # Fastify 入口，双端口 server
 │   ├── config.ts                # CLI 参数解析 + 常量
-│   ├── db.ts                    # SQLite CRUD + 建表 + 迁移
+│   ├── db.ts                    # SQLite CRUD + 建表 + 统计聚合
 │   ├── router.ts                # 代理路由（/*）+ /api/* 查询 API
 │   ├── forwarder.ts             # HTTP 转发（含 SSE 流式透传），三种 SSE 格式解析
 │   ├── converter.ts             # Anthropic ↔ OpenAI 格式双向转换
