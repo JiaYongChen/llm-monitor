@@ -175,7 +175,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - 汇率模块（`rates.ts`）在 `scheduleDailyRefresh()` 中使用 UTC+8 推算下次刷新时间，不依赖系统时区
 - 清空全部会话（`deleteAllSessions`）会同时重置 AUTOINCREMENT ID，清空全部数据（`clearAllData`）同步清空统计
 - 工具 / 供应商 / 模型名存储统一小写（`normalizeToolName` / `normalizeProviderName`，模型名写入时 toLowerCase），查询匹配大小写不敏感（LOWER() 兜底 + 入参归一化等值）；`migrateLowercaseNames` 单次迁移历史数据（metadata 门控 `lowercase_migrated`，事务包裹：先按唯一约束维度合并变体行再 LOWER 改名）；前端显示统一走 `displayName`（整体映射表 + 特殊词 AI/GPT/API/CLI/LLM/URL/HTTP/HTTPS/JSON/SQL/ID/IP/GLM/KIMI 全大写 + 按分隔符分词首字母大写）；provider_config / tool_config / provider_models 三张可更新状态表带 created_at/updated_at（毫秒，存量行 0 = 未知）
-- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config/provider_models 变体）；旧迁移产出 CamelCase 中间态，随后由 `migrateLowercaseNames` 统一转小写
+- `migrateToolCanonicalNames` 历史数据迁移单次执行（metadata 门控 `tool_canonical_migrated`），事务包裹：工具维度（内置别名；chatgpt 历史数据不迁移以防劫持同名自定义工具）+ 供应商维度（按 provider_config 规范名归一 calls/sessions/tool_config 变体，不含 provider_models——其写入端 normalizeProviderName 保证小写，无需迁移）；旧迁移产出 CamelCase 中间态，随后由 `migrateLowercaseNames` 统一转小写
 - 新表时间戳规则：可更新状态表（行会被 UPDATE）→ `created_at` + `updated_at`；仅追加明细表 → 仅 `created_at`；静态/派生表 → 无。`provider_models` 属可更新状态表
 - provider_models 行内价格列（input_price/cache_input_price/output_price/currency，0 = 无定价）：设置页价格 0 显示「—」；模型开关（enabled）与置灰（available）只影响 UI 选择，不影响计费匹配；旧库启动时直接 DROP TABLE IF EXISTS pricing，不迁移历史定价（内置供应商靠 default-pricing.json 种子、第三方靠重新探测同步重建）
 - 定价自动同步：探测结果只标记（`available`）不删除模型行；定价源匹配到的行价格全量覆盖（同 provider+model 行价格列），未匹配到的行价格保留；`modelsync_<provider>` metadata 存每供应商同步状态；探测 10s 超时

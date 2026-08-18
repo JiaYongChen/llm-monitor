@@ -82,4 +82,12 @@ describe('provider_models', () => {
     expect(row.enabled).toBe(1);
     expect(row.available).toBe(1);
   });
+
+  it('seedProviderModels provider+model 大小写归一化（同一行不重复插入）', () => {
+    const items = [{ provider: 'SeedProv', model: 'M-2', input_price: 1, cache_input_price: 0.5, output_price: 2, currency: 'USD' }];
+    expect(seedProviderModels(items, Date.now())).toBe(1);
+    expect(seedProviderModels([{ ...items[0], provider: 'seedprov', model: 'm-2' }], Date.now())).toBe(0);
+    const rows = listProviderModels().filter(r => r.provider === 'seedprov');
+    expect(rows).toHaveLength(1);
+  });
 });

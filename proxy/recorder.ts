@@ -68,8 +68,8 @@ function processRecord(record: CallRecord): void {
   // 2. 定价匹配 + 费用计算（定价来自 provider_models 价格列；缺汇率时抛错不阻塞入库，容忍 cost=0）
   if (record.prompt_tokens != null || record.output_tokens != null) {
     try {
-      const allPricing = listProviderModels();
-      const pricing = matchPricing(record.provider, record.model, allPricing);
+      const allModels = listProviderModels();
+      const pricing = matchPricing(record.provider, record.model, allModels);
       if (pricing) {
         const tokens: NormalizedTokens = {
           prompt_tokens: record.prompt_tokens,
