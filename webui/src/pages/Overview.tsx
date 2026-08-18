@@ -38,10 +38,10 @@ function OverviewContent() {
         {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
         <div className="grid grid-cols-2 gap-6">
           <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">工具费用</h4>
             <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="tool" />
           </div>
-          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="工具分布" categoryKind="tool" />
+          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="工具Tokens" categoryKind="tool" />
         </div>
         {dailyStats && (
           <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={costDailyData} />

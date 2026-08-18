@@ -66,7 +66,7 @@ export default function TokenDistributionBarChart({ modelData, range, tz, groupL
   return (
     <div>
       <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">{groupLabel}</h4>
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={300}>
         <BarChart data={modelSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />

@@ -67,10 +67,10 @@ export default function ToolDetail() {
         {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
         <div className="grid grid-cols-2 gap-6">
           <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">供应商费用</h4>
             <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="provider" />
           </div>
-          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="供应商分布" categoryKind="provider" />
+          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="供应商Tokens" categoryKind="provider" />
         </div>
         {dailyStats && (
           <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={costDailyData} />

@@ -99,7 +99,7 @@ export function fillDateRange(range: string, tz: number): string[] {
   return r;
 }
 
-/** X 轴标签格式化：按标签格式自判别——小时 'HH:00'，周 '2026-8(W34)'，月 'YYYY-MM'（完整年月），天 'MM-DD' */
+/** X 轴标签格式化：按标签格式自判别——小时 'HH:00'，周 '2026-8(W34)'，月 'YYYY-MM'（完整年月），天 'YYYY-MM-DD' */
 export function fmtXAxis(d: string): string {
   if (d.includes(' ')) return d.slice(11, 16); // '2026-08-18 14:00' → '14:00'
   if (d.includes('-W')) {
@@ -108,5 +108,5 @@ export function fmtXAxis(d: string): string {
     return `${start.getUTCFullYear()}-${start.getUTCMonth() + 1}(W${d.slice(6)})`;
   }
   if (d.length === 7) return d;                // '2026-08' → '2026-08'
-  return d.slice(5);                           // '2026-08-18' → '08-18'
+  return d;                                    // '2026-08-18' → '2026-08-18'
 }
