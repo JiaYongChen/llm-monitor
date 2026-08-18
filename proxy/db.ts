@@ -41,8 +41,6 @@ const CALLS_TABLE_DDL = `
       output_cost   REAL DEFAULT 0.0,
       total_cost    REAL DEFAULT 0.0,
       cache_savings REAL DEFAULT 0.0,
-      request_body   TEXT,
-      response_body  TEXT,
       fingerprint  TEXT NOT NULL,
       source_port  INTEGER,
       tool         TEXT,
@@ -122,6 +120,10 @@ export async function initDb(dbPath?: string): Promise<void> {
   // calls/sessions 建表（DDL 常量见模块顶部 — 最终 schema 单一来源）
   db.run(CALLS_TABLE_DDL);
   db.run(SESSIONS_TABLE_DDL);
+
+  // 兼容已有库：body 外置后 calls 表不再保留 body 列（列已删除则忽略错误）
+  try { db.run('ALTER TABLE calls DROP COLUMN request_body'); } catch {}
+  try { db.run('ALTER TABLE calls DROP COLUMN response_body'); } catch {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS provider_config (

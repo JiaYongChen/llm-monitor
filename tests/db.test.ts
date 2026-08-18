@@ -15,6 +15,15 @@ describe('db', () => {
     expect(sessions).toEqual([]);
   });
 
+  it('initDb 建索引齐全（新库路径）', () => {
+    const indexes = queryAll("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'");
+    const names = indexes.map((r: any) => r.name).sort();
+    expect(names).toEqual([
+      'idx_calls_created', 'idx_calls_fingerprint', 'idx_calls_model', 'idx_calls_session',
+      'idx_calls_tool', 'idx_hourly_provider', 'idx_sessions_status', 'idx_sessions_tool',
+    ]);
+  });
+
   it('upsertSession 创建新会话', () => {
     const sid = upsertSession('fp_test_123', 'ClaudeCode', '/v1/models');
     expect(sid).toBeGreaterThan(0);
@@ -53,9 +62,10 @@ describe('db', () => {
     const call = getCall(callId);
     expect(call).not.toBeNull();
     expect(call!.model).toBe('claude-sonnet-5');
-    // body 已外置：calls 表列写入 NULL，文件由 recorder 路径写入
-    expect(call!.request_body).toBeNull();
-    expect(call!.response_body).toBeNull();
+    // body 已外置：calls 表不再保留 body 列（body 文件由 recorder 路径写入）
+    const colNames = queryAll('PRAGMA table_info(calls)').map((c: any) => c.name);
+    expect(colNames).not.toContain('request_body');
+    expect(colNames).not.toContain('response_body');
   });
 
   it('insertCall 模型名写入前小写化', () => {

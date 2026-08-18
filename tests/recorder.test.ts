@@ -53,10 +53,11 @@ describe('recorder', () => {
     expect(stats[0].uncached_input).toBe(400);  // prompt_tokens(500) - cache_write(100)
     expect(stats[0].cache_read_tokens).toBe(200);
 
-    // body 已外置为文件（先 DB 后文件）：calls 表 body 列为 NULL，内容可经 readBody 读回
+    // body 已外置为文件（先 DB 后文件）：calls 表不再保留 body 列，内容可经 readBody 读回
     const row = queryAll("SELECT * FROM calls WHERE fingerprint = 'fp_rec'")[0];
-    expect(row.request_body).toBeNull();
-    expect(row.response_body).toBeNull();
+    const colNames = queryAll('PRAGMA table_info(calls)').map((c: any) => c.name);
+    expect(colNames).not.toContain('request_body');
+    expect(colNames).not.toContain('response_body');
     const body = readBody(row.session_id, row.id, row.created_at);
     expect(body?.response).toBe(record.response_body);
   });

@@ -434,7 +434,7 @@ function _registerApiRoutes(app: FastifyInstance): void {
   app.get('/api/calls/:id', async (req, reply) => {
     const c = dbGetCall(parseInt((req.params as any).id));
     if (!c) return reply.status(404).send('Not found');
-    // body 外置：文件优先读取，缺失时回退行内列（渐进迁移完成前旧行仍在列内）
+    // body 外置：calls 表已无 body 列，文件缺失时降级占位（前端展示 null）
     const body = readBody(c.session_id, c.id, c.created_at);
     if (body) {
       c.request_body = body.request;

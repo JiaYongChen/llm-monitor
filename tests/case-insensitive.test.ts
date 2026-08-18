@@ -205,8 +205,6 @@ describe('定价模型大小写不敏感', () => {
   });
 });
 
-// 迁移测试已迁至 tests/migration.test.ts（独立临时库，避免共享库污染）
-
 describe('查询过滤大小写不敏感', () => {
   it('listSessions 按 tool 过滤大小写不敏感', () => {
     upsertSession('fp_ci_filter', 'ClaudeCode', '/v1/messages');
