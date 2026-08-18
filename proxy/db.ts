@@ -228,12 +228,11 @@ export async function initDb(dbPath?: string): Promise<void> {
     db.run(idx);
   }
 
-  // 类别颜色：色板交换迁移 + 种子 + 注册迁移（动态 import 避免与 colors.ts 循环依赖；失败降级警告，不影响启动）
+  // 类别颜色：色板种子 + 内置固定色位注册（动态 import 避免与 colors.ts 循环依赖；失败降级警告，不影响启动）
   try {
     const colorsMod = await import('./colors.js');
-    colorsMod.migratePaletteSwap();  // 先于种子：老库交换既有数据，全新库空表 no-op
     colorsMod.seedPalette();
-    colorsMod.migrateCategoryColors();
+    colorsMod.registerBuiltinCategoryColors();
   } catch (err) {
     console.error(`[db] ⚠ 颜色注册初始化失败（不影响启动）: ${(err as Error).message}`);
   }

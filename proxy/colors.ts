@@ -1,5 +1,5 @@
-/** 类别颜色注册模块 — 色板种子 + 工具/供应商色位注册 + 启动迁移 */
-import { getDb, queryAll, queryOne, saveDb, getSetting } from './db.js';
+/** 类别颜色注册模块 — 色板种子 + 工具/供应商色位注册 + 内置固定色位初始化 */
+import { getDb, queryAll, queryOne, saveDb } from './db.js';
 import { normalizeToolName, normalizeProviderName } from './db.js';
 import { hashString } from '../shared/hash.js';
 import type { Database } from 'sql.js';
@@ -9,7 +9,7 @@ export const PALETTE_THEME = 'light';
 
 /** light 主题 32 色种子（前 10 为 d3 Tableau 10，其余 colorbrewer Dark2/Set1/Accent/Paired 精选，均为中等明度）。
  *  前两位为 #ff7f0e/#1f77b4（交换自 Tableau 10 原始顺序）：模型柱状图顺序取色以橙为首；
- *  内置锚点色位已随交换补偿（见 BUILTIN_COLOR_IDX 与 migratePaletteSwap），类别显示色不受影响。 */
+ *  内置锚点色位已随交换补偿（见 BUILTIN_COLOR_IDX 与 registerBuiltinCategoryColors），类别显示色不受影响。 */
 export const PALETTE_COLORS: string[] = [
   '#ff7f0e', '#1f77b4', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
   '#bcbd22', '#17becf', '#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02',
@@ -40,7 +40,7 @@ function cacheKey(kind: string, name: string): string {
   return `${kind}:${name}`;
 }
 
-/** 从注册表全量加载缓存（首次调用与迁移完成后重建） */
+/** 从注册表全量加载缓存（首次调用时重建；此后增量更新） */
 function ensureRegistryCache(): Map<string, number> {
   if (!registryCache) {
     registryCache = new Map(
@@ -49,11 +49,6 @@ function ensureRegistryCache(): Map<string, number> {
     );
   }
   return registryCache;
-}
-
-/** 失效缓存（迁移重置注册表时调用；下次注册时自动重建） */
-function invalidateRegistryCache(): void {
-  registryCache = null;
 }
 
 /** 该 kind 已占用的色位集合中找最小未占 idx；全占（32 个）则按名称哈希映射到 [2,31]，
@@ -95,85 +90,17 @@ const BUILTIN_COLOR_IDX: Array<[kind: 'tool' | 'provider', name: string, idx: nu
   ['provider', 'openai', 1],
 ];
 
-/** 事务内插入（INSERT OR IGNORE：内置固定色位不覆盖已有注册） */
+/** 内置固定色位插入（INSERT OR IGNORE：不覆盖已有注册，幂等） */
 function insertInTx(d: Database, kind: string, name: string, idx: number): void {
   d.run('INSERT OR IGNORE INTO category_colors (kind, name, color_idx, created_at) VALUES (?, ?, ?, ?)', [kind, name, idx, Date.now()]);
 }
 
-/** 收集名称并归一化（与运行期 registerCategoryColor 同规则）：跳过空值、'unknown' 与归一化后为空的名字。
- *  归一化保证历史遗留名（如 'chatgpt' → 'codex'、大小写变体）不会注册为独立死类别占色位——
- *  即使前序名称迁移降级失败，混合大小写名也在此统一为小写。 */
-function addName(set: Set<string>, name: unknown, kind: 'tool' | 'provider'): void {
-  if (!name) return;
-  const normalized = kind === 'tool' ? normalizeToolName(String(name)) : normalizeProviderName(String(name));
-  if (normalized && normalized !== 'unknown') set.add(normalized);
-}
-
-/** 启动迁移：内置固定色位 + 历史名称字母序注册。单次执行（metadata 门控 colors_migrated），
- *  事务包裹失败回滚。扫描五表（calls/sessions/hourly_stats/tool_config/provider_config）收集已出现名称。 */
-export function migrateCategoryColors(): void {
-  if (getSetting('colors_migrated') === '1') return;
+/** 内置类别固定色位初始化（幂等，每次启动执行）：保证内置工具/供应商显示色与历史一致。
+ *  历史名称色位由运行期 registerCategoryColor 按最小空位注册（insertInTx 的 IGNORE 语义保证不覆盖）。 */
+export function registerBuiltinCategoryColors(): void {
   const d = getDb();
-  d.run('BEGIN');
-  try {
-    // 1. 内置类别固定色位
-    for (const [kind, name, idx] of BUILTIN_COLOR_IDX) {
-      insertInTx(d, kind, name, idx);
-    }
-    // 2. 五表扫描收集（归一化与运行期注册一致；名称已由既往迁移统一小写，此处归一化作级联失败防御）
-    const tools = new Set<string>();
-    const providers = new Set<string>();
-    for (const r of queryAll('SELECT DISTINCT tool AS name FROM sessions')) addName(tools, r.name, 'tool');
-    for (const r of queryAll('SELECT DISTINCT tool AS name FROM calls')) addName(tools, r.name, 'tool');
-    for (const r of queryAll('SELECT DISTINCT tool AS name FROM hourly_stats')) addName(tools, r.name, 'tool');
-    for (const r of queryAll('SELECT DISTINCT tool AS name FROM tool_config')) addName(tools, r.name, 'tool');
-    for (const r of queryAll('SELECT DISTINCT provider AS name FROM provider_config')) addName(providers, r.name, 'provider');
-    for (const r of queryAll('SELECT DISTINCT provider AS name FROM calls')) addName(providers, r.name, 'provider');
-    for (const r of queryAll('SELECT DISTINCT provider AS name FROM hourly_stats')) addName(providers, r.name, 'provider');
-    for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM sessions')) addName(providers, r.name, 'provider');
-    for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM tool_config')) addName(providers, r.name, 'provider');
-    // 3. 其余名称按字母序注册（最小空位）
-    for (const name of [...tools].sort((a, b) => a.localeCompare(b))) {
-      if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['tool', name])) {
-        insertInTx(d, 'tool', name, nextFreeIdx('tool', name));
-      }
-    }
-    for (const name of [...providers].sort((a, b) => a.localeCompare(b))) {
-      if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['provider', name])) {
-        insertInTx(d, 'provider', name, nextFreeIdx('provider', name));
-      }
-    }
-    d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('colors_migrated', '1')");
-    d.run('COMMIT');
-    invalidateRegistryCache(); // 注册表已重建，缓存必须同步失效
-    saveDb();
-  } catch (err) {
-    d.run('ROLLBACK');
-    throw err;
-  }
-}
-
-/** 色板 0/1 位交换迁移：PALETTE_COLORS 前两位互换（#ff7f0e 在前）后，老库的 color_palette（色板表）与
- *  category_colors（注册表）需同步交换 0↔1，保证内置类别显示色不变（codex/openai 蓝、claudecode/anthropic 橙）。
- *  单次执行（metadata 门控 palette_01_swapped），事务包裹；
- *  必须在 seedPalette 之前调用——全新库两表为空 no-op 后由种子写入新色板顺序，老库则交换既有数据。 */
-export function migratePaletteSwap(): void {
-  if (getSetting('palette_01_swapped') === '1') return;
-  const d = getDb();
-  d.run('BEGIN');
-  try {
-    // 色板表：交换 idx 0/1 的颜色（CASE 基于原值求值，同语句内不会二次交换）
-    d.run("UPDATE color_palette SET color = CASE idx WHEN 0 THEN ? WHEN 1 THEN ? ELSE color END WHERE theme = ?",
-      ['#ff7f0e', '#1f77b4', PALETTE_THEME]);
-    // 注册表：交换 0↔1 色位（0/1 仅内置 4 类占用；其余类别色位 ≥2 不受影响）
-    d.run('UPDATE category_colors SET color_idx = CASE color_idx WHEN 0 THEN 1 WHEN 1 THEN 0 ELSE color_idx END');
-    d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('palette_01_swapped', '1')");
-    d.run('COMMIT');
-    invalidateRegistryCache(); // 注册表色位已变，缓存必须同步失效
-    saveDb();
-  } catch (err) {
-    d.run('ROLLBACK');
-    throw err;
+  for (const [kind, name, idx] of BUILTIN_COLOR_IDX) {
+    insertInTx(d, kind, name, idx);
   }
 }
 
