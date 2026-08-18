@@ -86,7 +86,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 | `webui/src/components/KpiCards.tsx` | KPI 卡片行（Dashboard 三页 + 会话详情页共用） |
 | `webui/src/components/PageHeader.tsx` | 页面标题行（类别色标题 + 实时监控徽标） |
 | `webui/src/components/TimeRangeSelector.tsx` | 时间范围分段按钮组（DAILY_RANGES 常量） |
-| `webui/src/components/ChartCard.tsx` | 图表卡片外壳 |
+| `webui/src/components/ChartsCard.tsx` | 合并图表卡片（顶部左对齐时间范围标签 + 左右两列图表内容） |
 
 ## 数据流
 
