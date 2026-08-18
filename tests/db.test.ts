@@ -1,6 +1,6 @@
 /** 数据库 CRUD 测试 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, replaceProviderModels, listProviderModels, seedProviderModels, clearAllData, closeDb, queryAll, upsertHourlyStat } from '../proxy/db.js';
+import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, replaceProviderModels, listProviderModels, seedProviderModels, clearAllData, closeDb, queryAll, getDb, saveDb, upsertHourlyStat } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -219,5 +219,36 @@ describe('db', () => {
     upsertHourlyStat('OpenAI', null as any, 'codex', 0.01, 10, 5, 8, 2, 1786604160000);
     const rows = queryAll("SELECT * FROM hourly_stats WHERE hour_ms = 1786600800000 AND provider = 'openai' AND model = 'unknown' AND tool = 'codex'");
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe('老库 pricing 表直删', () => {
+  // 独立临时库 + 本用例位于文件末尾（用例内会 closeDb 切换单例，之后无其他用例依赖共享库；afterAll closeDb 幂等）
+  it('老库含 pricing 表：initDb 后 pricing 被 DROP，不迁移历史定价', async () => {
+    // 模拟老库：先关闭 beforeAll 打开的共享库，让 initDb 真正切换到独立库
+    const old = createTempDb();
+    closeDb();
+    await initDb(old.dbPath);
+    // 用 raw SQL 模拟老库 pricing 存量（当前 initDb 已不建 pricing，需手动建后再重启验证 DROP）
+    const d = getDb();
+    d.run(`CREATE TABLE IF NOT EXISTS pricing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL, model TEXT NOT NULL,
+      input_price REAL NOT NULL, cache_input_price REAL NOT NULL, output_price REAL NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'per_1M_tokens', currency TEXT NOT NULL DEFAULT 'CNY',
+      effective_from TEXT, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(provider, model, effective_from)
+    )`);
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price) VALUES ('legacy-prov', 'legacy-model', 1, 0.5, 2)`);
+    saveDb();
+    closeDb();
+    // 重新打开（当前版本 initDb）：pricing 应被 DROP
+    await initDb(old.dbPath);
+    const rows = queryAll("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pricing'");
+    expect(rows).toHaveLength(0);
+    // provider_models 不含迁移数据（不迁移历史定价）
+    expect(listProviderModels().filter(r => r.provider === 'legacy-prov')).toHaveLength(0);
+    closeDb();
+    old.cleanup();
   });
 });
