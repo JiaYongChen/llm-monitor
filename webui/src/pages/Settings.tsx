@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
+import PageHeader from '../components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -55,7 +56,7 @@ export default function Settings() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6 animate-in">
-      <h1 className="text-2xl font-bold tracking-tight sticky top-0 z-10 bg-[#f5f5f7] -mt-8 pt-8 pb-3 -mb-3">设置</h1>
+      <PageHeader title="设置" />
 
       {/* 供应商接入 */}
       <Card>
