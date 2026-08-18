@@ -67,4 +67,12 @@ describe('fillDateRange 季度/年度（月/周序列）', () => {
     expect(rows[rows.length - 2]).toBe('2025-W52');   // 12-22~12-28 那周
     expect(rows[rows.length - 1]).toBe('2026-W01');   // 12-29~12-31（ISO 年已跨年）
   });
+
+  it('thisQuarter 跨 ISO 年：Q4 末周标签属次年 W01（%G 语义）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2024, 10, 15, 12, 0, 0)); // 2024-11-15 → thisQuarter = Q4 2024
+    const rows = fillDateRange('thisQuarter', 8);
+    expect(rows[rows.length - 2]).toBe('2024-W52');   // 12-22~12-28 那周
+    expect(rows[rows.length - 1]).toBe('2025-W01');   // 12-29~12-31（ISO 年已跨年，1/1 2025 周三 → W1 含 12-29 起）
+  });
 });
