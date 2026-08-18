@@ -17,7 +17,7 @@ export default function ProviderDetail() {
   const providerName = provider || '';
   const { currency, rates } = useCurrency();
   const sym = CURRENCIES[currency].symbol;
-  const { dailyStats, costDailyData, dailyRange, setDailyRange, dailyTz, totals } = useDashboardData({ groupBy: 'model', provider: providerName });
+  const { dailyStats, costDailyData, dailyRange, setDailyRange, dailyTz, totals } = useDashboardData({ groupBy: 'model', provider: providerName, pageKey: 'provider' });
   const { data: colors } = useCategoryColors();
   const { totalCalls, totalCost, totalOutput, totalUncached, totalCacheRead } = totals;
   return (

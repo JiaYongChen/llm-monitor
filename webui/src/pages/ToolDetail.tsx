@@ -26,7 +26,7 @@ export default function ToolDetail() {
   const { data: providerModels } = useQuery({ queryKey: ['provider-models'], queryFn: () => api.listProviderModels() });
   // 工具名大小写不敏感匹配（URL 参数可能为任意大小写）
   const toolConfig = toolConfigs?.find((t: any) => toolName && t.tool.toLowerCase() === toolName.toLowerCase());
-  const { dailyStats, costDailyData, dailyRange, setDailyRange, dailyTz, totals } = useDashboardData({ groupBy: 'provider', tool: toolName });
+  const { dailyStats, costDailyData, dailyRange, setDailyRange, dailyTz, totals } = useDashboardData({ groupBy: 'provider', tool: toolName, pageKey: 'tool' });
   const { data: colors } = useCategoryColors();
   const { totalCalls, totalCost, totalOutput, totalUncached, totalCacheRead } = totals;
   return (

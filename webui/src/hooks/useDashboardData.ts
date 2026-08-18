@@ -3,16 +3,23 @@ import { useQuery } from '@tanstack/react-query';
 import * as api from '../api/client';
 import type { CategoryKind } from '../lib/colors';
 
-/** 模块级共享的时间范围档位：页面切换（卸载/挂载）时保持用户上次选择 */
-let sharedRange = '30d';
+/** 页面类型键：时间范围按页面独立记忆（总览 / 工具详情 / 供应商详情各持有一份） */
+export type PageKey = 'overview' | 'tool' | 'provider';
+
+/** 模块级按页面类型记忆的时间范围档位：会话内各页独立记忆，刷新浏览器全部回到默认 '30d' */
+const rangesByPage: Record<PageKey, string> = {
+  overview: '30d',
+  tool: '30d',
+  provider: '30d',
+};
 
 /** Dashboard 三页共用查询 hook：stats/dailyStats/dailyModelStats/costDailyStats 四查询 + 时区配置 + totals 归约。
  *  查询键与拆分前完全一致 → 页面切换时 react-query 共享缓存，零重复请求。 */
-export default function useDashboardData({ groupBy, provider, tool }: { groupBy: CategoryKind; provider?: string; tool?: string }) {
-  const [dailyRange, setDailyRangeState] = useState(sharedRange);
-  /** 受控更新：同步写回模块级共享状态，跨页面保持选择 */
+export default function useDashboardData({ groupBy, provider, tool, pageKey }: { groupBy: CategoryKind; provider?: string; tool?: string; pageKey: PageKey }) {
+  const [dailyRange, setDailyRangeState] = useState(rangesByPage[pageKey]);
+  /** 受控更新：同步写回本页键的记忆值，页面切换（卸载/挂载）后恢复本页上次选择 */
   const setDailyRange = (v: string) => {
-    sharedRange = v;
+    rangesByPage[pageKey] = v;
     setDailyRangeState(v);
   };
   const { data: stats } = useQuery({ queryKey: ['stats', groupBy, provider, tool], queryFn: () => api.getStats(groupBy, provider, tool), refetchInterval: 5000 });

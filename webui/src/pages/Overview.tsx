@@ -23,7 +23,7 @@ export default function Overview() {
 function OverviewContent() {
   const { currency, rates } = useCurrency();
   const sym = CURRENCIES[currency].symbol;
-  const { dailyStats, costDailyData, dailyRange, setDailyRange, dailyTz, totals } = useDashboardData({ groupBy: 'tool' });
+  const { dailyStats, costDailyData, dailyRange, setDailyRange, dailyTz, totals } = useDashboardData({ groupBy: 'tool', pageKey: 'overview' });
   const { totalCalls, totalCost, totalOutput, totalUncached, totalCacheRead } = totals;
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-6 animate-in">
