@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   initDb, closeDb, getDb, queryAll, listToolConfigs, updateToolConfig,
   migrateToolCanonicalNames, migrateLowercaseNames, listProviderConfigs,
+  saveDb, listProviderModels,
 } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
@@ -198,5 +199,36 @@ describe('migrateLowercaseNames 小写迁移', () => {
     d.run(`INSERT INTO sessions (tool, fingerprint, status, created_at) VALUES ('NEWTOOL', 'fp_lc_gate', 'active', 1)`);
     migrateLowercaseNames();
     expect(queryAll(`SELECT tool FROM sessions WHERE fingerprint = 'fp_lc_gate'`)[0].tool).toBe('NEWTOOL');
+  });
+});
+
+describe('老库 pricing 表直删', () => {
+  // 独立临时库 + 本用例位于文件末尾（用例内会 closeDb 切换单例，之后无其他用例依赖共享库）
+  it('老库含 pricing 表：initDb 后 pricing 被 DROP，迁移不报错（定价不迁移）', async () => {
+    // 模拟老库：先关闭 beforeAll 打开的共享库，让 initDb 真正切换到独立库
+    const old = createTempDb();
+    closeDb();
+    await initDb(old.dbPath);
+    // 用 raw SQL 模拟老库 pricing 存量（当前 initDb 已不建 pricing，需手动建后再重启验证 DROP）
+    const d = getDb();
+    d.run(`CREATE TABLE IF NOT EXISTS pricing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL, model TEXT NOT NULL,
+      input_price REAL NOT NULL, cache_input_price REAL NOT NULL, output_price REAL NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'per_1M_tokens', currency TEXT NOT NULL DEFAULT 'CNY',
+      effective_from TEXT, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(provider, model, effective_from)
+    )`);
+    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price) VALUES ('legacy-prov', 'legacy-model', 1, 0.5, 2)`);
+    saveDb();
+    closeDb();
+    // 重新打开（新版本 initDb）：pricing 应被 DROP
+    await initDb(old.dbPath);
+    const rows = queryAll("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pricing'");
+    expect(rows).toHaveLength(0);
+    // provider_models 不含迁移数据（不迁移历史定价）
+    expect(listProviderModels().filter(r => r.provider === 'legacy-prov')).toHaveLength(0);
+    closeDb();
+    old.cleanup();
   });
 });

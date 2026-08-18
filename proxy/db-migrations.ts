@@ -360,10 +360,3 @@ function mergeToolConfigVariants(lower: string, preferredCanonical?: string): vo
     if (v !== survivor) runRaw('DELETE FROM tool_config WHERE rowid = ?', [v.rid]);
   }
 }
-
-/** 折叠一组 (created_at, updated_at) 值：created 取最小非零（全 0 → 0 = 未知），updated 取最大 */
-function foldTimestamps(vals: Array<[number, number]>): [number, number] {
-  const created = Math.min(...vals.map(([c]) => c || 0).filter(v => v > 0).concat(Infinity));
-  const updated = Math.max(...vals.map(([, u]) => u || 0));
-  return [created === Infinity ? 0 : created, updated];
-}
