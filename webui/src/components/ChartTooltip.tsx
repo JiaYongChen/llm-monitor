@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { fmtXAxis } from '../lib/dates';
 
 /**
  * 柱状图选中列的虚线边框 cursor。
@@ -33,7 +34,8 @@ export default function ChartTooltip({ active, payload, label, formatValue }: Ch
   return (
     <div className="rounded-[10px] border border-[#e5e5ea] bg-white px-3 py-2 text-xs shadow-sm">
       <div className="mb-1 flex items-center justify-between gap-6 font-medium text-[#1d1d1f]">
-        <span>{label}</span>
+        {/* 与图表 X 轴刻度共用 fmtXAxis，保证 tooltip 日期标签与坐标轴显示一致 */}
+        <span>{fmtXAxis(String(label))}</span>
         <span className="font-mono text-[#6366f1]">{formatValue(total)}</span>
       </div>
       {rows.length > 0 && (
