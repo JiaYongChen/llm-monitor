@@ -12,7 +12,8 @@ const COLORS = {
   cached: '#30b48b',
 };
 
-interface DailyData {
+/** 每日统计数据行（与后端 /api/stats/daily 返回一致；TokenDistributionBarChart 复用） */
+export interface DailyData {
   date: string;
   model?: string;
   category?: string;
