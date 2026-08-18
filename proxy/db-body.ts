@@ -1,9 +1,9 @@
 /** body 文件存储 — 每调用一文件：bodyData/<sessionId>/<createdAtMs>-<callId>.json
- *  纯文件系统操作，不依赖数据库模块（孤儿对账等需要 DB 的逻辑由调用方实现）。 */
+ *  文件读写（writeBody/readBody）+ 删除联动（deleteSessionBodies/moveSessionBodies/clearAllBodies）+ 孤儿文件对账（reconcileOrphanBodies）。 */
 import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BODY_DIR } from './config.js';
-import { getDb, queryAll, saveDb } from './db-core.js';
+import { queryAll } from './db-core.js';
 
 /** 当前 body 根目录（默认 DATA_DIR/bodyData，测试可注入临时目录） */
 let bodyDir = BODY_DIR;
@@ -77,63 +77,6 @@ export function listBodyFiles(): Array<{ path: string; sessionId: number; callId
     } catch {}
   }
   return out;
-}
-
-/** 处理一批存量 body：SELECT 未迁移行 → 写文件 → 列置 NULL。返回剩余未迁移行数。 */
-export function migrateLegacyBodies(batchSize = 500): number {
-  const d = getDb();
-  // 列可能已 DROP（门控竞态/重复调用）→ 探测后返回 0
-  const colCheck = queryAll("SELECT name FROM pragma_table_info('calls') WHERE name IN ('request_body', 'response_body')");
-  if (colCheck.length === 0) return 0;
-  const rows = queryAll(
-    'SELECT id, session_id, created_at, request_body, response_body FROM calls WHERE request_body IS NOT NULL OR response_body IS NOT NULL LIMIT ?',
-    [batchSize],
-  );
-  for (const row of rows) {
-    writeBody(Number(row.session_id), Number(row.id), Number(row.created_at), (row.request_body as string | null), (row.response_body as string | null));
-    d.run('UPDATE calls SET request_body = NULL, response_body = NULL WHERE id = ?', [row.id]);
-  }
-  if (rows.length > 0) saveDb();
-  const remaining = queryAll('SELECT COUNT(*) AS cnt FROM calls WHERE request_body IS NOT NULL OR response_body IS NOT NULL')[0];
-  return Number(remaining.cnt) || 0;
-}
-
-/** body 迁移收尾：删除 body 列 + VACUUM 压缩 + 门控 */
-export function finishBodyMigration(): void {
-  const d = getDb();
-  try { d.run('ALTER TABLE calls DROP COLUMN request_body'); } catch {}
-  try { d.run('ALTER TABLE calls DROP COLUMN response_body'); } catch {}
-  d.run('VACUUM');
-  d.run("INSERT OR REPLACE INTO metadata (key, value) VALUES ('bodies_migrated', '1')");
-  saveDb(undefined, true);
-  console.log('[db] body 迁移完成：calls 表 body 列已删除并压缩');
-}
-
-let bodyMigrationTimer: ReturnType<typeof setInterval> | null = null;
-
-/** 启动 body 渐进迁移调度（门控已置位或无需迁移时立即收尾；重复调用忽略） */
-export function startBodyMigration(batchSize = 500, intervalMs = 100): void {
-  if (bodyMigrationTimer) return;   // 已启动：重复调用忽略
-  const gated = queryAll("SELECT value FROM metadata WHERE key = 'bodies_migrated'")[0];
-  if (gated?.value === '1') return;
-  bodyMigrationTimer = setInterval(() => {
-    try {
-      const remaining = migrateLegacyBodies(batchSize);
-      if (remaining === 0) {
-        finishBodyMigration();
-        stopBodyMigration();
-      }
-    } catch (err) {
-      console.warn('[db] body 迁移处理失败（下次轮询重试）:', (err as Error).message);
-    }
-  }, intervalMs);
-  if (bodyMigrationTimer && typeof bodyMigrationTimer === 'object' && 'unref' in bodyMigrationTimer) {
-    (bodyMigrationTimer as any).unref();
-  }
-}
-
-export function stopBodyMigration(): void {
-  if (bodyMigrationTimer) { clearInterval(bodyMigrationTimer); bodyMigrationTimer = null; }
 }
 
 /** 孤儿对账：删除 calls 表中已不存在的 body 文件（启动后台任务调用；低频） */
