@@ -8,6 +8,7 @@ import ChartsCard from '../components/ChartsCard';
 import UpstreamSelectorPanel from '../components/UpstreamSelectorPanel';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
+import TokenDistributionBarChart from '../components/TokenDistributionBarChart';
 import useDashboardData from '../hooks/useDashboardData';
 import { useCurrency, formatCost, CURRENCIES } from '../lib/currency';
 import { useCategoryColors, categoryColor } from '../lib/colors';
@@ -63,22 +64,16 @@ export default function ToolDetail() {
         { label: '输入 tokens', value: (totalUncached + totalCacheRead).toLocaleString(), icon: <Zap className="h-4 w-4 text-blue-500" /> },
       ]} />
       <ChartsCard range={dailyRange} onRangeChange={setDailyRange}>
-        <div>
-          <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
-          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="provider" />
+        {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
+            <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="provider" />
+          </div>
+          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="供应商分布" categoryKind="provider" />
         </div>
         {dailyStats && (
-          <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">Token 用量</h4>
-            <DailyBarChart
-              data={dailyStats}
-              range={dailyRange}
-              tz={dailyTz}
-              modelData={costDailyData}
-              groupLabel="供应商分布"
-              categoryKind="provider"
-            />
-          </div>
+          <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={costDailyData} />
         )}
       </ChartsCard>
     </div>

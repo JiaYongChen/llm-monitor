@@ -5,6 +5,7 @@ import KpiCards from '../components/KpiCards';
 import ChartsCard from '../components/ChartsCard';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
+import TokenDistributionBarChart from '../components/TokenDistributionBarChart';
 import useDashboardData from '../hooks/useDashboardData';
 import { useCurrency, formatCost, CURRENCIES } from '../lib/currency';
 import { useCategoryColors, categoryColor } from '../lib/colors';
@@ -36,22 +37,16 @@ export default function ProviderDetail() {
           sub: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: <Layers className="h-4 w-4 text-emerald-500" /> },
       ]} />
       <ChartsCard range={dailyRange} onRangeChange={setDailyRange}>
-        <div>
-          <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
-          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="model" />
+        {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
+            <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="model" />
+          </div>
+          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="模型分布" categoryKind="model" />
         </div>
         {dailyStats && (
-          <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">Token 用量</h4>
-            <DailyBarChart
-              data={dailyStats}
-              range={dailyRange}
-              tz={dailyTz}
-              modelData={costDailyData}
-              groupLabel="模型分布"
-              categoryKind="model"
-            />
-          </div>
+          <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={costDailyData} />
         )}
       </ChartsCard>
     </div>
