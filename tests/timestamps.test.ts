@@ -1,4 +1,4 @@
-/** 配置表时间戳测试 — provider_config / tool_config 的 created_at / updated_at 维护 */
+/** 配置表时间戳测试 — provider_config / tool_config / provider_models 的 created_at / updated_at 维护 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { initDb, closeDb, addProviderConfig, updateProviderConfig, updateToolConfig, listProviderConfigs, listToolConfigs, listProviderModels, replaceProviderModels } from '../proxy/db.js';
 import { createTempDb } from './setup.js';

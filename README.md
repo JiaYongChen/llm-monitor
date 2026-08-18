@@ -84,8 +84,8 @@ base_url = "http://localhost:9400/s/<id>/codex"
 - 格式转换在上游与工具格式不匹配时自动触发
 
 ### 费用计算
-- 可编辑的多币种模型定价表（CNY / USD / EUR / JPY / GBP）
-- 定价按供应商 + 模型前缀匹配，支持自定义定价
+- 多币种模型定价（CNY / USD / EUR / JPY / GBP），价格存于 provider_models 行内价格列（0 = 无定价，设置页显示「—」）
+- 定价按供应商 + 模型前缀匹配，由模型探测自动同步 + 内置种子导入，模型开关仅影响 UI 选择
 - 非 CNY 定价自动按汇率换算为 CNY 存储
 - 前端展示按用户选择币种实时换算
 
@@ -99,7 +99,7 @@ base_url = "http://localhost:9400/s/<id>/codex"
 - **工具页**：筛选到具体工具时显示上游供应商和模型配置
 - **会话详情**：调用时间线 + 上游配置 + 费用汇总
 - **调用详情**：请求/响应体查看 + Token 与费用明细
-- **设置**：供应商管理（URL / Key / 启停）、定价表管理、币种切换、数据清空
+- **设置**：供应商管理（URL / Key / 启停）、模型与定价同步管理、币种切换、数据清空
 
 ## 技术栈
 
@@ -164,7 +164,7 @@ llm-monitor/
 | GET | `/api/calls/:id` | 单条调用详情 |
 | GET | `/api/sessions` | 会话列表 |
 | GET | `/api/sessions/:id` | 会话详情 |
-| GET | `/api/pricing` | 定价列表 |
+| GET | `/api/provider-models` | 供应商模型与价格列表 |
 | GET | `/api/providers` | 供应商列表 |
 | GET | `/api/tool-configs` | 工具级上游配置 |
 | GET | `/api/config` | 全局配置（含汇率） |
@@ -183,9 +183,8 @@ llm-monitor/
 | POST | `/api/sessions/merge` | 合并会话 |
 | DELETE | `/api/sessions/:id` | 删除会话 |
 | PUT | `/api/tool-configs/:tool` | 更新工具上游配置 |
-| POST | `/api/pricing` | 添加/更新定价 |
-| POST | `/api/pricing/default` | 重置默认定价 |
-| DELETE | `/api/pricing/:id` | 删除定价 |
+| POST | `/api/provider-models/refresh` | 触发模型探测与定价同步 |
+| PUT | `/api/provider-models/:provider/:model/enabled` | 模型启用/停用 |
 | PUT | `/api/providers/:provider` | 更新供应商配置 |
 | POST | `/api/providers` | 添加供应商 |
 | DELETE | `/api/providers/:provider` | 删除供应商 |
