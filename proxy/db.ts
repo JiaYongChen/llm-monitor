@@ -517,7 +517,9 @@ export function getStats(groupBy: string, provider?: string, tool?: string): Rec
  * 时间统计：按范围 + 粒度聚合（从 hourly_stats 上卷，不受删除操作影响）。
  * range: '7d'|'14d'|'30d'|'60d' → 按天，最近 N 天
  *        'today'|'yesterday'      → 按小时（date 标签 'YYYY-MM-DD HH:00'）
- *        'thisMonth'|'lastMonth'|'thisQuarter'|'lastQuarter'|'thisYear'|'lastYear' → 按天
+ *        'thisMonth'|'lastMonth'  → 按天
+ *        'thisQuarter'|'lastQuarter' → 按 ISO 周（date 标签 'GGGG-WVV'）
+ *        'thisYear'|'lastYear'    → 按月（date 标签 'YYYY-MM'）
  * tzOffset: 时区偏移小时数（默认 8 = UTC+8）；hour_ms 为纯 UTC 小时边界，标签在查询端重算
  * 返回结构与旧版一致：date 为标签文本，分组时附带 category 列
  */
@@ -578,11 +580,17 @@ export function getDailyStats(range: string, provider?: string, tool?: string, g
      SUM(cache_read_tokens) as total_cache_read_tokens`;
 
   const isHourly = range === 'today' || range === 'yesterday';
+  const isMonthly = range === 'thisYear' || range === 'lastYear';
+  const isWeekly = range === 'thisQuarter' || range === 'lastQuarter';
   const tzSeconds = tzOffset * 3600;
-  // 标签在查询端按 tzOffset 重算：小时级 'YYYY-MM-DD HH:00'，天级 'YYYY-MM-DD'
+  // 标签在查询端按 tzOffset 重算：小时级 'YYYY-MM-DD HH:00'，天级 'YYYY-MM-DD'，月级 'YYYY-MM'，周级 ISO 'GGGG-WVV'
   const labelExpr = isHourly
     ? `strftime('%Y-%m-%d %H:00', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`
-    : `strftime('%Y-%m-%d', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`;
+    : isMonthly
+      ? `strftime('%Y-%m', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`
+      : isWeekly
+        ? `strftime('%G-W%V', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`
+        : `strftime('%Y-%m-%d', (hour_ms / 1000) + ${tzSeconds}, 'unixepoch')`;
 
   let groupCol = '';
   if (groupBy === 'tool') groupCol = 'tool as category,';
