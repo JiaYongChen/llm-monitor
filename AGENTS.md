@@ -153,7 +153,7 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 数据库 `hourly_stats` 表独立于 `calls`/`sessions` 累积调用统计（主键 `(hour_ms, provider, model, tool)`，纯 UTC 小时毫秒，写入端零时区）：
 
 - recorder 每次处理后实时 upsert（`hour_ms` 由 createdAtMs 整数运算取小时边界，tool/供应商/模型自动归一化）
-- `getStats`/`getDailyStats` 查询 `hourly_stats` 而非 `calls`；天级/小时级标签在查询端按 tzOffset 重算（`today`/`yesterday` 小时粒度，`7d`~`60d` 与月/季/年范围按天）
+- `getStats`/`getDailyStats` 查询 `hourly_stats` 而非 `calls`；标签在查询端按 tzOffset 重算（`today`/`yesterday` 小时粒度，`7d`~`60d` 与月档位按天，季档位按 ISO 周 `YYYY-Www`，年档位按月 `YYYY-MM`）
 - 删除操作行为：
   - 单条删除 / 清空会话 / 清理旧数据 → **统计不变**
   - 清空全部数据 → 统计同步清空
