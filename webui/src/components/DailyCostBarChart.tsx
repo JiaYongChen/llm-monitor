@@ -15,7 +15,8 @@ interface DailyCostRow {
 
 export default function DailyCostBarChart({ data, range, tz, categoryKind = 'model' }: { data: DailyCostRow[]; range: string; tz: number; categoryKind?: CategoryKind }) {
   const { currency, rates } = useCurrency();
-  // 短范围（today/yesterday）后端返回小时标签，X 轴按 HH:00 展示；其余范围按天（MM-DD）
+  // X 轴刻度由 fmtXAxis 按标签格式自判别：小时 HH:00 / 周 W34 / 月 YYYY-MM / 天 MM-DD
+
   // 按 category 和 date 组织数据 → 宽表格式：{ date, CatA: cost, CatB: cost, ... }
   const chartData = useMemo(() => {
     // 先用 || '' 兜底再 filter：filter(Boolean) 无类型收窄能力，直接 map 会残留 undefined 推断

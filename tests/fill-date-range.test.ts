@@ -1,7 +1,8 @@
 /** fillDateRange 序列测试（小时级 today/yesterday + 月/周级季度/年度）— 日期动态计算（UTC+8 同法），任意时刻可跑 */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fillDateRange } from '../webui/src/lib/dates';
 
+afterEach(() => { vi.useRealTimers(); });
 const now = new Date();
 const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000);
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -57,5 +58,13 @@ describe('fillDateRange 季度/年度（月/周序列）', () => {
     expect(rows[0]).toBe(`${utcNow.getFullYear() - 1}-01`);
     expect(rows[11]).toBe(`${utcNow.getFullYear() - 1}-12`);
     for (const r of rows) expect(r).toMatch(/^\d{4}-\d{2}$/);
+  });
+
+  it('lastQuarter 跨年季：序列含 2025-W52 与 2026-W01（ISO 年跨年语义）', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 1, 15, 12, 0, 0)); // 2026-02-15 → lastQuarter = 2025 Q4（10-12 月）
+    const rows = fillDateRange('lastQuarter', 8);
+    expect(rows[rows.length - 2]).toBe('2025-W52');   // 12-22~12-28 那周
+    expect(rows[rows.length - 1]).toBe('2026-W01');   // 12-29~12-31（ISO 年已跨年）
   });
 });
