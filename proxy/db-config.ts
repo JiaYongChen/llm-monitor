@@ -6,8 +6,10 @@
  */
 
 import { queryAll, queryOne, execute, executeInsert, getDb, runRaw, saveDb } from './db-core.js';
-import { BUILTIN_PROVIDERS } from './db-migrations.js';
 import type { ProviderModelRow } from '../shared/types.js';
+
+/** 内置供应商名称集合（不可删除、不可停用；存储不变量：小写） */
+export const BUILTIN_PROVIDERS = new Set(['anthropic', 'openai']);
 
 // ── 名称归一化 ──
 

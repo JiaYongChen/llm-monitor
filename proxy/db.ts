@@ -10,17 +10,68 @@ import { ensureDataDir, DB_PATH } from './config.js';
 import { deleteSessionBodies, moveSessionBodies, clearAllBodies, bodyFilePath } from './db-body.js';
 import type { CallRecord } from '../shared/types.js';
 import { initSqlJsCore, setDb, getSql, setCurrentDbPath, getDb, saveDb, closeDb, queryAll, queryOne, execute, executeInsert, startSaveSafetyNet } from './db-core.js';
-import { runMigrations, migrateToolCanonicalNames, migrateLowercaseNames, CALLS_TABLE_DDL, SESSIONS_TABLE_DDL } from './db-migrations.js';
-import { normalizeToolName, normalizeProviderName, getToolConfig } from './db-config.js';
+import { normalizeToolName, normalizeProviderName, getToolConfig, BUILTIN_PROVIDERS } from './db-config.js';
 
-// 兼容旧引用：统一从 db-core / db-migrations / db-config re-export（router/recorder/测试 import 路径不变）
+// 兼容旧引用：统一从 db-core / db-config re-export（router/recorder/测试 import 路径不变）
 export { getDb, saveDb, closeDb, queryAll, queryOne } from './db-core.js';
-export { BUILTIN_PROVIDERS, migrateToolCanonicalNames, migrateLowercaseNames, runMigrations } from './db-migrations.js';
 // 兼容旧引用：配置 CRUD 与名称归一化统一从 db-config re-export
-export { normalizeToolName, normalizeProviderName, listToolConfigs, getToolConfig, updateToolConfig,
+export { BUILTIN_PROVIDERS, normalizeToolName, normalizeProviderName, listToolConfigs, getToolConfig, updateToolConfig,
   listProviderConfigs, getProviderConfig, updateProviderConfig,
   addProviderConfig, deleteProviderConfig, getSetting, setSetting,
   listProviderModels, replaceProviderModels, seedProviderModels, setModelEnabled, deleteProviderModels } from './db-config.js';
+
+/** calls 表 DDL — 最终 schema（历史迁移已删除，此处为单一来源） */
+const CALLS_TABLE_DDL = `
+    CREATE TABLE IF NOT EXISTS calls (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id      INTEGER NOT NULL REFERENCES sessions(id),
+      provider        TEXT    NOT NULL,
+      model           TEXT    NOT NULL,
+      endpoint        TEXT    NOT NULL,
+      method          TEXT    NOT NULL,
+      status_code     INTEGER,
+      error_message   TEXT,
+      duration_ms     INTEGER NOT NULL,
+      prompt_tokens       INTEGER,
+      output_tokens       INTEGER,
+      cache_read_tokens   INTEGER,
+      cache_write_tokens  INTEGER,
+      uncached_input      INTEGER,
+      input_cost    REAL DEFAULT 0.0,
+      output_cost   REAL DEFAULT 0.0,
+      total_cost    REAL DEFAULT 0.0,
+      cache_savings REAL DEFAULT 0.0,
+      request_body   TEXT,
+      response_body  TEXT,
+      fingerprint  TEXT NOT NULL,
+      source_port  INTEGER,
+      tool         TEXT,
+      created_at INTEGER NOT NULL,
+      target_url TEXT,
+      source_ip TEXT,
+      downstream_url TEXT
+    )
+  `;
+
+/** sessions 表 DDL — 最终 schema（历史迁移已删除，此处为单一来源） */
+const SESSIONS_TABLE_DDL = `
+    CREATE TABLE IF NOT EXISTS sessions (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool          TEXT    NOT NULL,
+      label         TEXT,
+      fingerprint   TEXT    NOT NULL UNIQUE,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      total_cost    REAL    NOT NULL DEFAULT 0,
+      total_tokens  INTEGER NOT NULL DEFAULT 0,
+      first_call_at INTEGER,
+      last_call_at  INTEGER,
+      first_endpoint TEXT,
+      status        TEXT    NOT NULL DEFAULT 'active',
+      created_at    INTEGER NOT NULL,
+      upstream_provider TEXT,
+      upstream_model TEXT
+    )
+  `;
 
 // ── 初始化 ──
 
@@ -61,14 +112,14 @@ export async function initDb(dbPath?: string): Promise<void> {
   } else {
     setDb(new SQL.Database());
   }
-  const db = getDb(); // 绑定当前数据库实例，后续建表/迁移/种子代码复用
+  const db = getDb(); // 绑定当前数据库实例，后续建表/种子代码复用
 
   db.run('PRAGMA journal_mode = WAL;');
 
-  // 创建 metadata 表（最先，用于 schema 版本检查）
+  // 创建 metadata 表（最先；存储门控/同步状态等键值）
   db.run(`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)`);
 
-  // calls/sessions DDL 与 db-migrations 的 v2 重建共用同一常量（列清单一致，单一来源）
+  // calls/sessions 建表（DDL 常量见模块顶部 — 最终 schema 单一来源）
   db.run(CALLS_TABLE_DDL);
   db.run(SESSIONS_TABLE_DDL);
 
@@ -110,23 +161,6 @@ export async function initDb(dbPath?: string): Promise<void> {
     )
   `);
 
-  // 兼容已有库：添加 upstream_provider 列（列已存在则忽略错误）
-  try { db.run(`ALTER TABLE sessions ADD COLUMN upstream_provider TEXT`); } catch {}
-  try { db.run(`ALTER TABLE sessions ADD COLUMN upstream_model TEXT`); } catch {}
-  // 兼容已有库：添加 base_url_anthropic 列
-  try { db.run(`ALTER TABLE provider_config ADD COLUMN base_url_anthropic TEXT`); } catch {}
-  // 兼容已有库：添加配置表时间戳列（存量行回填 0 = 未知）
-  try { db.run(`ALTER TABLE provider_config ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE provider_config ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE tool_config ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE tool_config ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  // 兼容已有库：添加 target_url、source_ip 列
-  try { db.run(`ALTER TABLE calls ADD COLUMN target_url TEXT`); } catch {}
-  try { db.run(`ALTER TABLE calls ADD COLUMN source_ip TEXT`); } catch {}
-  // 兼容已有库：添加 tool 列
-  try { db.run(`ALTER TABLE calls ADD COLUMN tool TEXT`); } catch {}
-  try { db.run(`ALTER TABLE calls ADD COLUMN downstream_url TEXT`); } catch {}
-
   // 工具级上游配置（claudecode / codex 等的默认供应商和模型覆盖）
   db.run(`
     CREATE TABLE IF NOT EXISTS tool_config (
@@ -154,12 +188,6 @@ export async function initDb(dbPath?: string): Promise<void> {
       PRIMARY KEY (provider, model)
     )
   `);
-  // 兼容已有库：provider_models 价格列（列已存在则忽略错误）
-  try { db.run(`ALTER TABLE provider_models ADD COLUMN input_price REAL NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE provider_models ADD COLUMN cache_input_price REAL NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE provider_models ADD COLUMN output_price REAL NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE provider_models ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'`); } catch {}
-
   // 类别颜色：色板静态数据表（改颜色只改此表，不动代码；theme 为未来主题预留）
   db.run(`
     CREATE TABLE IF NOT EXISTS color_palette (
@@ -185,33 +213,7 @@ export async function initDb(dbPath?: string): Promise<void> {
   // pricing 表已废弃（定价合并进 provider_models 价格列）：老库直接删表重建，不迁移历史定价
   db.run('DROP TABLE IF EXISTS pricing');
 
-  // 历史数据工具名归一化迁移（claudeCode→ClaudeCode、codex/chatGPT→Codex 等，单次执行）
-  // 失败时内部已回滚；此处降级为警告并继续启动（门控未设置，下次启动自动重试），避免迁移异常导致整个代理不可用
-  try {
-    migrateToolCanonicalNames();
-  } catch (err) {
-    console.error(`[db] ⚠ 历史数据归一化迁移失败（已回滚，不影响启动，下次启动重试）: ${(err as Error).message}`);
-  }
-
-  // 历史数据小写迁移（名称字段统一小写，单次执行；失败降级警告，下次启动重试）
-  try {
-    migrateLowercaseNames();
-  } catch (err) {
-    console.error(`[db] ⚠ 小写迁移失败（已回滚，不影响启动，下次启动重试）: ${(err as Error).message}`);
-  }
-
-  // 迁移：读当前版本（无版本号视为 v1），依次执行未应用的迁移
-  const storedVersion = (() => {
-    try {
-      const r = db.exec("SELECT value FROM metadata WHERE key = 'schema_version'");
-      if (r.length > 0 && r[0].values.length > 0) return parseInt(r[0].values[0][0] as string);
-    } catch {}
-    return 1;
-  })();
-  runMigrations(storedVersion);
-
-  // 索引：必须在迁移之后创建 — v2 迁移会 DROP + 重建 calls/sessions（索引随表删除），
-  // 迁移完成后再统一建索引，全新库与老库升级路径均覆盖
+  // 索引创建（统一在全部表建完后执行，全新库路径覆盖）
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_calls_session ON calls(session_id)',
     'CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at)',
@@ -266,7 +268,7 @@ export function insertCall(r: CallRecord): number {
   );
 }
 
-/** 列出调用记录（tool 过滤按 calls.tool 直查，v4 迁移已回填历史 NULL） */
+/** 列出调用记录（tool 过滤按 calls.tool 直查） */
 export function listCalls(sessionId?: number, provider?: string, tool?: string, limit = 50, offset = 0): Record<string, any>[] {
   let sql = 'SELECT c.* FROM calls c';
   const conditions: string[] = [];
