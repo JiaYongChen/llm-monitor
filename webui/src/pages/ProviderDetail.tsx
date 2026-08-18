@@ -2,8 +2,7 @@ import { useParams } from 'react-router-dom';
 import { Activity, Zap, Layers } from 'lucide-react';
 import PageHeader, { OVERVIEW_COLOR } from '../components/PageHeader';
 import KpiCards from '../components/KpiCards';
-import TimeRangeSelector from '../components/TimeRangeSelector';
-import ChartCard from '../components/ChartCard';
+import ChartsCard from '../components/ChartsCard';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
 import useDashboardData from '../hooks/useDashboardData';
@@ -36,22 +35,25 @@ export default function ProviderDetail() {
         { label: '缓存命中率', value: totalUncached + totalCacheRead > 0 ? `${(totalCacheRead / (totalUncached + totalCacheRead) * 100).toFixed(1)}%` : '--',
           sub: totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} 命中` : '暂无缓存命中', icon: <Layers className="h-4 w-4 text-emerald-500" /> },
       ]} />
-      <TimeRangeSelector value={dailyRange} onChange={setDailyRange} />
-      <ChartCard title="费用分布">
-        <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="model" />
-      </ChartCard>
-      {dailyStats && (
-        <ChartCard title="Token 用量">
-          <DailyBarChart
-            data={dailyStats}
-            range={dailyRange}
-            tz={dailyTz}
-            modelData={costDailyData}
-            groupLabel="模型分布"
-            categoryKind="model"
-          />
-        </ChartCard>
-      )}
+      <ChartsCard range={dailyRange} onRangeChange={setDailyRange}>
+        <div>
+          <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
+          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="model" />
+        </div>
+        {dailyStats && (
+          <div>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">Token 用量</h4>
+            <DailyBarChart
+              data={dailyStats}
+              range={dailyRange}
+              tz={dailyTz}
+              modelData={costDailyData}
+              groupLabel="模型分布"
+              categoryKind="model"
+            />
+          </div>
+        )}
+      </ChartsCard>
     </div>
   );
 }

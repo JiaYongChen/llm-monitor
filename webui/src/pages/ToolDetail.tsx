@@ -4,8 +4,7 @@ import { Activity, Zap } from 'lucide-react';
 import * as api from '../api/client';
 import PageHeader, { OVERVIEW_COLOR } from '../components/PageHeader';
 import KpiCards from '../components/KpiCards';
-import TimeRangeSelector from '../components/TimeRangeSelector';
-import ChartCard from '../components/ChartCard';
+import ChartsCard from '../components/ChartsCard';
 import UpstreamSelectorPanel from '../components/UpstreamSelectorPanel';
 import DailyBarChart from '../components/DailyBarChart';
 import DailyCostBarChart from '../components/DailyCostBarChart';
@@ -63,22 +62,25 @@ export default function ToolDetail() {
         { label: '输出 tokens', value: totalOutput.toLocaleString(), icon: <Zap className="h-4 w-4 text-sky-500" /> },
         { label: '输入 tokens', value: (totalUncached + totalCacheRead).toLocaleString(), icon: <Zap className="h-4 w-4 text-blue-500" /> },
       ]} />
-      <TimeRangeSelector value={dailyRange} onChange={setDailyRange} />
-      <ChartCard title="费用分布">
-        <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="provider" />
-      </ChartCard>
-      {dailyStats && (
-        <ChartCard title="Token 用量">
-          <DailyBarChart
-            data={dailyStats}
-            range={dailyRange}
-            tz={dailyTz}
-            modelData={costDailyData}
-            groupLabel="供应商分布"
-            categoryKind="provider"
-          />
-        </ChartCard>
-      )}
+      <ChartsCard range={dailyRange} onRangeChange={setDailyRange}>
+        <div>
+          <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">费用分布</h4>
+          <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="provider" />
+        </div>
+        {dailyStats && (
+          <div>
+            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">Token 用量</h4>
+            <DailyBarChart
+              data={dailyStats}
+              range={dailyRange}
+              tz={dailyTz}
+              modelData={costDailyData}
+              groupLabel="供应商分布"
+              categoryKind="provider"
+            />
+          </div>
+        )}
+      </ChartsCard>
     </div>
   );
 }
