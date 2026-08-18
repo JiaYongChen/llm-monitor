@@ -13,6 +13,7 @@ import { startRecorder, stopRecorder, enqueueRecord } from './recorder.js';
 import { startBodyMigration, stopBodyMigration, reconcileOrphanBodies } from './db-body.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
 import { scheduleDailyModelSync, stopDailyModelSync } from './model-sync.js';
+import { importDefaultPricing } from './default-pricing.js';
 import { PORT, WEBUI_PORT } from './config.js';
 import { readFileSync } from 'node:fs';
 
@@ -50,7 +51,7 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
   }, 5000);
   scheduleDailyRefresh();
   scheduleDailyModelSync();
-  // 注：预置定价种子导入由 Task 4 重写为 seedProviderModels，此处暂移除
+  await importDefaultPricing();
 
   // 启动时校验所有已启用供应商的 base_url 有效，阻止无效配置启动
   const providers = listProviderConfigs() as any[];
