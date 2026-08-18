@@ -33,8 +33,8 @@ llm-monitor chatgpt         # chatGPT 为 Codex 的别名
 
 - 工具名大小写不敏感：`claude`/`claudeCode` → 小写存储 `claudecode`，`codex`/`chatGPT` → `codex`
 
-- Windows：`scripts/start-tool.cmd` → `start-tool.ps1`
-- macOS/Linux：`scripts/start-tool`（bash）
+- Windows：`scripts/start-tool.cmd` → `start-tool.ps1`（npm 对无扩展名 bin 目标在 Windows 下自动使用同名 `.cmd` 入口）
+- macOS/Linux：`scripts/start-tool`（bash）；注意 git 中该文件无执行位（100644），macOS/Linux 首次 clone 后需先 `chmod +x scripts/start-tool` 再 `npm link`，否则全局命令报 Permission denied
 - 预创建会话后将 ID 嵌入 URL（`/s/<id>/claudecode` 或 `/s/<id>/codex`，大小写不敏感），同终端所有请求归入同一会话
 - Codex 通过写入 `~/.codex/config.toml` 配置代理（不支持环境变量 `OPENAI_BASE_URL`）；Claude Code 通过 `ANTHROPIC_BASE_URL` 环境变量
 
@@ -107,6 +107,46 @@ CLI 工具 ─→ :9400/proxy 路由 ─→ 格式转换（按需） ─→ 上�
 - 自定义供应商工具通过 `tool_config` 表配置默认上游
 - 上游覆盖优先级：会话 > 工具 > URL 默认映射
 - 启动时校验所有已启用供应商的 `base_url` 有效，无效则拒绝启动
+
+### API 端点
+
+`/api/*` 注册在面板端口（:9401）的独立 Fastify 实例（`registerApiRoutes`），`/proxy/*` 在代理端口（:9400，`registerProxyRoutes`）：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/proxy/health` | 健康检查（代理端口） |
+| POST | `/proxy/sessions/start` | 预创建 pending 会话（代理端口） |
+| GET | `/api/stats` | 聚合统计（`group_by=tool\|provider\|model`） |
+| GET | `/api/stats/daily` | 按天统计 |
+| GET | `/api/calls` | 调用列表（`session_id` / `limit` / `offset`） |
+| GET | `/api/calls/count` | 调用总数 |
+| GET | `/api/calls/:id` | 单条调用详情 |
+| GET | `/api/sessions` | 会话列表 |
+| GET | `/api/sessions/:id` | 会话详情 |
+| GET | `/api/sessions/:id/token-stats` | 会话 Token 统计 |
+| GET | `/api/provider-models` | 供应商模型与价格列表 |
+| GET | `/api/provider-models/status` | 模型探测与定价同步状态 |
+| GET | `/api/providers` | 供应商列表 |
+| GET | `/api/tool-configs` | 工具级上游配置 |
+| GET | `/api/config` | 全局配置（含汇率） |
+| GET | `/api/colors` | 类别色板 |
+| PUT | `/api/sessions/:id/label` | 更新会话标签 |
+| PUT | `/api/sessions/:id/upstream` | 更新会话上游供应商 |
+| PUT | `/api/sessions/:id/model` | 更新会话上游模型 |
+| POST | `/api/sessions/merge` | 合并会话 |
+| DELETE | `/api/sessions/:id` | 删除会话 |
+| PUT | `/api/tool-configs/:tool` | 更新工具上游配置 |
+| POST | `/api/provider-models/refresh` | 触发模型探测与定价同步 |
+| PUT | `/api/provider-models/:provider/:model/enabled` | 模型启用/停用 |
+| PUT | `/api/providers/:provider` | 更新供应商配置 |
+| POST | `/api/providers` | 添加供应商 |
+| DELETE | `/api/providers/:provider` | 删除供应商 |
+| PUT | `/api/config` | 更新全局配置 |
+| POST | `/api/rates/refresh` | 手动刷新汇率 |
+| POST | `/api/data/clear` | 清空全部数据（含统计表） |
+| POST | `/api/data/clear-providers` | 清空第三方供应商 |
+| POST | `/api/data/clear-sessions` | 清空全部会话（统计不变） |
+| POST | `/api/data/cleanup` | 清理 N 天前的旧调用（统计不变） |
 
 ## 统计持久化
 
