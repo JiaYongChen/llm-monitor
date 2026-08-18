@@ -1,6 +1,6 @@
 /** 数据库 CRUD 测试 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, upsertPricing, listPricing, deletePricing, clearAllData, closeDb, queryAll, upsertHourlyStat } from '../proxy/db.js';
+import { initDb, insertCall, upsertSession, listCalls, countCalls, getCall, listSessions, getSession, updateSessionStats, getStats, getDailyStats, mergeSessions, replaceProviderModels, listProviderModels, seedProviderModels, clearAllData, closeDb, queryAll, upsertHourlyStat } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 import type { CallRecord } from '../shared/types.js';
 
@@ -168,14 +168,21 @@ describe('db', () => {
     expect(getSession(sid2)).toBeNull();
   });
 
-  it('pricing CRUD', () => {
-    const id = upsertPricing('test', 'test-model', 1.0, 0.5, 2.0);
-    expect(id).toBeGreaterThan(0);
-    const list = listPricing();
-    expect(list.some((p: any) => p.id === id)).toBe(true);
-    deletePricing(id);
-    const after = listPricing();
-    expect(after.some((p: any) => p.id === id)).toBe(false);
+  it('provider_models 价格写入与覆盖', () => {
+    replaceProviderModels('test', ['test-model'], new Map([['test-model', { input_price: 1, cache_input_price: 0.5, output_price: 2 }]]), Date.now());
+    let row = listProviderModels().find(r => r.provider === 'test' && r.model === 'test-model')!;
+    expect(row.input_price).toBe(1);
+    expect(row.cache_input_price).toBe(0.5);
+    expect(row.output_price).toBe(2);
+    expect(row.currency).toBe('USD');
+    // 覆盖写入
+    replaceProviderModels('test', ['test-model'], new Map([['test-model', { input_price: 3, cache_input_price: 1.5, output_price: 6 }]]), Date.now());
+    row = listProviderModels().find(r => r.provider === 'test' && r.model === 'test-model')!;
+    expect(row.input_price).toBe(3);
+    // 价格 null：价格列不动
+    replaceProviderModels('test', ['test-model'], null, Date.now());
+    row = listProviderModels().find(r => r.provider === 'test' && r.model === 'test-model')!;
+    expect(row.input_price).toBe(3);
   });
 
   it('upsertHourlyStat 新增记录', () => {

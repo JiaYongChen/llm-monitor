@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { probeModelsOpenAI, probeModelsAnthropic, syncProvider, getSyncStatus } from '../proxy/model-sync.js';
-import { initDb, closeDb, listPricing, addProviderConfig, listProviderModels, getSetting, upsertPricing, replaceProviderModels } from '../proxy/db.js';
+import { initDb, closeDb, addProviderConfig, listProviderModels, getSetting, replaceProviderModels } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
 // 本地 mock：验证鉴权头 + 返回模型列表
@@ -100,28 +100,7 @@ describe('syncProvider 集成', () => {
     expect(getSyncStatus('empty-key-prov')?.status).toBe('no_key');
   });
 
-  it('探测成功：模型入 provider_models、匹配定价写入 pricing（覆盖已有条目）、状态 ok', async () => {
-    addProviderConfig('mock-prov', `${url}/probe`, '', 'sk-ok');
-    await syncProvider('mock-prov');
-    const rows = listProviderModels().filter(r => r.provider === 'mock-prov');
-    expect(rows.map(r => r.model).sort()).toEqual(['gpt-5.6-luna', 'gpt-5.6-sol', 'unknown-xyz']);
-    const pricing = listPricing().filter(p => p.provider === 'mock-prov');
-    expect(pricing).toHaveLength(2); // unknown-xyz 匹配不到不建条目
-    const sol = pricing.find(p => p.model === 'gpt-5.6-sol')!;
-    expect(sol.input_price).toBe(5);
-    expect(sol.currency).toBe('USD');
-    const st = getSyncStatus('mock-prov')!;
-    expect(st.status).toBe('ok');
-    expect(st.model_count).toBe(3);
-    expect(st.priced_count).toBe(2);
-  });
-
-  it('定价覆盖已有条目（全部覆盖语义）', async () => {
-    upsertPricing('mock-prov', 'gpt-5.6-sol', 999, 999, 999, 'USD'); // 先写入旧价
-    await syncProvider('mock-prov');
-    const sol = listPricing().find(p => p.provider === 'mock-prov' && p.model === 'gpt-5.6-sol')!;
-    expect(sol.input_price).toBe(5); // 被覆盖
-  });
+  // 注：定价写入/覆盖集成用例由 Task 2 重写（定价改走 replaceProviderModels prices 参数）
 
   it('探测失败：状态 error、已有数据不动、不置灰', async () => {
     addProviderConfig('dead-prov', `${url}/not-exist`, '', 'sk');
@@ -130,11 +109,10 @@ describe('syncProvider 集成', () => {
     expect(getSyncStatus('dead-prov')?.status).toBe('error');
   });
 
-  it('两个 base_url 都为空：存量模型不置灰、定价不动、状态 error', async () => {
+  it('两个 base_url 都为空：存量模型不置灰、状态 error', async () => {
     addProviderConfig('no-url-prov', '', '', 'sk-any');
-    // 预置存量模型行与定价（模拟此前探测成功留下的缓存）
-    replaceProviderModels('no-url-prov', ['gpt-5.6-sol', 'gpt-5.6-luna'], Date.now());
-    upsertPricing('no-url-prov', 'gpt-5.6-sol', 999, 999, 999, 'USD');
+    // 预置存量模型行（模拟此前探测成功留下的缓存）
+    replaceProviderModels('no-url-prov', ['gpt-5.6-sol', 'gpt-5.6-luna'], null, Date.now());
     const r = await syncProvider('no-url-prov');
     expect(r.status).toBe('error');
     expect(r.error).toContain('未配置任何 Base URL');
@@ -142,8 +120,6 @@ describe('syncProvider 集成', () => {
     const rows = listProviderModels().filter(x => x.provider === 'no-url-prov');
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row.available).toBe(1); // 存量模型保持可用，不置灰
-    const p = listPricing().find(p => p.provider === 'no-url-prov' && p.model === 'gpt-5.6-sol')!;
-    expect(p.input_price).toBe(999); // 定价未被覆盖
   });
 
   it('定价源失败：模型照常更新，pricing 保持现状，状态仍 ok', async () => {

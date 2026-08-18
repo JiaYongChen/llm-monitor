@@ -3,10 +3,9 @@
  * 仿照 rates.ts 模式：fetch + 10s 超时 + 调度；定价匹配复用 pricing-sources.ts
  */
 
-import { getProviderConfig, upsertPricing, getSetting, setSetting, listProviderConfigs, normalizeProviderName, replaceProviderModels } from './db.js';
+import { getProviderConfig, getSetting, setSetting, listProviderConfigs, normalizeProviderName, replaceProviderModels } from './db.js';
 import { detectFormatFromUrl } from './normalizer.js';
 import { joinUrlPath } from '../shared/joinUrlPath.js';
-import { fetchLiteLLMPricing, fetchModelsDevPricing, fetchAnthropicPricing, matchModelPricing, type ModelPrice } from './pricing-sources.js';
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
 
@@ -79,22 +78,6 @@ function setSyncStatus(provider: string, s: SyncStatus): void {
   setSetting(`modelsync_${normalizeProviderName(provider)}`, JSON.stringify(s));
 }
 
-/** 定价源拉取（按供应商分流 + 回落链），返回 null 表示全部源失败 */
-async function fetchPricingFor(provider: string): Promise<Map<string, ModelPrice> | null> {
-  if (provider === 'anthropic') {
-    try { return await fetchAnthropicPricing(); }
-    catch (err) { console.warn('anthropic 官方定价源失败，回落 liteLLM:', (err as Error).message); }
-  }
-  try {
-    return await fetchLiteLLMPricing();
-  } catch (err) {
-    console.warn('liteLLM 定价源失败，回落 models.dev:', (err as Error).message);
-    try { return await fetchModelsDevPricing(); }
-    catch (err2) { console.warn('models.dev 定价源失败:', (err2 as Error).message); }
-  }
-  return null;
-}
-
 async function doSyncProvider(provider: string): Promise<SyncResult> {
   const config = getProviderConfig(provider);
   if (!config || !config.enabled) {
@@ -126,23 +109,11 @@ async function doSyncProvider(provider: string): Promise<SyncResult> {
   }
 
   // 2. 标记式更新 provider_models（探测失败时不会走到这里，已有数据不动）
+  // 注：定价写入链路由 Task 2 重写为 replaceProviderModels 的 prices 参数，此处暂传 null（价格列不动）
   const now = Date.now();
-  replaceProviderModels(provider, [...models], now);
+  replaceProviderModels(provider, [...models], null, now);
 
-  // 3. 定价匹配 + 全部覆盖写入
-  const prices = await fetchPricingFor(provider);
-  let priced = 0;
-  if (prices && prices.size > 0) {
-    for (const model of models) {
-      const price = matchModelPricing(model, prices);
-      if (price) {
-        upsertPricing(provider, model, price.input_price, price.cache_input_price, price.output_price, 'USD');
-        priced++;
-      }
-    }
-  }
-
-  const status: SyncStatus = { updated_at: now, status: 'ok', model_count: models.size, priced_count: priced };
+  const status: SyncStatus = { updated_at: now, status: 'ok', model_count: models.size, priced_count: 0 };
   setSyncStatus(provider, status);
   return { ...status };
 }

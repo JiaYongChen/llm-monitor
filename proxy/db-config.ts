@@ -55,54 +55,6 @@ export function updateToolConfig(tool: string, upstreamProvider: string | null, 
   );
 }
 
-// ── Pricing CRUD ──
-
-/** 列出定价 */
-export function listPricing(): Record<string, any>[] {
-  return queryAll('SELECT * FROM pricing ORDER BY id');
-}
-
-/** 新增或更新定价 */
-export function upsertPricing(
-  provider: string, model: string,
-  inputPrice: number, cacheInputPrice: number, outputPrice: number,
-  currency?: string,
-  isDefault?: boolean,
-): number {
-  provider = normalizeProviderName(provider);
-  model = model.toLowerCase();
-  const cur = currency || 'CNY';
-  const def = isDefault ? 1 : 0;
-  // sql.js 不支持 ON CONFLICT，用先查再插入/更新的方式（provider/model 入参已归一化，精确等值去重）
-  const existing = queryOne(
-    'SELECT id, is_default FROM pricing WHERE provider = ? AND model = ? AND effective_from IS NULL',
-    [provider, model],
-  );
-  if (existing) {
-    // 默认条目只更新价格和币种，不覆盖 is_default 标记
-    const keepDefault = existing.is_default ? 1 : def;
-    execute(
-      'UPDATE pricing SET input_price = ?, cache_input_price = ?, output_price = ?, currency = ?, is_default = ?, updated_at = ? WHERE id = ?',
-      [inputPrice, cacheInputPrice, outputPrice, cur, keepDefault, Date.now(), existing.id],
-    );
-    return Number(existing.id);
-  }
-  const now = Date.now();
-  return executeInsert(
-    'INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-    [provider, model, inputPrice, cacheInputPrice, outputPrice, cur, def, now, now],
-  );
-}
-
-/** 删除定价（默认条目不可删除） */
-export function deletePricing(pricingId: number): { ok: boolean; error?: string } {
-  const row = queryOne('SELECT is_default FROM pricing WHERE id = ?', [pricingId]);
-  if (!row) return { ok: false, error: '定价不存在' };
-  if (row.is_default) return { ok: false, error: '默认定价不可删除' };
-  execute('DELETE FROM pricing WHERE id = ?', [pricingId]);
-  return { ok: true };
-}
-
 // ── Provider Config CRUD ──
 
 const OFFICIAL_URLS: Record<string, string> = {
@@ -221,9 +173,19 @@ export function listProviderModels(): Record<string, any>[] {
   return queryAll('SELECT * FROM provider_models ORDER BY provider, model');
 }
 
-/** 标记式同步：探测到的模型 available=1（新行 enabled=1）；未探测到的存量行置灰保留；
+/** 模型价格输入（USD/1M tokens） */
+export interface ModelPriceInput { input_price: number; cache_input_price: number; output_price: number; }
+
+/** 标记式同步：探测到的模型 available=1（新行 enabled=1），价格全量覆盖（prices 非 null 时；
+ *  null 表示定价源失败，价格列不动）；未探测到的存量行置灰保留；
  *  用户 enabled 状态与 created_at 不重置。事务包裹，落盘一次。 */
-export function replaceProviderModels(provider: string, models: string[], now: number): void {
+export function replaceProviderModels(
+  provider: string,
+  models: string[],
+  prices: Map<string, ModelPriceInput> | null,
+  now: number,
+): void {
+  provider = normalizeProviderName(provider);
   const d = getDb();
   const set = new Set(models.map(m => m.toLowerCase()));
   const existing = queryAll('SELECT model FROM provider_models WHERE provider = ?', [provider]);
@@ -231,12 +193,21 @@ export function replaceProviderModels(provider: string, models: string[], now: n
   try {
     for (const row of existing) {
       const available = set.has(row.model) ? 1 : 0;
+      if (available && prices) {
+        const p = prices.get(row.model);
+        if (p) {
+          runRaw('UPDATE provider_models SET available = 1, input_price = ?, cache_input_price = ?, output_price = ?, currency = ?, updated_at = ? WHERE provider = ? AND model = ?',
+            [p.input_price, p.cache_input_price, p.output_price, 'USD', now, provider, row.model]);
+          continue;
+        }
+      }
       runRaw('UPDATE provider_models SET available = ?, updated_at = ? WHERE provider = ? AND model = ?',
         [available, now, provider, row.model]);
     }
     for (const m of set) {
-      runRaw('INSERT OR IGNORE INTO provider_models (provider, model, enabled, available, created_at, updated_at) VALUES (?, ?, 1, 1, ?, ?)',
-        [provider, m, now, now]);
+      const p = prices?.get(m);
+      runRaw('INSERT OR IGNORE INTO provider_models (provider, model, enabled, available, input_price, cache_input_price, output_price, currency, created_at, updated_at) VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?)',
+        [provider, m, p?.input_price ?? 0, p?.cache_input_price ?? 0, p?.output_price ?? 0, 'USD', now, now]);
     }
     d.run('COMMIT');
   } catch (err) {
@@ -244,6 +215,35 @@ export function replaceProviderModels(provider: string, models: string[], now: n
     throw err;
   }
   saveDb();
+}
+
+/** 种子导入（内置默认定价）：行缺失才插入（enabled=1, available=1, 带价格），已有行不动（不覆盖自动同步价）。
+ *  返回实际插入条数。 */
+export function seedProviderModels(
+  items: Array<{ provider: string; model: string; input_price: number; cache_input_price: number; output_price: number; currency: string }>,
+  now: number,
+): number {
+  const d = getDb();
+  const existing = new Set(queryAll('SELECT provider, model FROM provider_models').map(r => `${r.provider}:${r.model}`));
+  let seeded = 0;
+  d.run('BEGIN');
+  try {
+    for (const item of items) {
+      const provider = normalizeProviderName(item.provider);
+      const model = item.model.toLowerCase();
+      if (existing.has(`${provider}:${model}`)) continue;
+      runRaw('INSERT INTO provider_models (provider, model, enabled, available, input_price, cache_input_price, output_price, currency, created_at, updated_at) VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?)',
+        [provider, model, item.input_price, item.cache_input_price, item.output_price, item.currency || 'USD', now, now]);
+      existing.add(`${provider}:${model}`);
+      seeded++;
+    }
+    d.run('COMMIT');
+  } catch (err) {
+    d.run('ROLLBACK');
+    throw err;
+  }
+  saveDb();
+  return seeded;
 }
 
 /** 用户手动开/关模型；关闭时清理会话上游模型引用（供应商一致或未指定供应商的会话） */

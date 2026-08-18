@@ -245,7 +245,6 @@ export function migrateToolCanonicalNames(): void {
       runRaw('UPDATE calls SET provider = ? WHERE LOWER(provider) = ? AND provider != ?', [canonical, lower, canonical]);
       runRaw('UPDATE sessions SET upstream_provider = ? WHERE LOWER(upstream_provider) = ? AND upstream_provider != ?', [canonical, lower, canonical]);
       runRaw('UPDATE tool_config SET upstream_provider = ? WHERE LOWER(upstream_provider) = ? AND upstream_provider != ?', [canonical, lower, canonical]);
-      mergePricingProviderVariants(lower, canonical);
     }
     runRaw("INSERT OR REPLACE INTO metadata (key, value) VALUES ('tool_canonical_migrated', '1')");
     d.run('COMMIT');
@@ -275,11 +274,6 @@ export function migrateLowercaseNames(): void {
       seenTools.add(lower);
       mergeToolConfigVariants(lower);
     }
-    // pricing：先供应商维度、后模型维度
-    for (const p of queryAll('SELECT DISTINCT LOWER(provider) AS lower FROM pricing')) {
-      mergePricingProviderVariants(p.lower as string, p.lower as string);
-    }
-    mergePricingModelVariants();
 
     // ── 2. 纯小写化：合并后各约束维度每组只剩一行，改名无冲突 ──
     const updates: Array<[string, string]> = [
@@ -287,7 +281,6 @@ export function migrateLowercaseNames(): void {
       ['tool_config', 'tool'], ['tool_config', 'upstream_provider'], ['tool_config', 'upstream_model'],
       ['sessions', 'tool'], ['sessions', 'upstream_provider'], ['sessions', 'upstream_model'],
       ['calls', 'provider'], ['calls', 'model'], ['calls', 'tool'],
-      ['pricing', 'provider'], ['pricing', 'model'],
     ];
     for (const [table, col] of updates) {
       runRaw(`UPDATE ${table} SET ${col} = LOWER(${col}) WHERE ${col} != LOWER(${col})`);
@@ -373,48 +366,4 @@ function foldTimestamps(vals: Array<[number, number]>): [number, number] {
   const created = Math.min(...vals.map(([c]) => c || 0).filter(v => v > 0).concat(Infinity));
   const updated = Math.max(...vals.map(([, u]) => u || 0));
   return [created === Infinity ? 0 : created, updated];
-}
-
-/** pricing 供应商变体归一：改名到规范名；与规范行同 model+effective_from 冲突时删除变体行（规范行定价优先） */
-function mergePricingProviderVariants(lower: string, canonical: string): void {
-  const rows = queryAll('SELECT rowid AS rid, model, effective_from, created_at, updated_at FROM pricing WHERE LOWER(provider) = ? AND provider != ?', [lower, canonical]);
-  for (const row of rows) {
-    const conflict = queryOne('SELECT rowid AS rid, created_at, updated_at FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
-      [canonical, row.model, row.effective_from]);
-    if (conflict) {
-      // 冲突删除前先把变体行时间戳折叠进规范行（created 取最小非零排除 0，updated 取最大）
-      const [created, updated] = foldTimestamps([
-        [Number(conflict.created_at) || 0, Number(conflict.updated_at) || 0],
-        [Number(row.created_at) || 0, Number(row.updated_at) || 0],
-      ]);
-      runRaw('UPDATE pricing SET created_at = ?, updated_at = ? WHERE rowid = ?',
-        [created, updated, conflict.rid]);
-      runRaw('DELETE FROM pricing WHERE rowid = ?', [row.rid]);
-    } else {
-      runRaw('UPDATE pricing SET provider = ? WHERE rowid = ?', [canonical, row.rid]);
-    }
-  }
-}
-
-/** pricing 模型维度变体合并：LOWER(model) 与既有行冲突时删除变体行（规范行优先），否则改名为小写。
- *  与供应商维度策略一致（冲突时时间戳折叠进保留行）。 */
-function mergePricingModelVariants(): void {
-  const rows = queryAll('SELECT rowid AS rid, provider, model, effective_from, created_at, updated_at FROM pricing WHERE model != LOWER(model)');
-  for (const row of rows) {
-    const lowerModel = (row.model as string).toLowerCase();
-    const conflict = queryOne('SELECT rowid AS rid, created_at, updated_at FROM pricing WHERE provider = ? AND model = ? AND effective_from IS ?',
-      [row.provider, lowerModel, row.effective_from]);
-    if (conflict) {
-      // 冲突删除前先把变体行时间戳折叠进保留行（与供应商维度一致）
-      const [created, updated] = foldTimestamps([
-        [Number(conflict.created_at) || 0, Number(conflict.updated_at) || 0],
-        [Number(row.created_at) || 0, Number(row.updated_at) || 0],
-      ]);
-      runRaw('UPDATE pricing SET created_at = ?, updated_at = ? WHERE rowid = ?',
-        [created, updated, conflict.rid]);
-      runRaw('DELETE FROM pricing WHERE rowid = ?', [row.rid]);
-    } else {
-      runRaw('UPDATE pricing SET model = ? WHERE rowid = ?', [lowerModel, row.rid]);
-    }
-  }
 }

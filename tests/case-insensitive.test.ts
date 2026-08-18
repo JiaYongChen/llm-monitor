@@ -3,10 +3,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   initDb, closeDb, createPendingSession, upsertSession, getSession,
   getToolConfig, updateToolConfig, listToolConfigs, listSessions, listCalls,
-  getStats, getDailyStats, upsertPricing, listPricing, addProviderConfig,
+  getStats, getDailyStats, addProviderConfig,
   listProviderConfigs, updateSessionUpstream, normalizeToolName, insertCall,
   upsertHourlyStat, getDb, updateProviderConfig,
   deleteProviderConfig, getProviderConfig, normalizeProviderName,
+  replaceProviderModels, listProviderModels,
 } from '../proxy/db.js';
 import { toolFromProvider } from '../proxy/session.js';
 import { createTempDb } from './setup.js';
@@ -195,11 +196,10 @@ describe('供应商 CRUD 大小写不敏感解析', () => {
 });
 
 describe('定价模型大小写不敏感', () => {
-  it('upsertPricing provider+model 大小写不同视为同一条目', () => {
-    const id1 = upsertPricing('Qwen', 'qwen3-max', 1, 0.5, 2);
-    const id2 = upsertPricing('QWEN', 'QWEN3-MAX', 3, 1.5, 6);
-    expect(id2).toBe(id1);
-    const rows = listPricing().filter((p: any) => p.model.toLowerCase() === 'qwen3-max');
+  it('replaceProviderModels provider+model 大小写不同视为同一行', () => {
+    replaceProviderModels('Qwen', ['QWEN3-MAX'], new Map([['QWEN3-MAX', { input_price: 1, cache_input_price: 0.5, output_price: 2 }]]), Date.now());
+    replaceProviderModels('QWEN', ['qwen3-max'], new Map([['qwen3-max', { input_price: 3, cache_input_price: 1.5, output_price: 6 }]]), Date.now());
+    const rows = listProviderModels().filter((p: any) => p.model.toLowerCase() === 'qwen3-max' && p.provider === 'qwen');
     expect(rows).toHaveLength(1);
     expect(rows[0].input_price).toBe(3);
   });

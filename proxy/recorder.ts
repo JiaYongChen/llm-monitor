@@ -1,11 +1,9 @@
-/** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
-import type { CallRecord, NormalizedTokens, Pricing } from '../shared/types.js';
+/** 后台消费者 — 从队列取出 CallRecord，归一化 → 计费 → 写入数据库 */
+import type { CallRecord } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
-import { matchPricing, calculateCost } from './pricing.js';
-import { insertCall, updateSessionStats, listPricing, upsertHourlyStat } from './db.js';
+import { insertCall, updateSessionStats, upsertHourlyStat } from './db.js';
 import { writeBody } from './db-body.js';
 import { registerCategoryColor } from './colors.js';
-import { getRates } from './rates.js';
 
 // ── 队列 ──
 const queue: CallRecord[] = [];
@@ -65,31 +63,7 @@ function processRecord(record: CallRecord): void {
     }
   }
 
-  // 2. 定价匹配 + 费用计算（缺汇率时抛错不阻塞入库，容忍 cost=0）
-  if (record.prompt_tokens != null || record.output_tokens != null) {
-    try {
-      const allPricing = listPricing() as Pricing[];
-      const pricing = matchPricing(record.provider, record.model, allPricing);
-      if (pricing) {
-        const tokens: NormalizedTokens = {
-          prompt_tokens: record.prompt_tokens,
-          output_tokens: record.output_tokens,
-          cache_read_tokens: record.cache_read_tokens,
-          cache_write_tokens: record.cache_write_tokens,
-          uncached_input: record.uncached_input,
-        };
-        const rates = getRates();
-        const costs = calculateCost(tokens, pricing, rates);
-        record.input_cost = costs.input_cost;
-        record.output_cost = costs.output_cost;
-        record.total_cost = costs.total_cost;
-        record.cache_savings = costs.cache_savings;
-      }
-    } catch (err) {
-      console.error('计费计算失败，以 cost=0 入库:', err);
-    }
-  }
-
+  // 2. 计费（从 provider_models 价格列读取 — 由 Task 3 重写；当前以 cost=0 入库）
   // 3. 类别颜色注册：首次出现的工具/供应商自动占位（'unknown' 不注册，名称归一化在函数内完成）
   //    注册失败不影响调用记录入库（与计费同风格：非关键步骤抛错容忍）
   try {

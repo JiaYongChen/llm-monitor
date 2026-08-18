@@ -18,9 +18,9 @@ export { getDb, saveDb, closeDb, queryAll, queryOne } from './db-core.js';
 export { BUILTIN_PROVIDERS, migrateToolCanonicalNames, migrateLowercaseNames, runMigrations } from './db-migrations.js';
 // 兼容旧引用：配置 CRUD 与名称归一化统一从 db-config re-export
 export { normalizeToolName, normalizeProviderName, listToolConfigs, getToolConfig, updateToolConfig,
-  listPricing, upsertPricing, deletePricing, listProviderConfigs, getProviderConfig, updateProviderConfig,
+  listProviderConfigs, getProviderConfig, updateProviderConfig,
   addProviderConfig, deleteProviderConfig, getSetting, setSetting,
-  listProviderModels, replaceProviderModels, setModelEnabled, deleteProviderModels } from './db-config.js';
+  listProviderModels, replaceProviderModels, seedProviderModels, setModelEnabled, deleteProviderModels } from './db-config.js';
 
 // ── 初始化 ──
 
@@ -73,23 +73,6 @@ export async function initDb(dbPath?: string): Promise<void> {
   db.run(SESSIONS_TABLE_DDL);
 
   db.run(`
-    CREATE TABLE IF NOT EXISTS pricing (
-      id                INTEGER PRIMARY KEY AUTOINCREMENT,
-      provider          TEXT    NOT NULL,
-      model             TEXT    NOT NULL,
-      input_price       REAL    NOT NULL,
-      cache_input_price REAL    NOT NULL,
-      output_price      REAL    NOT NULL,
-      unit              TEXT    NOT NULL DEFAULT 'per_1M_tokens',
-      currency          TEXT    NOT NULL DEFAULT 'CNY',
-      effective_from    TEXT,
-      created_at        INTEGER NOT NULL DEFAULT 0,
-      updated_at        INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(provider, model, effective_from)
-    )
-  `);
-
-  db.run(`
     CREATE TABLE IF NOT EXISTS provider_config (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       provider   TEXT    NOT NULL UNIQUE,
@@ -137,10 +120,6 @@ export async function initDb(dbPath?: string): Promise<void> {
   try { db.run(`ALTER TABLE provider_config ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { db.run(`ALTER TABLE tool_config ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
   try { db.run(`ALTER TABLE tool_config ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE pricing ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  try { db.run(`ALTER TABLE pricing ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); } catch {}
-  // 兼容已有库：添加 is_default 列
-  try { db.run(`ALTER TABLE pricing ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 兼容已有库：添加 target_url、source_ip 列
   try { db.run(`ALTER TABLE calls ADD COLUMN target_url TEXT`); } catch {}
   try { db.run(`ALTER TABLE calls ADD COLUMN source_ip TEXT`); } catch {}
@@ -159,18 +138,27 @@ export async function initDb(dbPath?: string): Promise<void> {
     )
   `);
 
-  // 供应商可用模型（探测结果缓存：enabled 用户开关 / available 最近探测是否返回；置灰不删除）
+  // 供应商可用模型（探测结果缓存：enabled 用户开关 / available 最近探测是否返回；价格列 0 = 无定价）
   db.run(`
     CREATE TABLE IF NOT EXISTS provider_models (
       provider   TEXT NOT NULL,
       model      TEXT NOT NULL,
       enabled    INTEGER NOT NULL DEFAULT 1,
       available  INTEGER NOT NULL DEFAULT 1,
+      input_price       REAL NOT NULL DEFAULT 0,
+      cache_input_price REAL NOT NULL DEFAULT 0,
+      output_price      REAL NOT NULL DEFAULT 0,
+      currency          TEXT NOT NULL DEFAULT 'USD',
       created_at INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (provider, model)
     )
   `);
+  // 兼容已有库：provider_models 价格列（列已存在则忽略错误）
+  try { db.run(`ALTER TABLE provider_models ADD COLUMN input_price REAL NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE provider_models ADD COLUMN cache_input_price REAL NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE provider_models ADD COLUMN output_price REAL NOT NULL DEFAULT 0`); } catch {}
+  try { db.run(`ALTER TABLE provider_models ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'`); } catch {}
 
   // 类别颜色：色板静态数据表（改颜色只改此表，不动代码；theme 为未来主题预留）
   db.run(`
@@ -193,6 +181,9 @@ export async function initDb(dbPath?: string): Promise<void> {
       UNIQUE (kind, name)
     )
   `);
+
+  // pricing 表已废弃（定价合并进 provider_models 价格列）：老库直接删表重建，不迁移历史定价
+  db.run('DROP TABLE IF EXISTS pricing');
 
   // 历史数据工具名归一化迁移（claudeCode→ClaudeCode、codex/chatGPT→Codex 等，单次执行）
   // 失败时内部已回滚；此处降级为警告并继续启动（门控未设置，下次启动自动重试），避免迁移异常导致整个代理不可用
@@ -660,15 +651,15 @@ export function cleanupOldCalls(days: number): number {
   return modified;
 }
 
-/** 清空所有调用、会话、定价和供应商配置 */
+/** 清空所有调用、会话、供应商配置与模型清单 */
 export function clearAllData(): void {
   const d = getDb();
   d.run('DELETE FROM calls');
   d.run('DELETE FROM sessions');
-  d.run('DELETE FROM pricing');
+  d.run('DELETE FROM provider_models');
   d.run('DELETE FROM provider_config');
   d.run('DELETE FROM hourly_stats');
-  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','pricing','provider_config','hourly_stats')");
+  d.run("DELETE FROM sqlite_sequence WHERE name IN ('calls','sessions','provider_models','provider_config','hourly_stats')");
   clearAllBodies();   // 先 DB 后文件：清空 body 目录
   saveDb();
 }

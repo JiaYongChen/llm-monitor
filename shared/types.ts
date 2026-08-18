@@ -53,17 +53,18 @@ export interface Session {
   upstream_model?: string | null;
 }
 
-/** 模型定价 */
-export interface Pricing {
-  id: number;
+/** provider_models 行（含价格列；价格 0 = 无定价） */
+export interface ProviderModelRow {
   provider: string;
   model: string;
+  enabled: number;
+  available: number;
   input_price: number;
   cache_input_price: number;
   output_price: number;
-  unit: string;
   currency: string;
-  effective_from: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 /** 聚合统计项 */

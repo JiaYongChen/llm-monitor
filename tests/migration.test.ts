@@ -138,17 +138,6 @@ describe('migrateToolCanonicalNames 历史数据迁移', () => {
     expect(queryAll(`SELECT tool FROM sessions WHERE fingerprint = 'fp_cursor_pp'`)[0].tool).toBe('cursor');
   });
 
-  it('pricing 表 provider 归一化到规范名', () => {
-    clearGate();
-    const d = getDb();
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
-           VALUES ('Anthropic', 'claude-mig-x', 1, 0.5, 2)`);
-
-    migrateToolCanonicalNames();
-
-    expect(queryAll(`SELECT provider FROM pricing WHERE model = 'claude-mig-x'`)[0].provider).toBe('anthropic');
-  });
-
   it('单次执行门控：已迁移则跳过', () => {
     clearGate();
     migrateToolCanonicalNames();
@@ -171,8 +160,6 @@ describe('migrateLowercaseNames 小写迁移', () => {
     d.run(`INSERT INTO calls (session_id, provider, model, endpoint, method, status_code, duration_ms, fingerprint, tool, created_at)
            VALUES (1, 'OpenAI', 'GPT-5', '/v1/x', 'POST', 200, 10, 'fp_lc_1', 'Codex', 1)`);
     d.run(`INSERT INTO tool_config (tool, upstream_provider, upstream_model) VALUES ('Codex', 'OpenAI', 'GLM-X')`);
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
-           VALUES ('OpenAI', 'GPT-5', 1, 0.5, 2)`);
 
     migrateLowercaseNames();
 
@@ -186,7 +173,6 @@ describe('migrateLowercaseNames 小写迁移', () => {
     expect(tc[0].tool).toBe('codex');
     expect(tc[0].upstream_provider).toBe('openai');
     expect(tc[0].upstream_model).toBe('glm-x');
-    expect(queryAll(`SELECT provider FROM pricing WHERE LOWER(model) = 'gpt-5'`)[0].provider).toBe('openai');
   });
 
   it('provider_config 大小写变体收敛为一行并小写', () => {
@@ -203,56 +189,6 @@ describe('migrateLowercaseNames 小写迁移', () => {
     expect(rows[0].provider).toBe('moonshot');
     expect(rows[0].base_url).toBe('https://a.example');
     expect(rows[0].api_key).toBe('k-variant');
-  });
-
-  it('pricing 模型维度变体：冲突时保留小写行', () => {
-    clearLowerGate();
-    const d = getDb();
-    // 使用独立模型名，避免与首个用例残留的 'gpt-5' 行互相污染
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
-           VALUES ('openai', 'lc-ts-model', 1, 0.5, 2)`);
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price)
-           VALUES ('openai', 'LC-TS-Model', 9, 4.5, 18)`);
-
-    migrateLowercaseNames();
-
-    const rows = queryAll(`SELECT * FROM pricing WHERE provider = 'openai' AND LOWER(model) = 'lc-ts-model'`);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].model).toBe('lc-ts-model');
-  });
-
-  it('pricing 供应商维度冲突折叠时间戳：created 取最小非零（排除 0），updated 取最大', () => {
-    clearLowerGate();
-    const d = getDb();
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
-           VALUES ('openai', 'fold-ts-prov', 1, 0.5, 2, 100, 200)`);
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
-           VALUES ('OPENAI', 'fold-ts-prov', 9, 4.5, 18, 0, 400)`);
-
-    migrateLowercaseNames();
-
-    const rows = queryAll(`SELECT * FROM pricing WHERE LOWER(provider) = 'openai' AND model = 'fold-ts-prov'`);
-    expect(rows).toHaveLength(1);
-    // 保留行 created=100（非零）不被变体行 0 覆盖；updated 取最大值 400
-    expect(rows[0].created_at).toBe(100);
-    expect(rows[0].updated_at).toBe(400);
-  });
-
-  it('pricing 模型维度冲突折叠时间戳：变体行真实时间戳合入保留行', () => {
-    clearLowerGate();
-    const d = getDb();
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
-           VALUES ('openai', 'fold-ts-model', 1, 0.5, 2, 0, 0)`);
-    d.run(`INSERT INTO pricing (provider, model, input_price, cache_input_price, output_price, created_at, updated_at)
-           VALUES ('openai', 'FOLD-TS-MODEL', 9, 4.5, 18, 150, 50)`);
-
-    migrateLowercaseNames();
-
-    const rows = queryAll(`SELECT * FROM pricing WHERE provider = 'openai' AND model = 'fold-ts-model'`);
-    expect(rows).toHaveLength(1);
-    // 变体行 created=150 合入保留行（排除 0），updated 取最大 50
-    expect(rows[0].created_at).toBe(150);
-    expect(rows[0].updated_at).toBe(50);
   });
 
   it('单次执行门控：已迁移则跳过', () => {

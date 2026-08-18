@@ -132,7 +132,7 @@ export function migrateCategoryColors(): void {
     for (const r of queryAll('SELECT DISTINCT provider AS name FROM hourly_stats')) addName(providers, r.name, 'provider');
     for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM sessions')) addName(providers, r.name, 'provider');
     for (const r of queryAll('SELECT DISTINCT upstream_provider AS name FROM tool_config')) addName(providers, r.name, 'provider');
-    for (const r of queryAll('SELECT DISTINCT provider AS name FROM pricing')) addName(providers, r.name, 'provider');
+    for (const r of queryAll('SELECT DISTINCT provider AS name FROM provider_models')) addName(providers, r.name, 'provider');
     // 3. 其余名称按字母序注册（最小空位）
     for (const name of [...tools].sort((a, b) => a.localeCompare(b))) {
       if (!queryOne('SELECT 1 AS one FROM category_colors WHERE kind = ? AND name = ?', ['tool', name])) {

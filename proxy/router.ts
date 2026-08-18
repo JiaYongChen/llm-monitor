@@ -15,7 +15,6 @@ import {
   listSessions, getSession, updateSessionLabel, updateSessionUpstream, updateSessionModel, mergeSessions, createPendingSession, deleteSession,
   listToolConfigs, getToolConfig, updateToolConfig, normalizeToolName, normalizeProviderName,
   listCalls as dbListCalls, countCalls as dbCountCalls, getCall as dbGetCall, getSessionTokenStats, getStats, getDailyStats,
-  listPricing, upsertPricing, deletePricing,
   clearAllData, initDefaultProviders, cleanupOldCalls,
   deleteAllThirdPartyProviders, deleteAllSessions,
   listProviderConfigs, updateProviderConfig, getProviderConfig,
@@ -467,39 +466,10 @@ function _registerApiRoutes(app: FastifyInstance): void {
     );
   });
 
-  // Pricing
-  app.get('/api/pricing', async () => listPricing());
-  app.post('/api/pricing', async (req) => {
-    const { provider, model, input_price, cache_input_price, output_price, currency } = req.body as any;
-    const id = upsertPricing(provider, model, input_price, cache_input_price, output_price, currency || 'CNY');
-    return { id };
-  });
-  app.delete('/api/pricing/:id', async (req, reply) => {
-    const result = deletePricing(parseInt((req.params as any).id));
-    if (!result.ok) return reply.status(400).send(result);
-    return result;
-  });
-  app.post('/api/pricing/default', async () => {
-    const file = join(__dirname, 'data', 'default-pricing.json');
-    const data = JSON.parse(readFileSync(file, 'utf-8'));
-    let count = 0;
-    for (const item of data) {
-      upsertPricing(item.provider, item.model, item.input_price, item.cache_input_price, item.output_price, item.currency || 'CNY', true);
-      count++;
-    }
-    return { imported: count };
-  });
-
-  // Data management
+  // Data management（注：/api/pricing 系列路由与清空后种子重导由 Task 6 重写为 provider_models 语义）
   app.post('/api/data/clear', async () => {
     clearAllData();
     initDefaultProviders();
-    // 重新导入默认定价
-    const pricingFile = join(__dirname, 'data', 'default-pricing.json');
-    const data = JSON.parse(readFileSync(pricingFile, 'utf-8'));
-    for (const item of data) {
-      upsertPricing(item.provider, item.model, item.input_price, item.cache_input_price, item.output_price, item.currency || 'CNY', true);
-    }
     return { ok: true };
   });
   app.post('/api/data/cleanup', async (req) => {

@@ -1,6 +1,6 @@
-/** 配置表时间戳测试 — provider_config / tool_config / pricing 的 created_at / updated_at 维护 */
+/** 配置表时间戳测试 — provider_config / tool_config 的 created_at / updated_at 维护 */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { initDb, closeDb, addProviderConfig, updateProviderConfig, updateToolConfig, upsertPricing, listProviderConfigs, listToolConfigs, listPricing, queryAll } from '../proxy/db.js';
+import { initDb, closeDb, addProviderConfig, updateProviderConfig, updateToolConfig, listProviderConfigs, listToolConfigs } from '../proxy/db.js';
 import { createTempDb } from './setup.js';
 
 const tmp = createTempDb();
@@ -43,18 +43,6 @@ describe('配置表时间戳', () => {
     await new Promise(r => setTimeout(r, 5));
     updateToolConfig('tstool', 'openai', 'gpt-5');
     const second = listToolConfigs().find((t: any) => t.tool === 'tstool')!;
-    expect(second.updated_at).toBeGreaterThan(first.updated_at);
-    expect(second.created_at).toBe(first.created_at);
-  });
-
-  it('upsertPricing 插入两值相等；更新时 updated_at 变、created_at 不变', async () => {
-    const id = upsertPricing('tsprov', 'ts-model', 1, 0.5, 2);
-    const first = queryAll('SELECT * FROM pricing WHERE id = ?', [id])[0];
-    expect(first.created_at).toBeGreaterThan(0);
-    expect(first.updated_at).toBe(first.created_at);
-    await new Promise(r => setTimeout(r, 5));
-    upsertPricing('tsprov', 'ts-model', 3, 1.5, 6);
-    const second = queryAll('SELECT * FROM pricing WHERE id = ?', [id])[0];
     expect(second.updated_at).toBeGreaterThan(first.updated_at);
     expect(second.created_at).toBe(first.created_at);
   });
