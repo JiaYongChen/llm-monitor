@@ -55,12 +55,12 @@ export function fillDateRange(range: string, tz: number): string[] {
     return r;
   }
   if (range === 'thisQuarter' || range === 'lastQuarter') {
-    // 季度按 ISO 周：逐天遍历季度日期算周标签，有序去重（首尾不完整周保留）
+    // 季度按 ISO 周：逐天遍历季度日期算周标签，有序去重（首尾不完整周保留；thisQuarter 含未来周空桶）
     const quarterStartMonth = Math.floor(utcNow.getMonth() / 3) * 3;
     const start = new Date(utcNow.getFullYear(), range === 'thisQuarter' ? quarterStartMonth : quarterStartMonth - 3, 1);
     const end = range === 'thisQuarter'
-      ? new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate())
-      : new Date(utcNow.getFullYear(), quarterStartMonth, 0); // 本季度首日 - 1 天 = 上季度末日
+      ? new Date(utcNow.getFullYear(), quarterStartMonth + 3, 0)   // 季度末月+1 的 0 日 = 季度末日（完整季度）
+      : new Date(utcNow.getFullYear(), quarterStartMonth, 0);      // 本季度首日 - 1 天 = 上季度末日
     const labels: string[] = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const label = isoWeekLabel(d);
@@ -69,11 +69,10 @@ export function fillDateRange(range: string, tz: number): string[] {
     return labels;
   }
   if (range === 'thisYear' || range === 'lastYear') {
-    // 年份按月：thisYear 到当前月（避免未来空桶），lastYear 全年 12 个月
+    // 年份按月：全年 12 个月（thisYear 的未来月份为空桶）
     const year = range === 'thisYear' ? utcNow.getFullYear() : utcNow.getFullYear() - 1;
-    const endMonth = range === 'thisYear' ? utcNow.getMonth() : 11;
     const labels: string[] = [];
-    for (let m = 0; m <= endMonth; m++) {
+    for (let m = 0; m < 12; m++) {
       labels.push(`${year}-${pad(m + 1)}`);
     }
     return labels;

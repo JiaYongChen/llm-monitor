@@ -26,13 +26,13 @@ describe('fillDateRange 小时级（today/yesterday）', () => {
 });
 
 describe('fillDateRange 季度/年度（月/周序列）', () => {
-  it('thisQuarter：ISO 周标签序列、有序去重、周数覆盖季度首日到今天的窗口', () => {
+  it('thisQuarter：ISO 周标签序列、有序去重、覆盖完整季度（含未来周空桶）', () => {
     const rows = fillDateRange('thisQuarter', 8);
     // 与后端 getDailyStats 季档位契约一致：'GGGG-WVV' 零填充周号
     for (const r of rows) expect(r).toMatch(/^\d{4}-W\d{2}$/);
     expect([...new Set(rows)]).toEqual(rows);   // 有序去重（首尾不完整周保留）
-    // 窗口 = 季度首日 ~ 今天：季初约 1 周、季末整季至多 14 周
-    expect(rows.length).toBeGreaterThanOrEqual(1);
+    // 完整季度 90-92 天 → 13~14 个 ISO 周标签
+    expect(rows.length).toBeGreaterThanOrEqual(13);
     expect(rows.length).toBeLessThanOrEqual(14);
   });
 
@@ -44,11 +44,11 @@ describe('fillDateRange 季度/年度（月/周序列）', () => {
     expect(rows.length).toBeLessThanOrEqual(14);
   });
 
-  it('thisYear：月标签 1 月到当前月（避免未来空桶）', () => {
+  it('thisYear：全年 12 个月标签（未来月份为空桶）', () => {
     const rows = fillDateRange('thisYear', 8);
+    expect(rows).toHaveLength(12);
     expect(rows[0]).toBe(`${utcNow.getFullYear()}-01`);
-    expect(rows[rows.length - 1]).toBe(`${utcNow.getFullYear()}-${pad(utcNow.getMonth() + 1)}`);
-    expect(rows).toHaveLength(utcNow.getMonth() + 1);
+    expect(rows[11]).toBe(`${utcNow.getFullYear()}-12`);
     for (const r of rows) expect(r).toMatch(/^\d{4}-\d{2}$/);
   });
 
