@@ -144,8 +144,7 @@ llm-monitor/
 ├── scripts/                     # CLI 启动脚本
 │   ├── start-tool               # bash (macOS/Linux)
 │   ├── start-tool.cmd           # → PowerShell (Windows)
-│   ├── start-tool.ps1           # PowerShell 实现
-│   └── llm-monitor.cmd          # Windows 别名
+│   └── start-tool.ps1           # PowerShell 实现
 ├── tests/                       # Vitest 测试
 ├── dist/                        # 构建输出（已 gitignore）
 │   └── web/                     # 前端静态文件
