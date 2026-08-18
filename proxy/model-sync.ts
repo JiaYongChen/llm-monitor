@@ -6,6 +6,8 @@
 import { getProviderConfig, getSetting, setSetting, listProviderConfigs, normalizeProviderName, replaceProviderModels } from './db.js';
 import { detectFormatFromUrl } from './normalizer.js';
 import { joinUrlPath } from '../shared/joinUrlPath.js';
+import { fetchLiteLLMPricing, fetchModelsDevPricing, fetchAnthropicPricing, matchModelPricing, type ModelPrice } from './pricing-sources.js';
+import type { ModelPriceInput } from './db-config.js';
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
 
@@ -78,6 +80,22 @@ function setSyncStatus(provider: string, s: SyncStatus): void {
   setSetting(`modelsync_${normalizeProviderName(provider)}`, JSON.stringify(s));
 }
 
+/** 定价源拉取（按供应商分流 + 回落链），返回 null 表示全部源失败 */
+async function fetchPricingFor(provider: string): Promise<Map<string, ModelPrice> | null> {
+  if (provider === 'anthropic') {
+    try { return await fetchAnthropicPricing(); }
+    catch (err) { console.warn('anthropic 官方定价源失败，回落 liteLLM:', (err as Error).message); }
+  }
+  try {
+    return await fetchLiteLLMPricing();
+  } catch (err) {
+    console.warn('liteLLM 定价源失败，回落 models.dev:', (err as Error).message);
+    try { return await fetchModelsDevPricing(); }
+    catch (err2) { console.warn('models.dev 定价源失败:', (err2 as Error).message); }
+  }
+  return null;
+}
+
 async function doSyncProvider(provider: string): Promise<SyncResult> {
   const config = getProviderConfig(provider);
   if (!config || !config.enabled) {
@@ -108,12 +126,23 @@ async function doSyncProvider(provider: string): Promise<SyncResult> {
     return { status: 'error', error, model_count: 0, priced_count: 0 };
   }
 
-  // 2. 标记式更新 provider_models（探测失败时不会走到这里，已有数据不动）
-  // 注：定价写入链路由 Task 2 重写为 replaceProviderModels 的 prices 参数，此处暂传 null（价格列不动）
+  // 2-3. 标记式更新 provider_models + 定价匹配（一次事务；定价源失败时价格列不动）
   const now = Date.now();
-  replaceProviderModels(provider, [...models], null, now);
+  const prices = await fetchPricingFor(provider);
+  const priceMap = new Map<string, ModelPriceInput>();
+  let priced = 0;
+  if (prices && prices.size > 0) {
+    for (const model of models) {
+      const price = matchModelPricing(model, prices);
+      if (price) {
+        priceMap.set(model.toLowerCase(), price);
+        priced++;
+      }
+    }
+  }
+  replaceProviderModels(provider, [...models], priceMap.size > 0 ? priceMap : null, now);
 
-  const status: SyncStatus = { updated_at: now, status: 'ok', model_count: models.size, priced_count: 0 };
+  const status: SyncStatus = { updated_at: now, status: 'ok', model_count: models.size, priced_count: priced };
   setSyncStatus(provider, status);
   return { ...status };
 }

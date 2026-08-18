@@ -100,7 +100,31 @@ describe('syncProvider 集成', () => {
     expect(getSyncStatus('empty-key-prov')?.status).toBe('no_key');
   });
 
-  // 注：定价写入/覆盖集成用例由 Task 2 重写（定价改走 replaceProviderModels prices 参数）
+  it('探测成功：模型入 provider_models、匹配定价写入价格列（覆盖已有条目）、状态 ok', async () => {
+    addProviderConfig('mock-prov', `${url}/probe`, '', 'sk-ok');
+    await syncProvider('mock-prov');
+    const rows = listProviderModels().filter(r => r.provider === 'mock-prov');
+    expect(rows.map(r => r.model).sort()).toEqual(['gpt-5.6-luna', 'gpt-5.6-sol', 'unknown-xyz']);
+    const pricedRows = rows.filter(r => r.input_price > 0 || r.output_price > 0);
+    expect(pricedRows).toHaveLength(2); // unknown-xyz 匹配不到 → 价格 0
+    const sol = rows.find(r => r.model === 'gpt-5.6-sol')!;
+    expect(sol.input_price).toBe(5);
+    expect(sol.cache_input_price).toBe(2.5);
+    expect(sol.output_price).toBe(30);
+    expect(sol.currency).toBe('USD');
+    expect(rows.find(r => r.model === 'unknown-xyz')!.input_price).toBe(0);
+    const st = getSyncStatus('mock-prov')!;
+    expect(st.status).toBe('ok');
+    expect(st.model_count).toBe(3);
+    expect(st.priced_count).toBe(2);
+  });
+
+  it('定价覆盖已有条目（全部覆盖语义）', async () => {
+    replaceProviderModels('mock-prov', ['gpt-5.6-sol'], new Map([['gpt-5.6-sol', { input_price: 999, cache_input_price: 999, output_price: 999 }]]), Date.now()); // 先写入旧价
+    await syncProvider('mock-prov');
+    const sol = listProviderModels().find(r => r.provider === 'mock-prov' && r.model === 'gpt-5.6-sol')!;
+    expect(sol.input_price).toBe(5); // 被覆盖
+  });
 
   it('探测失败：状态 error、已有数据不动、不置灰', async () => {
     addProviderConfig('dead-prov', `${url}/not-exist`, '', 'sk');
@@ -111,8 +135,11 @@ describe('syncProvider 集成', () => {
 
   it('两个 base_url 都为空：存量模型不置灰、状态 error', async () => {
     addProviderConfig('no-url-prov', '', '', 'sk-any');
-    // 预置存量模型行（模拟此前探测成功留下的缓存）
-    replaceProviderModels('no-url-prov', ['gpt-5.6-sol', 'gpt-5.6-luna'], null, Date.now());
+    // 预置存量模型行 + 价格（模拟此前探测成功留下的缓存）
+    replaceProviderModels('no-url-prov', ['gpt-5.6-sol', 'gpt-5.6-luna'], new Map([
+      ['gpt-5.6-sol', { input_price: 999, cache_input_price: 999, output_price: 999 }],
+      ['gpt-5.6-luna', { input_price: 888, cache_input_price: 888, output_price: 888 }],
+    ]), Date.now());
     const r = await syncProvider('no-url-prov');
     expect(r.status).toBe('error');
     expect(r.error).toContain('未配置任何 Base URL');
@@ -120,14 +147,18 @@ describe('syncProvider 集成', () => {
     const rows = listProviderModels().filter(x => x.provider === 'no-url-prov');
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row.available).toBe(1); // 存量模型保持可用，不置灰
+    const p = listProviderModels().find(r => r.provider === 'no-url-prov' && r.model === 'gpt-5.6-sol')!;
+    expect(p.input_price).toBe(999); // 价格未被覆盖（探测失败不触碰存量）
   });
 
-  it('定价源失败：模型照常更新，pricing 保持现状，状态仍 ok', async () => {
+  it('定价源失败：模型照常更新，价格列保持现状，状态仍 ok', async () => {
     process.env.LLM_MONITOR_PRICING_URLS = JSON.stringify({ liteLLM: `${url}/dead-price`, modelsDev: `${url}/dead-price` });
     try {
       addProviderConfig('no-price-prov', `${url}/probe`, '', 'sk-ok');
       await syncProvider('no-price-prov');
-      expect(listProviderModels().filter(r => r.provider === 'no-price-prov')).toHaveLength(3);
+      const rows = listProviderModels().filter(r => r.provider === 'no-price-prov');
+      expect(rows).toHaveLength(3);
+      for (const row of rows) expect(row.input_price).toBe(0); // 定价源失败 → 价格列不动（新行 0）
       const st = getSyncStatus('no-price-prov')!;
       expect(st.status).toBe('ok');
       expect(st.priced_count).toBe(0);
