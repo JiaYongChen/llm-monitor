@@ -1,7 +1,5 @@
 /** 路由注册 — 代理路由 + /api/* 查询路由 */
 import type { FastifyInstance } from 'fastify';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { forwardRequest, forwardStream } from './forwarder.js';
 import { needsConversion, convertRequest, convertResponse, createResponseTransform } from './converter.js';
@@ -22,6 +20,7 @@ import {
   listProviderModels, setModelEnabled,
 } from './db.js';
 import { syncProvider, syncAllProviders, getSyncStatus } from './model-sync.js';
+import { importDefaultPricing } from './default-pricing.js';
 import { readBody } from './db-body.js';
 import { PORT, DATA_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, debugLog } from './config.js';
 import { getRates, getRatesUpdatedAt, refreshRates } from './rates.js';
@@ -466,10 +465,12 @@ function _registerApiRoutes(app: FastifyInstance): void {
     );
   });
 
-  // Data management（注：/api/pricing 系列路由与清空后种子重导由 Task 6 重写为 provider_models 语义）
+  // Data management（清空全部数据后重新种子导入内置预置模型，定价随 provider_models 行重建）
   app.post('/api/data/clear', async () => {
     clearAllData();
     initDefaultProviders();
+    // 重新种子导入内置预置模型（定价合并进 provider_models 后随表清空）
+    await importDefaultPricing();
     return { ok: true };
   });
   app.post('/api/data/cleanup', async (req) => {

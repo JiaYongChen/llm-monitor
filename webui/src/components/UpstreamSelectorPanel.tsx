@@ -47,7 +47,7 @@ export default function UpstreamSelectorPanel({ tool, provider, model, providers
             if (!val) {
               onProviderChange(null, null);
             } else {
-              // 第三方供应商 → 默认选第一个可用模型（探测结果优先，无探测数据回落 pricing 派生）
+              // 第三方供应商 → 默认选第一个可用模型（仅 provider_models 探测结果，无可用模型则置空）
               const defaultModel = buildModelOptions(val).find((o: any) => !o.disabled)?.value || null;
               onProviderChange(val, defaultModel);
             }

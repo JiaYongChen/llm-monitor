@@ -15,7 +15,6 @@ import { displayName } from '../lib/display';
 export default function Settings() {
   const qc = useQueryClient();
   const { data: providers } = useQuery({ queryKey: ['providers'], queryFn: api.listProviders });
-  const { data: pricing } = useQuery({ queryKey: ['pricing'], queryFn: api.listPricing });
   const { data: colors } = useCategoryColors();
   const { data: providerModels } = useQuery({ queryKey: ['provider-models'], queryFn: () => api.listProviderModels() });
   const { data: modelSyncStatus } = useQuery({ queryKey: ['provider-models-status'], queryFn: () => api.getProviderModelsStatus() });
@@ -42,8 +41,6 @@ export default function Settings() {
   const clearSessionsMut = useMutation({ mutationFn: api.clearAllSessions, onSuccess: () => qc.invalidateQueries() });
 
   const [confirm, setConfirm] = useState<{ title: string; desc: string; onOk: () => void } | null>(null);
-
-  const providerPrices = (prov: string) => (pricing as any[])?.filter((p: any) => p.provider === prov) || [];
 
   const [showAdd, setShowAdd] = useState(false);
   const [newProv, setNewProv] = useState({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' });
@@ -83,7 +80,6 @@ export default function Settings() {
               apiKey={p.api_key || ''}
               enabled={p.enabled === 1}
               color={categoryColor(p.provider, 'provider', colors) || '#9ca3af'}
-              prices={providerPrices(p.provider)}
               models={(providerModels || []).filter((m: any) => m.provider === p.provider)}
               syncStatus={(modelSyncStatus as any)?.[p.provider] || null}
               onToggle={(v) => updateMut.mutate({ p: p.provider, d: { enabled: v } })}
@@ -101,7 +97,7 @@ export default function Settings() {
       <Dialog open={showAdd} onClose={() => { setShowAdd(false); setNewProv({ name: '', urlOpenAI: '', urlAnthropic: '', key: '' }); }}>
         <DialogHeader>
           <DialogTitle>添加供应商</DialogTitle>
-          <DialogDescription>配置 Base URL 和 API Key。模型定价在供应商卡片中单独添加。</DialogDescription>
+          <DialogDescription>配置 Base URL 和 API Key。保存后自动探测可用模型并同步定价。</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="flex items-end gap-2">
@@ -161,9 +157,9 @@ export default function Settings() {
 
 const BUILTIN_PROVIDERS: Record<string, string> = { anthropic: 'anthropic', openai: 'openai' };
 
-function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, color, prices, models, syncStatus, onToggle, onUpdate, onDelete }: {
+function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, color, models, syncStatus, onToggle, onUpdate, onDelete }: {
   provider: string; baseUrl: string; baseUrlAnthropic: string; apiKey: string; enabled: boolean; color: string;
-  prices: any[]; models: any[]; syncStatus: any; onToggle: (v: boolean) => void; onUpdate: (d: Record<string, string>) => void;
+  models: any[]; syncStatus: any; onToggle: (v: boolean) => void; onUpdate: (d: Record<string, string>) => void;
   onDelete: () => void;
 }) {
   const [keyValue, setKeyValue] = useState(apiKey);
@@ -179,7 +175,6 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['provider-models'] });
       qc.invalidateQueries({ queryKey: ['provider-models-status'] });
-      qc.invalidateQueries({ queryKey: ['pricing'] });
     },
   });
   const toggleModelMut = useMutation({
@@ -288,21 +283,21 @@ function ProviderItem({ provider, baseUrl, baseUrlAnthropic, apiKey, enabled, co
             <span className="w-16 text-center shrink-0">输入(命中)</span>
             <span className="w-10 text-center shrink-0">启用</span>
           </div>
-          {/* 模型清单（探测驱动；不可用置灰） */}
+          {/* 模型清单（探测驱动；不可用置灰；价格直读行内列） */}
           {(models || []).map((m: any) => {
-            const price = (prices || []).find((p: any) => p.model === m.model);
             const grey = !m.available;
+            const hasPrice = (m.input_price || 0) > 0 || (m.output_price || 0) > 0;
             return (
               <div key={m.model} className={`flex items-center gap-2 text-xs py-1.5 px-4 rounded hover:bg-muted/50 min-w-fit ${grey ? 'opacity-50' : ''}`}>
                 <span className="flex-1 min-w-0 font-mono text-gray-500 truncate">
                   {m.model}
                   {grey && <span className="ml-1 text-[10px] text-[#aeaeb2]">不可用</span>}
                 </span>
-                {price ? (
+                {hasPrice ? (
                   <>
-                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[price.currency || 'CNY']?.symbol || '￥'}{price.output_price.toFixed(2)}</span>
-                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[price.currency || 'CNY']?.symbol || '￥'}{price.input_price.toFixed(3)}</span>
-                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[price.currency || 'CNY']?.symbol || '￥'}{price.cache_input_price.toFixed(3)}</span>
+                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[m.currency || 'CNY']?.symbol || '￥'}{m.output_price.toFixed(2)}</span>
+                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[m.currency || 'CNY']?.symbol || '￥'}{m.input_price.toFixed(3)}</span>
+                    <span className="w-16 text-center font-mono shrink-0">{CURRENCIES[m.currency || 'CNY']?.symbol || '￥'}{m.cache_input_price.toFixed(3)}</span>
                   </>
                 ) : (
                   <>

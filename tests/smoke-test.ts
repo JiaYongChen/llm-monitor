@@ -13,10 +13,10 @@ async function main() {
     return;
   }
 
-  // 2. 检查预置定价
-  const pricingRes = await fetch(`${BASE}/api/pricing`);
+  // 2. 检查预置模型与定价（provider_models 行内价格列）
+  const pricingRes = await fetch(`${BASE}/api/provider-models`);
   const pricing = await pricingRes.json();
-  console.log(`\nPRICING: ${pricing.length} 条预置定价`);
+  console.log(`\nPRICING: ${pricing.length} 条预置模型（含行内定价）`);
   pricing.slice(0, 3).forEach((p: any) => {
     console.log(`  ${p.provider}/${p.model}: $${p.input_price}/$${p.cache_input_price}/$${p.output_price}`);
   });

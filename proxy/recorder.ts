@@ -1,5 +1,5 @@
 /** 后台消费者 — 从队列取出 CallRecord，归一化 → 定价 → 计费 → 写入数据库 */
-import type { CallRecord, NormalizedTokens, ProviderModelRow } from '../shared/types.js';
+import type { CallRecord, NormalizedTokens } from '../shared/types.js';
 import { normalizeTokens, detectFormatFromUrl, detectFormatFromTool } from './normalizer.js';
 import { matchPricing, calculateCost } from './pricing.js';
 import { insertCall, updateSessionStats, listProviderModels, upsertHourlyStat } from './db.js';
@@ -68,7 +68,7 @@ function processRecord(record: CallRecord): void {
   // 2. 定价匹配 + 费用计算（定价来自 provider_models 价格列；缺汇率时抛错不阻塞入库，容忍 cost=0）
   if (record.prompt_tokens != null || record.output_tokens != null) {
     try {
-      const allPricing = listProviderModels() as ProviderModelRow[];
+      const allPricing = listProviderModels();
       const pricing = matchPricing(record.provider, record.model, allPricing);
       if (pricing) {
         const tokens: NormalizedTokens = {

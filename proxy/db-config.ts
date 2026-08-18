@@ -7,6 +7,7 @@
 
 import { queryAll, queryOne, execute, executeInsert, getDb, runRaw, saveDb } from './db-core.js';
 import { BUILTIN_PROVIDERS } from './db-migrations.js';
+import type { ProviderModelRow } from '../shared/types.js';
 
 // ── 名称归一化 ──
 
@@ -168,9 +169,9 @@ export function deleteProviderConfig(provider: string): { ok: boolean; error?: s
 
 // ── Provider Models（供应商可用模型探测结果）──
 
-/** 列出全部供应商模型行 */
-export function listProviderModels(): Record<string, any>[] {
-  return queryAll('SELECT * FROM provider_models ORDER BY provider, model');
+/** 列出全部供应商模型行（sql.js 行在函数边界收口为 ProviderModelRow） */
+export function listProviderModels(): ProviderModelRow[] {
+  return queryAll('SELECT * FROM provider_models ORDER BY provider, model') as ProviderModelRow[];
 }
 
 /** 模型价格输入（USD/1M tokens） */

@@ -32,10 +32,10 @@ async function main() {
     const h = await fetch(`${BASE}/proxy/health`);
     console.log('\n[健康检查]', (await h.json()).status);
 
-    // 4. 预置定价
-    const p = await fetch(`${BASE}/api/pricing`);
+    // 4. 预置模型与定价（provider_models 行内价格列）
+    const p = await fetch(`${BASE}/api/provider-models`);
     const pricing: any[] = await p.json();
-    console.log(`[定价] ${pricing.length} 条`);
+    console.log(`[模型与定价] ${pricing.length} 条`);
     pricing.slice(0, 2).forEach((x: any) =>
       console.log(`  ${x.provider}/${x.model} in=$${x.input_price} out=$${x.output_price}`));
 

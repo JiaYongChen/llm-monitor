@@ -107,11 +107,6 @@ export async function getDailyStats(provider?: string, tool?: string, range = '3
   return fetchJson(`/stats/daily?${params}`);
 }
 
-// ── Pricing ──
-export async function listPricing() {
-  return fetchJson('/pricing');
-}
-
 // ── Data ──
 export async function clearAllData() {
   return fetchJson('/data/clear', { method: 'POST' });
