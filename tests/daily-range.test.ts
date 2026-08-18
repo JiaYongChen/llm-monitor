@@ -24,7 +24,7 @@ describe('getDailyStats 年档位（按月聚合）', () => {
     const rows = getDailyStats('thisYear', 'Ymthis');
     const jan = rows.find((r: any) => r.date === '2026-01');
     expect(jan).toBeDefined();
-    expect(jan.count).toBe(2);   // 1 月两行合并进同一月桶
+    expect(jan!.count).toBe(2);   // 1 月两行合并进同一月桶
     expect(rows.find((r: any) => r.date === '2026-08')).toBeDefined();
     expect(rows.every((r: any) => /^\d{4}-\d{2}$/.test(r.date))).toBe(true);
   });
@@ -53,10 +53,10 @@ describe('getDailyStats 季档位（按 ISO 周聚合）', () => {
     const rows = getDailyStats('thisQuarter', 'Wkthis');
     const w34 = rows.find((r: any) => r.date === '2026-W34');
     expect(w34).toBeDefined();
-    expect(w34.count).toBe(2);
+    expect(w34!.count).toBe(2);
     const w27 = rows.find((r: any) => r.date === '2026-W27');
     expect(w27).toBeDefined();
-    expect(w27.count).toBe(1);   // 6-30（Q2）被窗口裁剪
+    expect(w27!.count).toBe(1);   // 6-30（Q2）被窗口裁剪
     expect(rows.every((r: any) => /^\d{4}-W\d{2}$/.test(r.date))).toBe(true);
   });
 
