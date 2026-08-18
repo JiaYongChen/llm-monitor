@@ -1,4 +1,4 @@
-/** fillDateRange 序列测试（小时级 today/yesterday + 季度/年度）— 日期动态计算（UTC+8 同法），任意时刻可跑 */
+/** fillDateRange 序列测试（小时级 today/yesterday + 月/周级季度/年度）— 日期动态计算（UTC+8 同法），任意时刻可跑 */
 import { describe, it, expect } from 'vitest';
 import { fillDateRange } from '../webui/src/lib/dates';
 
@@ -6,8 +6,6 @@ const now = new Date();
 const utcNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000 + 8 * 3600000);
 const pad = (n: number) => String(n).padStart(2, '0');
 const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
-const quarterStartMonth = Math.floor(utcNow.getMonth() / 3) * 3;
 
 describe('fillDateRange 小时级（today/yesterday）', () => {
   it('today 返回 24 个小时标签（YYYY-MM-DD HH:00）', () => {
@@ -26,29 +24,38 @@ describe('fillDateRange 小时级（today/yesterday）', () => {
   });
 });
 
-describe('fillDateRange 季度/年度', () => {
-  it('thisQuarter：首日 = 季度首日，末日 = 今天', () => {
+describe('fillDateRange 季度/年度（月/周序列）', () => {
+  it('thisQuarter：ISO 周标签序列、有序去重、周数覆盖季度首日到今天的窗口', () => {
     const rows = fillDateRange('thisQuarter', 8);
-    expect(rows[0]).toBe(fmt(new Date(utcNow.getFullYear(), quarterStartMonth, 1)));
-    expect(rows[rows.length - 1]).toBe(fmt(utcNow));
+    // 与后端 getDailyStats 季档位契约一致：'GGGG-WVV' 零填充周号
+    for (const r of rows) expect(r).toMatch(/^\d{4}-W\d{2}$/);
+    expect([...new Set(rows)]).toEqual(rows);   // 有序去重（首尾不完整周保留）
+    // 窗口 = 季度首日 ~ 今天：季初约 1 周、季末整季至多 14 周
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows.length).toBeLessThanOrEqual(14);
   });
 
-  it('lastQuarter：首日 = 上季度首日，末日 = 本季度首日前一天', () => {
+  it('lastQuarter：上季度整季 ISO 周标签序列、有序去重', () => {
     const rows = fillDateRange('lastQuarter', 8);
-    expect(rows[0]).toBe(fmt(new Date(utcNow.getFullYear(), quarterStartMonth - 3, 1)));
-    expect(rows[rows.length - 1]).toBe(fmt(new Date(utcNow.getFullYear(), quarterStartMonth, 0)));
+    for (const r of rows) expect(r).toMatch(/^\d{4}-W\d{2}$/);
+    expect([...new Set(rows)]).toEqual(rows);
+    expect(rows.length).toBeGreaterThanOrEqual(13);
+    expect(rows.length).toBeLessThanOrEqual(14);
   });
 
-  it('thisYear：首日 = 1 月 1 日，末日 = 今天', () => {
+  it('thisYear：月标签 1 月到当前月（避免未来空桶）', () => {
     const rows = fillDateRange('thisYear', 8);
-    expect(rows[0]).toBe(`${utcNow.getFullYear()}-01-01`);
-    expect(rows[rows.length - 1]).toBe(fmt(utcNow));
+    expect(rows[0]).toBe(`${utcNow.getFullYear()}-01`);
+    expect(rows[rows.length - 1]).toBe(`${utcNow.getFullYear()}-${pad(utcNow.getMonth() + 1)}`);
+    expect(rows).toHaveLength(utcNow.getMonth() + 1);
+    for (const r of rows) expect(r).toMatch(/^\d{4}-\d{2}$/);
   });
 
-  it('lastYear：首日 = 去年 1 月 1 日，末日 = 去年 12 月 31 日（闰年兼容）', () => {
+  it('lastYear：去年全年 12 个月标签', () => {
     const rows = fillDateRange('lastYear', 8);
-    expect(rows[0]).toBe(`${utcNow.getFullYear() - 1}-01-01`);
-    expect(rows[rows.length - 1]).toBe(`${utcNow.getFullYear() - 1}-12-31`);
-    expect([365, 366]).toContain(rows.length);
+    expect(rows).toHaveLength(12);
+    expect(rows[0]).toBe(`${utcNow.getFullYear() - 1}-01`);
+    expect(rows[11]).toBe(`${utcNow.getFullYear() - 1}-12`);
+    for (const r of rows) expect(r).toMatch(/^\d{4}-\d{2}$/);
   });
 });

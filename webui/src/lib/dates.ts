@@ -1,4 +1,16 @@
-/** 日期序列工具：为图表生成指定范围和时区的完整日期序列（小时级/天级） */
+/** 日期序列工具：为图表生成指定范围和时区的完整日期序列（小时级/天级/月级/周级） */
+
+/** ISO 周标签（周一为周首，首周为含 1 月 4 日那周）：'2026-W34' */
+function isoWeekLabel(d: Date): string {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7;            // Mon=0 .. Sun=6
+  date.setUTCDate(date.getUTCDate() - dayNum + 3);      // 本周周四（决定 ISO 年）
+  const isoYear = date.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const week1Monday = new Date(Date.UTC(isoYear, 0, 4 - ((jan4.getUTCDay() + 6) % 7)));
+  const week = 1 + Math.round((date.getTime() - week1Monday.getTime()) / (7 * 86400000));
+  return `${isoYear}-W${String(week).padStart(2, '0')}`;
+}
 
 /**
  * 生成指定范围和时区的完整日期序列。
@@ -42,42 +54,29 @@ export function fillDateRange(range: string, tz: number): string[] {
     }
     return r;
   }
-  if (range === 'thisQuarter') {
-    const start = new Date(utcNow.getFullYear(), Math.floor(utcNow.getMonth() / 3) * 3, 1);
-    const end = new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate());
-    const r: string[] = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-    }
-    return r;
-  }
-  if (range === 'lastQuarter') {
+  if (range === 'thisQuarter' || range === 'lastQuarter') {
+    // 季度按 ISO 周：逐天遍历季度日期算周标签，有序去重（首尾不完整周保留）
     const quarterStartMonth = Math.floor(utcNow.getMonth() / 3) * 3;
-    const start = new Date(utcNow.getFullYear(), quarterStartMonth - 3, 1);
-    const end = new Date(utcNow.getFullYear(), quarterStartMonth, 0); // 本季度首日 - 1 天 = 上季度末日
-    const r: string[] = [];
+    const start = new Date(utcNow.getFullYear(), range === 'thisQuarter' ? quarterStartMonth : quarterStartMonth - 3, 1);
+    const end = range === 'thisQuarter'
+      ? new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate())
+      : new Date(utcNow.getFullYear(), quarterStartMonth, 0); // 本季度首日 - 1 天 = 上季度末日
+    const labels: string[] = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+      const label = isoWeekLabel(d);
+      if (labels[labels.length - 1] !== label) labels.push(label);
     }
-    return r;
+    return labels;
   }
-  if (range === 'thisYear') {
-    const start = new Date(utcNow.getFullYear(), 0, 1);
-    const end = new Date(utcNow.getFullYear(), utcNow.getMonth(), utcNow.getDate());
-    const r: string[] = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+  if (range === 'thisYear' || range === 'lastYear') {
+    // 年份按月：thisYear 到当前月（避免未来空桶），lastYear 全年 12 个月
+    const year = range === 'thisYear' ? utcNow.getFullYear() : utcNow.getFullYear() - 1;
+    const endMonth = range === 'thisYear' ? utcNow.getMonth() : 11;
+    const labels: string[] = [];
+    for (let m = 0; m <= endMonth; m++) {
+      labels.push(`${year}-${pad(m + 1)}`);
     }
-    return r;
-  }
-  if (range === 'lastYear') {
-    const start = new Date(utcNow.getFullYear() - 1, 0, 1);
-    const end = new Date(utcNow.getFullYear() - 1, 11, 31);
-    const r: string[] = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      r.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-    }
-    return r;
+    return labels;
   }
   // 7d / 14d / 30d / 60d
   const days = parseInt(range) || 30;
@@ -90,8 +89,10 @@ export function fillDateRange(range: string, tz: number): string[] {
   return r;
 }
 
-/** X 轴标签格式化：小时级取 "HH:MM"，天级取 "MM-DD" */
-export function fmtXAxis(d: string, hourly?: boolean): string {
-  if (hourly) return d.slice(11, 16); // '2024-01-15 14:00' → '14:00'
-  return d.slice(5); // '2024-01-15' → '01-15'
+/** X 轴标签格式化：按标签格式自判别——小时 'HH:00'，周 'W34'，月 'YYYY-MM'（完整年月），天 'MM-DD' */
+export function fmtXAxis(d: string): string {
+  if (d.includes(' ')) return d.slice(11, 16); // '2026-08-18 14:00' → '14:00'
+  if (d.includes('-W')) return d.slice(5);     // '2026-W34' → 'W34'
+  if (d.length === 7) return d;                // '2026-08' → '2026-08'
+  return d.slice(5);                           // '2026-08-18' → '08-18'
 }
