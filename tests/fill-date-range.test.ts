@@ -1,6 +1,6 @@
 /** fillDateRange 序列测试（小时级 today/yesterday + 月/周级季度/年度）— 日期动态计算（UTC+8 同法），任意时刻可跑 */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { fillDateRange } from '../webui/src/lib/dates';
+import { fillDateRange, fmtXAxis } from '../webui/src/lib/dates';
 
 afterEach(() => { vi.useRealTimers(); });
 const now = new Date();
@@ -74,5 +74,18 @@ describe('fillDateRange 季度/年度（月/周序列）', () => {
     const rows = fillDateRange('thisQuarter', 8);
     expect(rows[rows.length - 2]).toBe('2024-W52');   // 12-22~12-28 那周
     expect(rows[rows.length - 1]).toBe('2025-W01');   // 12-29~12-31（ISO 年已跨年，1/1 2025 周三 → W1 含 12-29 起）
+  });
+});
+
+describe('fmtXAxis 标签格式', () => {
+  it('周级：年-月(W周号)，年/月取周起始日（周一）', () => {
+    expect(fmtXAxis('2026-W34')).toBe('2026-8(W34)');   // 周一 8-17
+    expect(fmtXAxis('2026-W27')).toBe('2026-6(W27)');   // 周一 6-29（跨月周）
+    expect(fmtXAxis('2026-W01')).toBe('2025-12(W01)');  // 周一 2025-12-29（跨年周）
+  });
+  it('小时/月/天级格式回归', () => {
+    expect(fmtXAxis('2026-08-18 14:00')).toBe('14:00');
+    expect(fmtXAxis('2026-08')).toBe('2026-08');
+    expect(fmtXAxis('2026-08-18')).toBe('08-18');
   });
 });

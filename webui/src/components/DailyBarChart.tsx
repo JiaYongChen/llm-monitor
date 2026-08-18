@@ -37,7 +37,7 @@ const ZERO_ROW: DailyData = {
 };
 
 export default function DailyBarChart({ data, range, tz, modelData, groupLabel = '模型分布', categoryKind = 'model' }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[]; groupLabel?: string; categoryKind?: CategoryKind }) {
-  // X 轴刻度由 fmtXAxis 按标签格式自判别：小时 HH:00 / 周 W34 / 月 YYYY-MM / 天 MM-DD
+  // X 轴刻度由 fmtXAxis 按标签格式自判别：小时 HH:00 / 周 2026-8(W34) / 月 YYYY-MM / 天 MM-DD
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
     for (const d of data) map.set(d.date, d);
