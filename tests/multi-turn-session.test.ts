@@ -97,7 +97,9 @@ describe('多轮对话会话一致性', () => {
     expect(sid1).not.toBe(sidOther); // 不同聊天 → 不同会话
   });
 
-  it('★ 系统提示变化（前300字符相同）→ 同会话', () => {
+  it('★ 系统提示仅尾部不同 → 不同会话（全文指纹，修复截断碰撞）', () => {
+    // 旧实现截前 300 字符会把这两者并入同一会话（Claude Code 同项目会话的
+    // system 前段恒定，碰撞高发）；现对全文哈希，前缀相同不再导致合并
     const sysA = 'A'.repeat(350) + '_changed_tail_A';
     const sysB = 'A'.repeat(350) + '_changed_tail_B';
     const body1 = makeAnthropicBody([{ role: 'user', content: 'hi' }], sysA);
@@ -105,7 +107,7 @@ describe('多轮对话会话一致性', () => {
 
     const seed1 = extractConversationSeed(body1);
     const seed2 = extractConversationSeed(body2);
-    expect(seed1).toBe(seed2); // 前300字符一致 → 种子相同
+    expect(seed1).not.toBe(seed2);
   });
 
   it('★ 系统提示变化（前300字符不同）→ 不同会话', () => {
