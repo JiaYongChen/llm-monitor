@@ -82,6 +82,14 @@ describe('pricing', () => {
     expect(() => calculateCost(tokens, unknownPricing, RATES)).toThrow('CNY→XXX');
   });
 
+  it('cache_input_price=0（无缓存定价）：缓存命中按 input_price 计费，savings 不虚高', () => {
+    const tokens = { prompt_tokens: 2000, output_tokens: 0, cache_read_tokens: 1000, cache_write_tokens: null, uncached_input: 1000 };
+    const r = calculateCost(tokens, { ...row('prov', 'gpt-x', 2, 10, 0), currency: 'CNY' });
+    // uncached 1000×2/1M + cacheRead 1000×2/1M（哨兵 0 回退为 input_price）
+    expect(r.input_cost).toBeCloseTo(0.004, 6);
+    expect(r.cache_savings).toBe(0);
+  });
+
   it('不传 rates 且 pricing.currency=CNY 正常计算', () => {
     const tokens = { prompt_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: null, cache_write_tokens: null, uncached_input: 1_000_000 };
     const r = calculateCost(tokens, SAMPLE_CNY);  // 不传 rates

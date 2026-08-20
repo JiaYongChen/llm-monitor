@@ -21,15 +21,19 @@ export function calculateCost(
   const cacheRead = tokens.cache_read_tokens || 0;
   const output = tokens.output_tokens || 0;
 
+  // cache_input_price = 0 是「无缓存定价」哨兵（定价源未提供 cache_read 价）：
+  // 按 0 计费会使命中缓存的调用系统性漏计，改为按 input_price 计费（不享受折扣，savings 为 0）
+  const cacheReadPrice = pricing.cache_input_price > 0 ? pricing.cache_input_price : pricing.input_price;
+
   const uncachedCost = (uncached / 1_000_000) * pricing.input_price;
   const cacheWriteCost = (cacheWrite / 1_000_000) * pricing.input_price;
-  const cacheReadCost = (cacheRead / 1_000_000) * pricing.cache_input_price;
+  const cacheReadCost = (cacheRead / 1_000_000) * cacheReadPrice;
   const outputCost = (output / 1_000_000) * pricing.output_price;
 
   let inputCost = uncachedCost + cacheWriteCost + cacheReadCost;
   let finalOutputCost = outputCost;
   let totalCost = inputCost + outputCost;
-  let savings = (cacheRead / 1_000_000) * (pricing.input_price - pricing.cache_input_price);
+  let savings = (cacheRead / 1_000_000) * (pricing.input_price - cacheReadPrice);
 
   // 非 CNY 定价 → 换算为 CNY (1 CNY = rate FOREIGN → 1 FOREIGN = 1/rate CNY)
   if (pricing.currency && pricing.currency !== 'CNY') {
