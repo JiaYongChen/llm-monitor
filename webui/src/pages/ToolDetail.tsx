@@ -6,9 +6,7 @@ import PageHeader, { OVERVIEW_COLOR } from '../components/PageHeader';
 import KpiCards from '../components/KpiCards';
 import ChartsCard from '../components/ChartsCard';
 import UpstreamSelectorPanel from '../components/UpstreamSelectorPanel';
-import DailyBarChart from '../components/DailyBarChart';
-import DailyCostBarChart from '../components/DailyCostBarChart';
-import TokenDistributionBarChart from '../components/TokenDistributionBarChart';
+import DailyChartsPanel from '../components/DailyChartsPanel';
 import useDashboardData from '../hooks/useDashboardData';
 import { useCurrency, formatCost, CURRENCIES } from '../lib/currency';
 import { useCategoryColors, categoryColor } from '../lib/colors';
@@ -64,17 +62,13 @@ export default function ToolDetail() {
         { label: '输入 tokens', value: (totalUncached + totalCacheRead).toLocaleString(), icon: <Zap className="h-4 w-4 text-blue-500" /> },
       ]} />
       <ChartsCard range={dailyRange} onRangeChange={setDailyRange}>
-        {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">供应商费用</h4>
-            <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="provider" />
-          </div>
-          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="供应商Tokens" categoryKind="provider" />
-        </div>
-        {dailyStats && (
-          <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={costDailyData} />
-        )}
+        <DailyChartsPanel
+          dailyStats={dailyStats}
+          categoryData={costDailyData || []}
+          range={dailyRange}
+          tz={dailyTz}
+          categoryKind="provider"
+        />
       </ChartsCard>
     </div>
   );

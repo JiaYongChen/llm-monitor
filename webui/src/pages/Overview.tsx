@@ -3,9 +3,7 @@ import { Activity, Zap } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import KpiCards from '../components/KpiCards';
 import ChartsCard from '../components/ChartsCard';
-import DailyBarChart from '../components/DailyBarChart';
-import DailyCostBarChart from '../components/DailyCostBarChart';
-import TokenDistributionBarChart from '../components/TokenDistributionBarChart';
+import DailyChartsPanel from '../components/DailyChartsPanel';
 import useDashboardData from '../hooks/useDashboardData';
 import { useCurrency, formatCost, CURRENCIES } from '../lib/currency';
 
@@ -35,17 +33,13 @@ function OverviewContent() {
         { label: '输入 tokens', value: (totalUncached + totalCacheRead).toLocaleString(), icon: <Zap className="h-4 w-4 text-blue-500" /> },
       ]} />
       <ChartsCard range={dailyRange} onRangeChange={setDailyRange}>
-        {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">工具费用</h4>
-            <DailyCostBarChart data={costDailyData || []} range={dailyRange} tz={dailyTz} categoryKind="tool" />
-          </div>
-          <TokenDistributionBarChart modelData={costDailyData} range={dailyRange} tz={dailyTz} groupLabel="工具Tokens" categoryKind="tool" />
-        </div>
-        {dailyStats && (
-          <DailyBarChart data={dailyStats} range={dailyRange} tz={dailyTz} modelData={costDailyData} />
-        )}
+        <DailyChartsPanel
+          dailyStats={dailyStats}
+          categoryData={costDailyData || []}
+          range={dailyRange}
+          tz={dailyTz}
+          categoryKind="tool"
+        />
       </ChartsCard>
     </div>
   );
