@@ -6,7 +6,7 @@
  */
 
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
-import { writeFileSync, renameSync } from 'node:fs';
+import { writeFileSync, renameSync, existsSync } from 'node:fs';
 import { DB_PATH } from './config.js';
 
 // ── 模块级状态 ──
@@ -64,7 +64,11 @@ function flushSaveSync(dbPath?: string): void {
   const data = db.export();
   const buffer = Buffer.from(data);
   const tmp = path + '.tmp';
+  const bak = path + '.bak';
   writeFileSync(tmp, buffer);
+  // 先把当前完好文件轮转为 .bak 备份（rename 零拷贝），再原子替换；
+  // 若进程在两次 rename 之间中断，initDb 会发现主文件缺失并从 .bak 恢复
+  if (existsSync(path)) renameSync(path, bak);
   renameSync(tmp, path);
   saveDirty = false;
 }
@@ -82,7 +86,14 @@ export function saveDb(dbPath?: string, immediate = false): void {
   if (!saveTimer) {
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      if (saveDirty) flushSaveSync(dbPath);
+      if (!saveDirty) return;
+      try {
+        flushSaveSync(dbPath);
+      } catch (err) {
+        // 写盘失败（如 Windows 上杀毒/索引服务短暂锁文件）不崩溃进程：
+        // 保持 dirty，由下次去抖或安全网重试；异常逃逸到定时器回调会直接 crash
+        console.error(`[db] ⚠ 落盘失败（保持 dirty，下次重试）: ${(err as Error).message}`);
+      }
     }, SAVE_DEBOUNCE_MS);
   }
 }
@@ -93,7 +104,12 @@ export function startSaveSafetyNet(): void {
   saveSafetyInterval = setInterval(() => {
     if (saveDirty) {
       if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-      flushSaveSync();
+      try {
+        flushSaveSync();
+      } catch (err) {
+        // 与去抖回调同理：吞掉异常保持 dirty，避免 uncaughtException 崩溃进程
+        console.error(`[db] ⚠ 安全网落盘失败（保持 dirty，下次重试）: ${(err as Error).message}`);
+      }
     }
   }, SAVE_SAFETY_MS);
   // 允许定时器不阻止进程退出

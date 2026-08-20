@@ -90,25 +90,38 @@ export async function initDb(dbPath?: string): Promise<void> {
   await initSqlJsCore();
   const SQL = getSql(); // 获取 sql.js 静态实例（构造 Database 用）
 
-  // 如果文件已存在，从磁盘加载；否则创建空库
-  if (existsSync(path)) {
-    const buffer = readFileSync(path);
+  /** 从 buffer 加载数据库实例并探测校验。
+   *  sql.js 构造 Database 时不校验文件头，损坏文件到首次使用才报 NOTADB，
+   *  因此必须主动探测（SELECT 1）才能可靠检测损坏。失败返回 false。 */
+  const tryLoadBuffer = (buffer: Buffer): boolean => {
     try {
-      setDb(new SQL.Database(buffer));
+      const candidate = new SQL.Database(buffer);
+      candidate.exec('SELECT 1');
+      setDb(candidate);
+      return true;
     } catch {
-      // 文件损坏（如 tsx watch kill 时保存中断），尝试从备份恢复
-      console.warn('数据库文件损坏，尝试从备份恢复…');
-      const backupPath = path + '.bak';
-      if (existsSync(backupPath)) {
-        setDb(new SQL.Database(readFileSync(backupPath)));
-        console.log('已从备份恢复数据库');
-      } else {
-        setDb(new SQL.Database());
-        console.log('无可用备份，使用空数据库');
-      }
+      return false;
     }
+  };
+
+  // 主文件存在则加载；损坏或缺失时尝试从 .bak 备份恢复；均失败则创建空库
+  let loaded = false;
+  if (existsSync(path)) {
+    loaded = tryLoadBuffer(readFileSync(path));
+    if (!loaded) console.warn('数据库文件损坏，尝试从备份恢复…');
   } else {
-    setDb(new SQL.Database());
+    console.warn('数据库文件缺失，尝试从备份恢复…');
+  }
+  let recoveredFromBackup = false;
+  if (!loaded) {
+    const bak = path + '.bak';
+    if (existsSync(bak) && tryLoadBuffer(readFileSync(bak))) {
+      console.log('已从备份恢复数据库');
+      recoveredFromBackup = true;
+    } else {
+      setDb(new SQL.Database());
+      console.log('无可用备份，使用空数据库');
+    }
   }
   const db = getDb(); // 绑定当前数据库实例，后续建表/种子代码复用
 
@@ -244,7 +257,12 @@ export async function initDb(dbPath?: string): Promise<void> {
     console.error(`[db] ⚠ 颜色注册初始化失败（不影响启动）: ${(err as Error).message}`);
   }
 
-  saveDb();
+  // 从备份恢复 → 先移除损坏的主文件，再立即以恢复内容重写，
+  // 避免损坏文件在下次落盘时轮转进 .bak 污染备份
+  if (recoveredFromBackup) {
+    try { rmSync(path, { force: true }); } catch {}
+  }
+  saveDb(undefined, recoveredFromBackup);
   startSaveSafetyNet();
 }
 
