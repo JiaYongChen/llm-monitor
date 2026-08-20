@@ -306,13 +306,16 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
         : undefined;
 
       if (isStream) {
-        const { stream, collectResult } = await forwardStream(request.method, targetUrl, reqHeaders, body);
-        collectResult().then(result => {
+        const { stream, collectResult, status: upstreamStatus } = await forwardStream(request.method, targetUrl, reqHeaders, body);
+        const handleStreamResult = (result: { status: number; text: string; durationMs: number; streamError: string | null }) => {
           if (_enqueueRef) {
             _enqueueRef({
               provider: effectiveProvider, model, tool, endpoint, method: request.method,
               target_url: targetUrl, downstream_url: downstreamUrl, source_ip: sourceIp,
-              status_code: result.status, error_message: result.status >= 400 ? result.text.slice(0, 200) : null,
+              status_code: result.status,
+              error_message: result.streamError
+                ? `流中断: ${result.streamError}`.slice(0, 200)
+                : result.status >= 400 ? result.text.slice(0, 200) : null,
               duration_ms: result.durationMs, request_body: body?.toString('utf-8') || null, response_body: result.text,
               fingerprint: fp, source_port: remotePort, session_id: sessionId,
               prompt_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null, uncached_input: null,
@@ -322,7 +325,14 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
           // 终端实时输出思考过程（result.text 为干净结构 JSON，含 thinking 字段）
           const thinking = extractThinking(result.text);
           if (thinking) console.log(formatThinkingFull(thinking));
-        });
+        };
+        // 上游错误状态码（401/429/500…）：按原状态码返回错误体，不以 200 + SSE 伪装
+        if (upstreamStatus >= 400) {
+          const result = await collectResult();
+          handleStreamResult(result);
+          return reply.status(upstreamStatus).header('content-type', 'application/json').send(result.text);
+        }
+        collectResult().then(handleStreamResult);
         debugLog(`[proxy] ◀ stream 已建立 | ${(performance.now() - t0).toFixed(0)}ms req=${reqId}`);
         let responseStream = stream;
         if (convert) {

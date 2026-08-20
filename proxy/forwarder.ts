@@ -33,8 +33,9 @@ export async function forwardStream(
   headers: Record<string, string>,
   body?: Buffer,
 ): Promise<{
+  status: number;
   stream: ReadableStream;
-  collectResult: () => Promise<{ status: number; json: null; text: string; durationMs: number }>;
+  collectResult: () => Promise<{ status: number; json: null; text: string; durationMs: number; streamError: string | null }>;
 }> {
   const cleanHeaders: Record<string, string> = {};
   const skip = new Set(['host', 'transfer-encoding', 'connection', 'content-length']);
@@ -49,11 +50,18 @@ export async function forwardStream(
     body: body?.length ? new Uint8Array(body) : undefined,
   });
 
-  // 诊断：上游返回错误状态码时记录（用 clone 避免消费原始 body）
+  // 上游返回错误状态码（401/429/500…）：错误体不是 SSE，读完原文供调用方按原状态码返回，
+  // 避免以 200 + text/event-stream 透传错误导致客户端无法按状态码重试
   if (res.status >= 400) {
-    res.clone().text()
-      .then(body => console.warn(`[proxy] ⚠ 上游错误 status=${res.status} | ${body.slice(0, 300)}`))
-      .catch(() => console.warn(`[proxy] ⚠ 上游错误 status=${res.status} | (无法读取响应体)`));
+    let text = '';
+    try { text = await res.text(); } catch {}
+    const durationMs = Math.round(performance.now() - start);
+    console.warn(`[proxy] ⚠ 上游错误 status=${res.status} | ${text.slice(0, 300)}`);
+    return {
+      status: res.status,
+      stream: new ReadableStream({ start(c) { c.close(); } }),
+      collectResult: async () => ({ status: res.status, json: null, text, durationMs, streamError: null }),
+    };
   }
 
   const reader = res.body!.getReader();
@@ -61,6 +69,7 @@ export async function forwardStream(
   const status = res.status;
   let settled = false;
   let streamError: string | null = null;
+  let upstreamAbort = false;
   let streamDoneResolve: () => void;
   const streamDone = new Promise<void>(r => { streamDoneResolve = r; });
   /** 确保 streamDone 只 resolve 一次，避免泄漏 */
@@ -78,9 +87,11 @@ export async function forwardStream(
           controller.enqueue(value);
         }
       } catch (err: any) {
-        // 网络错误或 reader 被取消 — 记录具体原因用于诊断
+        // 上游中途断开：error() 向下游传播失败（客户端感知连接中断），
+        // 转换层 flush 不会触发 → 不会补发终止事件把半截回答伪装成完整结果
+        upstreamAbort = true;
         finish(err?.message || String(err));
-        try { controller.close(); } catch {}
+        try { controller.error(err); } catch {}
       }
     },
     cancel() {
@@ -91,6 +102,7 @@ export async function forwardStream(
   });
 
   return {
+    status,
     stream,
     // collectResult 等待 stream 完全消费后再读取 chunks，避免竞态
     collectResult: async () => {
@@ -103,7 +115,11 @@ export async function forwardStream(
       if (streamError) {
         console.warn(`[proxy] ⚠ 流异常结束 | ${streamError} | 已接收 ${chunks.length} 个分块 ${raw.length} 字节 | ${durationMs}ms`);
       }
-      return { status, json: null, text, durationMs };
+      return {
+        // 上游中途断开是失败的调用：标记 502，避免调用记录显示成功
+        status: upstreamAbort ? 502 : status,
+        json: null, text, durationMs, streamError,
+      };
     },
   };
 }
