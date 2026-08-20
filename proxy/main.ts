@@ -14,7 +14,7 @@ import { reconcileOrphanBodies } from './db-body.js';
 import { scheduleDailyRefresh, stopDailyRefresh } from './rates.js';
 import { scheduleDailyModelSync, stopDailyModelSync } from './model-sync.js';
 import { importDefaultPricing } from './default-pricing.js';
-import { PORT, WEBUI_PORT } from './config.js';
+import { PORT, WEBUI_PORT, PROXY_BODY_LIMIT_BYTES } from './config.js';
 import { readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -76,7 +76,8 @@ async function createApp(): Promise<{ proxy: FastifyInstance; webui: FastifyInst
   setEnqueueRef(enqueueRecord);
 
   // ── 代理服务器（PORT）：只走代理转发，不提供面板 ──
-  const proxy = Fastify({ logger: false });
+  // bodyLimit 放宽（见 PROXY_BODY_LIMIT_BYTES）：Fastify 默认 1MiB 会 413 拒绝长上下文 LLM 请求
+  const proxy = Fastify({ logger: false, bodyLimit: PROXY_BODY_LIMIT_BYTES });
   proxy.get('/proxy/health', async () => ({ status: 'ok', time: new Date().toISOString() }));
   await registerProxyRoutes(proxy);
 

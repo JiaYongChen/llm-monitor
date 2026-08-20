@@ -36,6 +36,10 @@ const WEBUI_PORT = resolvePort('--webui-port', 9401);
 const SESSION_TIMEOUT_SEC = 180;
 const AUTO_CLEANUP_DAYS = 0;
 
+/** 代理实例请求体上限（128MiB）：Fastify 默认 1MiB 会 413 拒绝长上下文 LLM 请求
+ *  （多轮历史 + 工具定义 + base64 图片常见超过 1MiB），透传代理不应截断 */
+const PROXY_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
+
 /** 是否处于调试模式：--debug / --dev（开发模式）/ LLM_MONITOR_DEBUG=1（每次调用实时判定，便于测试切换） */
 function isDebug(): boolean {
   return process.argv.includes('--debug') || process.argv.includes('--dev') || process.env.LLM_MONITOR_DEBUG === '1';
@@ -50,4 +54,4 @@ function ensureDataDir(): void {
   mkdirSync(DATA_DIR, { recursive: true });
 }
 
-export { PORT, WEBUI_PORT, DATA_DIR, DB_PATH, BODY_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, ensureDataDir, isDebug, debugLog };
+export { PORT, WEBUI_PORT, DATA_DIR, DB_PATH, BODY_DIR, SESSION_TIMEOUT_SEC, AUTO_CLEANUP_DAYS, PROXY_BODY_LIMIT_BYTES, ensureDataDir, isDebug, debugLog };
