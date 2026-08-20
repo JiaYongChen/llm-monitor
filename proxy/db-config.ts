@@ -117,11 +117,15 @@ export function updateProviderConfig(provider: string, data: { enabled?: boolean
   const canonical = normalizeProviderName(provider);
   vals.push(canonical);
   execute(`UPDATE provider_config SET ${sets.join(', ')} WHERE provider = ?`, vals);
-  // 停用时自动清除所有引用该供应商的会话上游覆写（provider + model）
+  // 停用时自动清除所有引用该供应商的会话上游覆写与工具级上游（provider + model）
   if (data.enabled === false) {
     const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
     if (cleared > 0) {
       console.log(`已清除 ${cleared} 个会话的 "${canonical}" 上游覆写`);
+    }
+    const clearedTool = execute('UPDATE tool_config SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
+    if (clearedTool > 0) {
+      console.log(`已清除 ${clearedTool} 个工具的 "${canonical}" 上游配置`);
     }
   }
   return { ok: true };
@@ -161,10 +165,15 @@ export function deleteProviderConfig(provider: string): { ok: boolean; error?: s
   const canonical = normalizeProviderName(provider);
   deleteProviderModels(canonical); // 联动删除该供应商的模型探测缓存行
   execute('DELETE FROM provider_config WHERE provider = ?', [canonical]);
-  // 同时清除引用该供应商的会话上游覆写（按小写名匹配）
+  // 同时清除引用该供应商的会话上游覆写与工具级上游（按小写名匹配）；
+  // 残留引用会使 router 解析上游失败，相关流量持续 500/503
   const cleared = execute('UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
   if (cleared > 0) {
     console.log(`已清除 ${cleared} 个会话的 "${canonical}" 上游覆写`);
+  }
+  const clearedTool = execute('UPDATE tool_config SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider = ?', [canonical]);
+  if (clearedTool > 0) {
+    console.log(`已清除 ${clearedTool} 个工具的 "${canonical}" 上游配置`);
   }
   return { ok: true };
 }

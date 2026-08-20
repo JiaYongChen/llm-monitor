@@ -704,11 +704,21 @@ export function clearAllData(): void {
   saveDb();
 }
 
-/** 删除所有第三方供应商（保留内置 anthropic 和 openai） */
+/** 删除所有第三方供应商（保留内置 anthropic 和 openai）。
+ *  级联清除被删供应商的全部引用（会话覆写 / 工具级上游 / 模型缓存行），
+ *  残留引用会使 router 解析上游失败，相关流量持续 500/503 */
 export function deleteAllThirdPartyProviders(): number {
   const d = getDb();
+  const names = queryAll("SELECT provider FROM provider_config WHERE LOWER(provider) NOT IN ('anthropic', 'openai')")
+    .map(r => String(r.provider));
   d.run("DELETE FROM provider_config WHERE LOWER(provider) NOT IN ('anthropic', 'openai')");
   const count = d.getRowsModified();
+  if (names.length > 0) {
+    const ph = names.map(() => '?').join(', ');
+    d.run(`UPDATE sessions SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider IN (${ph})`, names);
+    d.run(`UPDATE tool_config SET upstream_provider = NULL, upstream_model = NULL WHERE upstream_provider IN (${ph})`, names);
+    d.run(`DELETE FROM provider_models WHERE provider IN (${ph})`, names);
+  }
   saveDb();
   return count;
 }
