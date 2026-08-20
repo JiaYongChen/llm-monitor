@@ -50,6 +50,26 @@ export function getConfiguredUpstream(provider: string, tool?: string, endpoint?
   return { base_url: url, api_key: config.api_key, enabled: true };
 }
 
+/** CSRF 防护：写操作校验浏览器 Origin 与 Host 一致。
+ *  POST 表单属简单请求不触发 CORS 预检，若不校验，用户浏览恶意网页时
+ *  页面可跨站提交表单清空本机数据；不带 Origin 的非浏览器请求（CLI/curl）不受影响 */
+function addCsrfGuard(app: FastifyInstance): void {
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+    const origin = req.headers.origin;
+    if (!origin) return;
+    let originHost = '';
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      return reply.status(403).send({ error: '非法 Origin' });
+    }
+    if (originHost !== req.headers.host) {
+      return reply.status(403).send({ error: '禁止跨站写操作' });
+    }
+  });
+}
+
 function cleanHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string> {
   const skip = new Set(['host', 'transfer-encoding', 'connection', 'content-length', 'content-encoding']);
   const result: Record<string, string> = {};
@@ -106,6 +126,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
 }
 
 async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
+  addCsrfGuard(app);
+
   // 启动通知：CLI 包装脚本在启动工具前调用，预创建 pending 会话
   app.post('/proxy/sessions/start', async (req, reply) => {
     const { tool } = req.body as any;
@@ -380,6 +402,8 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
 // ── /api/* 查询路由 ──
 
 function _registerApiRoutes(app: FastifyInstance): void {
+  addCsrfGuard(app);
+
   // 类别颜色（色板 + 工具/供应商注册表）
   app.get('/api/colors', async () => getCategoryColors());
 
@@ -488,8 +512,13 @@ function _registerApiRoutes(app: FastifyInstance): void {
     await importDefaultPricing();
     return { ok: true };
   });
-  app.post('/api/data/cleanup', async (req) => {
-    const count = cleanupOldCalls((req.body as any).days);
+  app.post('/api/data/cleanup', async (req, reply) => {
+    // days 校验：0/负数会把全部调用划入「过期」一次删光，缺失值 NaN 一条不删
+    const days = Number((req.body as any)?.days);
+    if (!Number.isInteger(days) || days < 1) {
+      return reply.status(400).send({ error: 'days 必须为 ≥ 1 的整数' });
+    }
+    const count = cleanupOldCalls(days);
     return { deleted: count };
   });
   app.post('/api/data/clear-providers', async () => {
