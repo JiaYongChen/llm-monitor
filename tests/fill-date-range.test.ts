@@ -86,6 +86,7 @@ describe('fmtXAxis 标签格式', () => {
   it('小时/月/天级格式回归', () => {
     expect(fmtXAxis('2026-08-18 14:00')).toBe('14:00');
     expect(fmtXAxis('2026-08')).toBe('2026-08');
-    expect(fmtXAxis('2026-08-18')).toBe('08-18');
+    // a963886 起天级标签改为完整 YYYY-MM-DD（避免跨年/长区间时日期歧义）
+    expect(fmtXAxis('2026-08-18')).toBe('2026-08-18');
   });
 });

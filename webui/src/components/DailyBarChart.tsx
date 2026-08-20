@@ -38,7 +38,7 @@ const ZERO_ROW: DailyData = {
 
 /** 每类别小节列表：每个 tool/provider/model 一节的调用次数折线 + Token 用量柱状；无类别数据时兜底聚合视图 */
 export default function DailyBarChart({ data, range, tz, modelData }: { data: DailyData[]; range: string; tz: number; modelData?: DailyData[] }) {
-  // X 轴刻度由 fmtXAxis 按标签格式自判别：小时 HH:00 / 周 2026-8(W34) / 月 YYYY-MM / 天 MM-DD
+  // X 轴刻度由 fmtXAxis 按标签格式自判别：小时 HH:00 / 周 2026-8(W34) / 月 YYYY-MM / 天 YYYY-MM-DD
   const filledData = useMemo(() => {
     const map = new Map<string, DailyData>();
     for (const d of data) map.set(d.date, d);
