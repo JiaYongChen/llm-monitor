@@ -290,7 +290,12 @@ async function _registerProxyRoutes(app: FastifyInstance): Promise<void> {
       if (!upstream || !upstream.startsWith('http')) {
         return reply.status(500).send({ error: `Provider "${upstreamProvider}" 未配置有效的 Base URL` });
       }
-      const targetUrl = actualRemaining ? joinUrlPath(upstream, actualRemaining) : upstream;
+      // 附加查询串：Fastify 通配参数不含查询部分，直接取原始 URL 的查询段（保留原编码，
+      // 避免二次序列化的编码差异）。缺失会静默丢弃分页/过滤参数，
+      // Azure OpenAI 等需要 ?api-version= 的网关每个请求都会 400
+      const qIdx = request.url.indexOf('?');
+      const queryStr = qIdx >= 0 ? request.url.slice(qIdx) : '';
+      const targetUrl = (actualRemaining ? joinUrlPath(upstream, actualRemaining) : upstream) + queryStr;
 
       debugLog(`[proxy] ▶ ${request.method} ${targetUrl} | provider=${effectiveProvider} tool=${tool} model=${model} session=${sessionId} req=${reqId}`);
 
