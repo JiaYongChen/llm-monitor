@@ -71,25 +71,33 @@ function extractSessionLabel(body: any): string | null {
   }
 }
 
+/** 种子片段全文摘要：截断前缀会使 Claude Code 等工具的同项目会话（system prompt
+ *  前段恒定）互相碰撞，故对全文取 SHA256（定长，也避免种子过长） */
+function seedDigest(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
 /** 从请求 body 中提取会话特征种子。
  *  兼容 Chat Completions API（messages + system）和 Responses API（input + instructions）。
  *  同一聊天的多轮请求共享相同的 system prompt + 第一条用户消息 → 相同种子；
- *  不同聊天的第一条用户消息不同 → 不同种子。 */
+ *  不同聊天的第一条用户消息不同 → 不同种子。
+ *  注意：system 与首条消息完全相同的两个聊天仍会碰撞（内容指纹的固有限制），
+ *  但全文哈希已消除「前 300 字符相同即碰撞」这一高频场景。 */
 export function extractConversationSeed(body: any): string {
   try {
     const parts: string[] = [];
 
-    // 顶层 system / instructions 字段
-    if (body?.system != null) parts.push(normalizeSystem(body.system).slice(0, 300));
-    if (body?.instructions != null) parts.push(normalizeSystem(body.instructions).slice(0, 300));
+    // 顶层 system / instructions 字段（全文哈希）
+    if (body?.system != null) parts.push(seedDigest(normalizeSystem(body.system)));
+    if (body?.instructions != null) parts.push(seedDigest(normalizeSystem(body.instructions)));
 
-    // 消息数组中的 system/developer + 用户消息（两类 API 共用一个循环）
+    // 消息数组中的 system/developer + 用户消息（两类 API 共用一个循环，全文哈希）
     for (const msgs of getMessageArrays(body)) {
       const sysText = findFirstMessageText(msgs, ['system', 'developer']);
-      if (sysText) parts.push(sysText.slice(0, 300));
+      if (sysText) parts.push(seedDigest(sysText));
 
       const userText = findFirstMessageText(msgs, ['user']);
-      if (userText) parts.push(userText.slice(0, 300));
+      if (userText) parts.push(seedDigest(userText));
     }
 
     return parts.join('||') || '_empty_';

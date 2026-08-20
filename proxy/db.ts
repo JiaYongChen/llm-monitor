@@ -341,11 +341,15 @@ export function getCall(callId: number): Record<string, any> | null {
 
 // ── Sessions CRUD ──
 
+/** pending 会话升级窗口：包装脚本在 CLI 启动前预创建 pending 会话，
+ *  超过该窗口仍未被任何请求认领的 pending 视为废弃，不允许被裸连接抢占 */
+const PENDING_TTL_MS = 5 * 60 * 1000;
+
 /**
  * 查找或创建会话，返回 session id。
  * 支持 pending→active 自动升级：
  * 1. 用 fullFp 精确匹配 → 命中则复用
- * 2. 查找同 tool 的 pending 会话 → 命中则「升级」为完整指纹
+ * 2. 查找同 tool 且在认领窗口内的 pending 会话 → 命中则「升级」为完整指纹
  * 3. 都不命中 → 新建会话
  * 会话不会自动过期。 */
 export function upsertSession(fullFp: string, tool: string, endpoint: string, label?: string | null): number {
@@ -370,14 +374,16 @@ export function upsertSession(fullFp: string, tool: string, endpoint: string, la
   const tcProvider = tc?.upstream_provider ? normalizeProviderName(tc.upstream_provider) : null;
   const tcModel = tc?.upstream_model || null;
 
-  // 2. 查找同工具最近的 pending 会话 → 升级
+  // 2. 查找同工具且在认领窗口内的 pending 会话 → 升级
+  //    窗口外的 pending 视为废弃（防止其他终端的裸连接误并入无关会话）
   const pending = queryOne(
-    "SELECT id FROM sessions WHERE tool = ? AND status = 'pending' ORDER BY last_call_at DESC LIMIT 1",
-    [tool],
+    "SELECT id FROM sessions WHERE tool = ? AND status = 'pending' AND created_at > ? ORDER BY last_call_at DESC LIMIT 1",
+    [tool, now - PENDING_TTL_MS],
   );
   if (pending) {
     execute(
-      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ?, upstream_provider = ?, upstream_model = ?, label = COALESCE(?, label) WHERE id = ?",
+      // upstream 用 COALESCE 保留会话已有覆写（如用户提前设置），仅空值时继承工具配置
+      "UPDATE sessions SET fingerprint = ?, status = 'active', last_call_at = ?, first_endpoint = ?, upstream_provider = COALESCE(upstream_provider, ?), upstream_model = COALESCE(upstream_model, ?), label = COALESCE(?, label) WHERE id = ?",
       [fullFp, now, endpoint, tcProvider, tcModel, label || null, pending.id],  // 与新建分支一致：空字符串视为无标签
     );
     return Number(pending.id);
