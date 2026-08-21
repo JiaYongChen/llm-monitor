@@ -1,6 +1,6 @@
 /** 图表数据纯函数测试 — 类别宽表透视 / 类别排序 */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { buildCategoryRows, listCategories, stackOrder } from '../webui/src/lib/chart-data';
+import { buildCategoryRows, getCategory, listCategories, stackOrder } from '../webui/src/lib/chart-data';
 import type { DailyData } from '../webui/src/lib/chart-data';
 
 function row(date: string, category: string, cost: number, out = 0, uncached = 0, cached = 0): DailyData {

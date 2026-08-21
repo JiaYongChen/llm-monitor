@@ -51,10 +51,10 @@ function StackedDistributionChart({ title, rows, stackCategories, legendCategori
     <div>
       <h4 className="text-xs font-medium text-[#aeaeb2] mb-2">{title}</h4>
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
+        <BarChart data={rows} margin={{ top: 16, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={yAxisFormatter} axisLine={false} tickLine={false} />
+          <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={yAxisFormatter} axisLine={false} tickLine={false} />
           <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={formatValue} />} />
           <Legend
             wrapperStyle={{ fontSize: 12 }}
@@ -71,7 +71,7 @@ function StackedDistributionChart({ title, rows, stackCategories, legendCategori
   );
 }
 
-// ── 每类别明细小节（现 DailyBarChart 主体，见 Step 2 搬移）──
+// ── 每类别明细小节（调用次数折线 + Token 类型堆叠；无类别数据时聚合兜底视图）──
 
 function CategoryDetailSections({ data, modelData, range, tz }: { data: DailyData[]; modelData: DailyData[]; range: string; tz: number }) {
   // X 轴刻度由 fmtXAxis 按标签格式自判别：小时 HH:00 / 周 2026-8(W34) / 月 YYYY-MM / 天 YYYY-MM-DD
@@ -255,7 +255,7 @@ export default function DailyChartsPanel({ dailyStats, categoryData, range, tz, 
     [categories, categoryKind],
   );
 
-  // 费用图空态：无类别或全零（与旧 DailyCostBarChart 一致）；Tokens 图仅判无类别（与旧 TokenDistributionBarChart 一致）
+  // 费用图空态：无类别或全零；Tokens 图仅判无类别（两者刻意不对称）
   const hasCostData = costRows.some(r => categories.some(c => (r[c] || 0) > 0));
   const label = CATEGORY_LABELS[categoryKind];
   const placeholder = <p className="text-sm text-gray-500 text-center py-8">暂无数据</p>;
@@ -263,19 +263,21 @@ export default function DailyChartsPanel({ dailyStats, categoryData, range, tz, 
 
   return (
     <>
-      {/* 总览行：费用分布 + 类别分布堆叠图并列 */}
-      <div className="grid grid-cols-2 gap-6">
-        {categories.length === 0 || !hasCostData
-          ? placeholder
-          : !colors
-            ? colorLoading
-            : <StackedDistributionChart title={`${label}费用`} rows={costRows} stackCategories={costStack} legendCategories={legendCategories} colorMap={colorMap} formatValue={(v) => formatCost(v, currency, rates)} yAxisFormatter={(v) => formatCost(v, currency, rates)} />}
-        {categories.length === 0
-          ? placeholder
-          : !colors
+      {/* 总览行：费用分布 + 类别分布堆叠图并列；无类别数据时不渲染两格 grid，合并为单个占位 */}
+      {categories.length === 0 ? (
+        placeholder
+      ) : (
+        <div className="grid grid-cols-2 gap-6">
+          {!hasCostData
+            ? placeholder
+            : !colors
+              ? colorLoading
+              : <StackedDistributionChart title={`${label}费用`} rows={costRows} stackCategories={costStack} legendCategories={legendCategories} colorMap={colorMap} formatValue={(v) => formatCost(v, currency, rates)} yAxisFormatter={(v) => formatCost(v, currency, rates)} />}
+          {!colors
             ? colorLoading
             : <StackedDistributionChart title={`${label}Tokens`} rows={tokenRows} stackCategories={tokenStack} legendCategories={legendCategories} colorMap={colorMap} formatValue={(v) => v.toLocaleString()} yAxisFormatter={fmtTokens} />}
-      </div>
+        </div>
+      )}
       {dailyStats && (
         <CategoryDetailSections data={dailyStats} modelData={catData} range={range} tz={tz} />
       )}
