@@ -123,7 +123,7 @@ function CategoryDetailSections({ data, modelData, range, tz }: { data: DailyDat
   };
 
   if (!hasData && modelNames.length === 0) return (
-    <p className="text-sm text-gray-500 text-center py-8">暂无每日数据</p>
+    <p className="text-sm text-gray-500 text-center py-8"></p>
   );
 
   return (
