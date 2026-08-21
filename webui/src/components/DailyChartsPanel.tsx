@@ -54,7 +54,7 @@ function StackedDistributionChart({ title, rows, stackCategories, legendCategori
         <BarChart data={rows} margin={{ top: 16, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e5ea" vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={(d: string) => fmtXAxis(d)} axisLine={{ stroke: '#e5e5ea' }} tickLine={false} />
-          <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={yAxisFormatter} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: '#aeaeb2' }} tickFormatter={yAxisFormatter} axisLine={false} tickLine={false} />
           <Tooltip cursor={<DashedCursor />} content={<ChartTooltip formatValue={formatValue} />} />
           <Legend
             wrapperStyle={{ fontSize: 12 }}
